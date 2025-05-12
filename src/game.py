@@ -13,9 +13,12 @@ class Role(Enum):
 
 
 class PProp:
-    def __init__(self, player: 'PPlayer', remain=1, priority=0):
+    def __init__(self, player: 'PPlayer', remain=1, priority=0, mask=0):
         self.remain = remain
+        self.activate = False
+        self.used = False
         self.priority = priority
+        self.mask = mask
         self.register(player)
 
     def __str__(self):
@@ -49,6 +52,10 @@ class PProp:
             return False
         if self.remain == 0:
             return False
+        if self.mask != 0 and any(
+            self.mask == prop.mask and prop.used for prop in self.source.props
+        ):
+            return False
         return True
 
     # @abstractmethod
@@ -59,6 +66,8 @@ class PProp:
         if not self._validate():
             return
         self.remain -= 1
+        self.activate = True
+        self.used = True
         self._select()
 
     @abstractmethod
@@ -94,7 +103,7 @@ class Crystal(PProp):
 
 class Poison(PProp):
     def __init__(self, player):
-        super().__init__(player, 1, 2)
+        super().__init__(player, 1, 2, 1)
 
     def _validate(self):
         if game.phase != game.Phase.NIGHT:
@@ -107,7 +116,7 @@ class Poison(PProp):
 
 class Antidote(PProp):
     def __init__(self, player):
-        super().__init__(player, 1, 2)
+        super().__init__(player, 1, 2, 1)
 
     def _validate(self):
         if game.phase != game.Phase.NIGHT:
@@ -190,6 +199,9 @@ class Game:
                     while player.marks:
                         mark = player.marks.pop()
                         mark.execute()
+                for player in self.players:
+                    for prop in player.props:
+                        prop.used = False
                 self.phase = self.Phase.DEBATE
             case self.Phase.DEBATE:
                 self.phase = self.Phase.VOTE

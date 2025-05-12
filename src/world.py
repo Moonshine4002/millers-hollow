@@ -58,10 +58,10 @@ class World:
                     i.props[0].aim(cls.players[0])
                     i.props[0].attempt()
                 case Role.WITCH:
-                    i.props[0].aim(cls.players[1])
-                    i.props[0].attempt()
                     i.props[1].aim(cls.players[0])
                     i.props[1].attempt()
+                    i.props[0].aim(cls.players[1])
+                    i.props[0].attempt()
                 case Role.HUNTER:
                     i.props[0].aim(cls.players[2])
                     i.props[0].attempt()
