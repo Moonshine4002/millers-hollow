@@ -9,7 +9,7 @@ class Character:
         self.win = 0
         self.lose = 0
 
-    def __repr__(self):
+    def __str__(self):
         return f'{self.name}({self.win}-{self.lose})'
 
 
@@ -41,10 +41,16 @@ class World:
         game.init(cls.players)
 
     @classmethod
-    def game_loop(cls):
-        print(f'players=\n\t{"\n\t".join(str(i) for i in cls.players)}')
+    def print(cls):
+        print(
+            f'cycle={game.cycle}; '
+            f'phase={game.phase}; '
+            f'players=\n\t{"\n\t".join(str(i) for i in cls.players)}'
+        )
 
-        print(f'cycle={game.cycle}')
+    @classmethod
+    def game_loop(cls):
+        cls.print()
 
         for i in cls.players:
             match i.role:
@@ -59,6 +65,8 @@ class World:
                 case Role.HUNTER:
                     i.props[0].aim(cls.players[2])
                     i.props[0].attempt()
+
+        cls.print()
 
         game.proceed()
         game.proceed()

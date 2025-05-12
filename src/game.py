@@ -8,7 +8,7 @@ class Role(Enum):
     WITCH = auto()
     HUNTER = auto()
 
-    def __repr__(self):
+    def __str__(self):
         return f'{self.name.lower()}'
 
 
@@ -18,7 +18,7 @@ class PProp:
         self.priority = priority
         self.register(player)
 
-    def __repr__(self):
+    def __str__(self):
         return f'{self.__class__.__name__}(prop)'
 
     def _compare(self, other, key: Callable[[Any, Any], bool]):
@@ -153,8 +153,12 @@ class PPlayer:
                 warnings.warn(f'{self.role!r} has no props added silently')
         self.marks: list[PProp] = []
 
-    def __repr__(self):
-        return f'{self.name!r}[{self.role!r}]{"†" if not self.life else ""}: props={self.props}, marks={self.marks}'
+    def __str__(self):
+        return (
+            f'{self.name}[{self.role}]{"†" if not self.life else ""}: '
+            f'props={", ".join(str(i) for i in self.props)}, '
+            f'marks={", ".join(str(i) for i in self.marks)}'
+        )
 
 
 class Player(PPlayer):
@@ -166,6 +170,9 @@ class Game:
         NIGHT = auto()
         DEBATE = auto()
         VOTE = auto()
+
+        def __str__(self):
+            return f'{self.name.lower()}'
 
     def __init__(self):
         self.init([])
