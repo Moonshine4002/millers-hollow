@@ -4,12 +4,12 @@ from .game import *
 
 
 class Character:
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         self.name = name
         self.win = 0
         self.lose = 0
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f'{self.name}({self.win}-{self.lose})'
 
 
@@ -32,7 +32,7 @@ class World:
     players: list[Player] = []
 
     @classmethod
-    def start_game(cls):
+    def start_game(cls) -> None:
         random.shuffle(cls.players_role)
         for role in cls.players_role:
             character = random.choice(cls.character_pool)
@@ -42,7 +42,7 @@ class World:
         game.prepare()
 
     @classmethod
-    def print(cls):
+    def print(cls) -> None:
         print(
             f'cycle={game.cycle}; '
             f'phase={game.phase}; '
@@ -50,7 +50,7 @@ class World:
         )
 
     @classmethod
-    def game_loop(cls):
+    def game_loop(cls) -> None:
         cls.print()
 
         game.action()

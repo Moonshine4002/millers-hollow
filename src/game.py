@@ -10,8 +10,8 @@ class Role(ModifiedEnum):
     WITCH = 3
     HUNTER = 4
 
-    def __and__(self, other):
-        if isinstance(other, __class__):
+    def __and__(self, other: Any) -> bool:
+        if isinstance(other, Role):
             if self.value * other.value == 0:
                 if self.value + other.value == 0:
                     return True
@@ -39,13 +39,13 @@ class Game:
         DEBATE = auto()
         VOTE = auto()
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.init([])
 
-    def init(self, players: list['PPlayer']) -> None:
+    def init(self, players: Sequence['PPlayer']) -> None:
         self.cycle = 1
         self.phase = self.Phase.NIGHT
-        self.players = players
+        self.players = list(players)
 
     def prepare(self) -> None:
         for player in self.players:
@@ -80,7 +80,13 @@ game = Game()
 
 
 class PProp:
-    def __init__(self, player: 'PPlayer', remain=1, priority=0, mask=0):
+    def __init__(
+        self,
+        player: 'PPlayer',
+        remain: int = 1,
+        priority: int = 0,
+        mask: int = 0,
+    ) -> None:
         self.remain = remain
         self.used = False
         self.activate = False
@@ -89,22 +95,22 @@ class PProp:
         self.register(player)
         self._calculate()
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f'{self.__class__.__name__}(prop)'
 
-    def _compare(self, other, key: Callable[[Any, Any], bool]):
+    def _compare(self, other: Any, key: Callable[[Any, Any], bool]) -> bool:
         if isinstance(other, PProp):
             return key(self.priority, other.priority)
         else:
             return NotImplemented
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> bool:
         return self._compare(other, lambda x, y: x == y)
 
-    def __le__(self, other):
+    def __le__(self, other: Any) -> bool:
         return self._compare(other, lambda x, y: x <= y)
 
-    def __lt__(self, other):
+    def __lt__(self, other: Any) -> bool:
         return self._compare(other, lambda x, y: x < y)
 
     def register(self, player: 'PPlayer') -> None:
@@ -152,10 +158,10 @@ class PProp:
 
 
 class Claw(PProp):
-    def __init__(self, player):
+    def __init__(self, player: 'PPlayer') -> None:
         super().__init__(player, -1)
 
-    def _validate(self):
+    def _validate(self) -> bool:
         if game.phase != game.Phase.NIGHT:
             return False
         return super()._validate()
@@ -165,7 +171,7 @@ class Claw(PProp):
 
 
 class Crystal(PProp):
-    def _validate(self):
+    def _validate(self) -> bool:
         if game.phase != game.Phase.NIGHT:
             return False
         return super()._validate()
@@ -175,10 +181,10 @@ class Crystal(PProp):
 
 
 class Poison(PProp):
-    def __init__(self, player):
+    def __init__(self, player: 'PPlayer') -> None:
         super().__init__(player, 1, 2, 1)
 
-    def _validate(self):
+    def _validate(self) -> bool:
         if game.phase != game.Phase.NIGHT:
             return False
         return super()._validate()
@@ -188,10 +194,10 @@ class Poison(PProp):
 
 
 class Antidote(PProp):
-    def __init__(self, player):
+    def __init__(self, player: 'PPlayer') -> None:
         super().__init__(player, 1, 2, 1)
 
-    def _validate(self):
+    def _validate(self) -> bool:
         if game.phase != game.Phase.NIGHT:
             return False
         return super()._validate()
@@ -203,10 +209,10 @@ class Antidote(PProp):
 
 
 class Shotgun(PProp):
-    def __init__(self, player):
+    def __init__(self, player: 'PPlayer') -> None:
         super().__init__(player, 1, 4)
 
-    def _validate(self):
+    def _validate(self) -> bool:
         return super()._validate()
 
     def _effect(self) -> None:
@@ -214,7 +220,7 @@ class Shotgun(PProp):
 
 
 class PPlayer:
-    def __init__(self, name: str, role: Role):
+    def __init__(self, name: str, role: Role) -> None:
         self.name = name
         self.life = True
         self.role = role
@@ -238,43 +244,42 @@ class PPlayer:
         self.assumption: dict[str, dict[Role, float]] = {}
         self.relationship: dict[str, tuple[Attitude, float]] = {}
 
-    def __str__(self):
+    def __str__(self) -> str:
         return (
             f'{self.name}[{self.role}]{"†" if not self.life else ""}: '
             f'props={", ".join(str(i) for i in self.props)}, '
             f'marks={", ".join(str(i) for i in self.marks)}'
         )
 
-    def clear(self):
+    def clear(self) -> None:
         self.marks = []
         self.attitude = {player.name: 0 for player in game.players}
         self.assumption = {
-            player.name: {role: 0 for role in Role.__members__.keys()}
-            for player in game.players
+            player.name: {role: 0 for role in Role} for player in game.players
         }
         self.relationship = {
             player.name: (Attitude.IGNORE, 0) for player in game.players
         }
         self.assess()
 
-    def execute(self):
+    def execute(self) -> None:
         self.marks.sort()  # reverse=True)
         while self.marks:
             mark = self.marks.pop()
             mark.execute()
 
-    def finalize(self):
+    def finalize(self) -> None:
         for prop in self.props:
             prop.used = False
 
-    def deactive(self):
+    def deactive(self) -> None:
         for prop in self.props:
             prop.activate = False
 
-    def assess(self):
+    def assess(self) -> None:
         for pid, attitude in self.attitude.items():
             assumption = self.assumption[pid]
-            assumed_role = max(assumption, key=assumption.get)
+            assumed_role = max(assumption, key=assumption.get)  # type: ignore[arg-type]
             if -1 <= attitude < -0.1:
                 self.relationship[pid] = (Attitude.HOSTILE, abs(attitude))
             elif -0.1 <= attitude < 0.1:
