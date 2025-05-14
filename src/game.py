@@ -39,7 +39,14 @@ class Game:
         DEBATE = auto()
         VOTE = auto()
 
+    game = None
+
     def __init__(self) -> None:
+        cls = self.__class__
+        if cls.game is None:
+            cls.game = self
+        else:
+            raise RuntimeError(f'{cls.__name__} should be a Singleton')
         self.init([])
 
     def init(self, players: Sequence['PPlayer']) -> None:

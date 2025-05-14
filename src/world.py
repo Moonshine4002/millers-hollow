@@ -14,62 +14,75 @@ class Character:
 
 
 class World:
-    character_pool_num = 100
-    players_role = [
-        Role.VILLAGER,
-        Role.VILLAGER,
-        Role.VILLAGER,
-        Role.WEREWOLF,
-        Role.WEREWOLF,
-        Role.WEREWOLF,
-        Role.SEER,
-        Role.WITCH,
-        Role.HUNTER,
-    ]
+    world = None
 
-    character_pool = [Character(str(i)) for i in range(character_pool_num)]
-    characters: list[Character] = []
-    players: list[Player] = []
+    def __init__(self) -> None:
+        cls = self.__class__
+        if cls.world is None:
+            cls.world = self
+        else:
+            raise RuntimeError(f'{cls.__name__} should be a Singleton')
 
-    @classmethod
-    def start_game(cls) -> None:
-        random.shuffle(cls.players_role)
-        for role in cls.players_role:
-            character = random.choice(cls.character_pool)
-            cls.characters.append(character)
-            cls.players.append(Player(character.name, role))
-        game.init(cls.players)
+        self.character_pool_num = 100
+        self.players_role = [
+            Role.VILLAGER,
+            Role.VILLAGER,
+            Role.VILLAGER,
+            Role.WEREWOLF,
+            Role.WEREWOLF,
+            Role.WEREWOLF,
+            Role.SEER,
+            Role.WITCH,
+            Role.HUNTER,
+        ]
+
+        self.character_pool = [
+            Character(str(i)) for i in range(self.character_pool_num)
+        ]
+        self.characters: list[Character] = []
+        self.players: list[Player] = []
+
+        self.start_game()
+
+    def start_game(self) -> None:
+        random.shuffle(self.players_role)
+        for role in self.players_role:
+            character = random.choice(self.character_pool)
+            self.characters.append(character)
+            self.players.append(Player(character.name, role))
+        game.init(self.players)
         game.prepare()
 
-    @classmethod
-    def print(cls) -> None:
-        print(
+    def __str__(self) -> str:
+        return (
             f'cycle={game.cycle}; '
             f'phase={game.phase}; '
-            f'players=\n\t{"\n\t".join(str(i) for i in cls.players)}'
+            f'players=\n\t{"\n\t".join(str(i) for i in self.players)}'
         )
 
-    @classmethod
-    def game_loop(cls) -> None:
-        cls.print()
+    def game_loop(self) -> None:
+        print(self)
 
         game.action()
-        for i in cls.players:
+        for i in self.players:
             match i.role:
                 case Role.WEREWOLF:
-                    i.props[0].aim(cls.players[0])
+                    i.props[0].aim(self.players[0])
                     i.props[0].attempt()
                 case Role.WITCH:
-                    i.props[1].aim(cls.players[0])
+                    i.props[1].aim(self.players[0])
                     i.props[1].attempt()
-                    i.props[0].aim(cls.players[1])
+                    i.props[0].aim(self.players[1])
                     i.props[0].attempt()
                 case Role.HUNTER:
-                    i.props[0].aim(cls.players[2])
+                    i.props[0].aim(self.players[2])
                     i.props[0].attempt()
 
-        cls.print()
+        print(self)
 
         game.proceed()
         game.proceed()
         game.proceed()
+
+
+world = World()

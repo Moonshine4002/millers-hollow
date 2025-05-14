@@ -1,8 +1,7 @@
 from src.header import *
-from src.world import World
+from src.world import world
 
 
-World.start_game()
 while True:
     time.sleep(0.1)
-    World.game_loop()
+    world.game_loop()
