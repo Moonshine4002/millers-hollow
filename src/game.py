@@ -1,25 +1,93 @@
 from .header import *
 
+from .utility import *
 
-class Role(Enum):
-    VILLAGER = auto()
-    WEREWOLF = auto()
-    SEER = auto()
-    WITCH = auto()
-    HUNTER = auto()
 
-    def __str__(self):
-        return f'{self.name.lower()}'
+class Role(ModifiedEnum):
+    VILLAGER = 1
+    WEREWOLF = -1
+    SEER = 2
+    WITCH = 3
+    HUNTER = 4
+
+    def __and__(self, other):
+        if isinstance(other, __class__):
+            if self.value * other.value == 0:
+                if self.value + other.value == 0:
+                    return True
+                else:
+                    return False
+            elif self.value * other.value > 0:
+                return True
+            else:
+                return False
+        else:
+            return NotImplemented
+
+
+class Attitude(ModifiedEnum):
+    IGNORE = auto()
+    ALLIED = auto()
+    HOSTILE = auto()
+    COMPETITIVE = auto()
+    DECEPTIVE = auto()
+
+
+class Game:
+    class Phase(ModifiedEnum):
+        NIGHT = auto()
+        DEBATE = auto()
+        VOTE = auto()
+
+    def __init__(self):
+        self.init([])
+
+    def init(self, players: list['PPlayer']) -> None:
+        self.cycle = 1
+        self.phase = self.Phase.NIGHT
+        self.players = players
+
+    def prepare(self) -> None:
+        for player in self.players:
+            player.clear()
+
+    def action(self) -> None:
+        for player in self.players:
+            player.assess()
+
+    def proceed(self) -> None:
+        match self.phase:
+            case self.Phase.NIGHT:
+                for player in self.players:
+                    player.execute()
+                for player in self.players:
+                    player.finalize()
+                self.phase = self.Phase.DEBATE
+            case self.Phase.DEBATE:
+                self.phase = self.Phase.VOTE
+            case self.Phase.VOTE:
+                for player in self.players:
+                    player.execute()
+                for player in self.players:
+                    player.finalize()
+                self.phase = self.Phase.NIGHT
+                self.cycle += 1
+            case _:
+                raise ValueError(f'wrong phase {self.phase}')
+
+
+game = Game()
 
 
 class PProp:
     def __init__(self, player: 'PPlayer', remain=1, priority=0, mask=0):
         self.remain = remain
-        self.activate = False
         self.used = False
+        self.activate = False
         self.priority = priority
         self.mask = mask
         self.register(player)
+        self._calculate()
 
     def __str__(self):
         return f'{self.__class__.__name__}(prop)'
@@ -46,6 +114,10 @@ class PProp:
         assert self.source
         self.target = player
 
+    # @abstractmethod
+    def _calculate(self) -> None:
+        self.value = 1
+
     @abstractmethod
     def _validate(self) -> bool:
         if not self.source.life:
@@ -63,11 +135,12 @@ class PProp:
         self.target.marks.append(self)
 
     def attempt(self) -> None:
+        self._calculate()
         if not self._validate():
             return
         self.remain -= 1
-        self.activate = True
         self.used = True
+        self.activate = True
         self._select()
 
     @abstractmethod
@@ -161,6 +234,9 @@ class PPlayer:
             case _:
                 warnings.warn(f'{self.role!r} has no props added silently')
         self.marks: list[PProp] = []
+        self.attitude: dict[str, float] = {}
+        self.assumption: dict[str, dict[Role, float]] = {}
+        self.relationship: dict[str, tuple[Attitude, float]] = {}
 
     def __str__(self):
         return (
@@ -169,47 +245,45 @@ class PPlayer:
             f'marks={", ".join(str(i) for i in self.marks)}'
         )
 
+    def clear(self):
+        self.marks = []
+        self.attitude = {player.name: 0 for player in game.players}
+        self.assumption = {
+            player.name: {role: 0 for role in Role.__members__.keys()}
+            for player in game.players
+        }
+        self.relationship = {
+            player.name: (Attitude.IGNORE, 0) for player in game.players
+        }
+        self.assess()
+
+    def execute(self):
+        self.marks.sort()  # reverse=True)
+        while self.marks:
+            mark = self.marks.pop()
+            mark.execute()
+
+    def finalize(self):
+        for prop in self.props:
+            prop.used = False
+
+    def deactive(self):
+        for prop in self.props:
+            prop.activate = False
+
+    def assess(self):
+        for pid, attitude in self.attitude.items():
+            assumption = self.assumption[pid]
+            assumed_role = max(assumption, key=assumption.get)
+            if -1 <= attitude < -0.1:
+                self.relationship[pid] = (Attitude.HOSTILE, abs(attitude))
+            elif -0.1 <= attitude < 0.1:
+                self.relationship[pid] = (Attitude.IGNORE, 1)
+            elif 0.1 <= attitude <= 1:
+                self.relationship[pid] = (Attitude.ALLIED, attitude)
+            else:
+                raise ValueError(f'wrong attitude value {attitude}')
+
 
 class Player(PPlayer):
     ...
-
-
-class Game:
-    class Phase(Enum):
-        NIGHT = auto()
-        DEBATE = auto()
-        VOTE = auto()
-
-        def __str__(self):
-            return f'{self.name.lower()}'
-
-    def __init__(self):
-        self.init([])
-
-    def init(self, players: list[PPlayer]) -> None:
-        self.cycle = 1
-        self.phase = self.Phase.NIGHT
-        self.players = players
-
-    def proceed(self) -> None:
-        match self.phase:
-            case self.Phase.NIGHT:
-                for player in self.players:
-                    player.marks.sort()  # reverse=True)
-                    while player.marks:
-                        mark = player.marks.pop()
-                        mark.execute()
-                for player in self.players:
-                    for prop in player.props:
-                        prop.used = False
-                self.phase = self.Phase.DEBATE
-            case self.Phase.DEBATE:
-                self.phase = self.Phase.VOTE
-            case self.Phase.VOTE:
-                self.phase = self.Phase.NIGHT
-                self.cycle += 1
-            case _:
-                raise ValueError(f'wrong phase {self.phase}')
-
-
-game = Game()

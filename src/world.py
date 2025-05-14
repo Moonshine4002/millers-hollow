@@ -39,6 +39,7 @@ class World:
             cls.characters.append(character)
             cls.players.append(Player(character.name, role))
         game.init(cls.players)
+        game.prepare()
 
     @classmethod
     def print(cls):
@@ -52,6 +53,7 @@ class World:
     def game_loop(cls):
         cls.print()
 
+        game.action()
         for i in cls.players:
             match i.role:
                 case Role.WEREWOLF:
