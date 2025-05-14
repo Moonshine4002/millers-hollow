@@ -39,6 +39,10 @@ class Game:
         DEBATE = auto()
         VOTE = auto()
 
+    class PlayerInfo(NamedTuple):
+        name: str
+        role: Role
+
     game = None
 
     def __init__(self) -> None:
@@ -47,20 +51,52 @@ class Game:
             cls.game = self
         else:
             raise RuntimeError(f'{cls.__name__} should be a Singleton')
-        self.init([])
 
-    def init(self, players: Sequence['PPlayer']) -> None:
+        self.initialize([])
+
+    def __str__(self) -> str:
+        return (
+            f'cycle={self.cycle}; '
+            f'phase={self.phase}; '
+            f'players=\n\t{"\n\t".join(str(i) for i in self.players)}'
+        )
+
+    def initialize(self, players_info: Sequence[PlayerInfo]) -> None:
         self.cycle = 1
         self.phase = self.Phase.NIGHT
-        self.players = list(players)
+        self.players = [
+            Player(player_info.name, player_info.role)
+            for player_info in players_info
+        ]
+        self.game_init()
 
-    def prepare(self) -> None:
+    def game_init(self) -> None:
         for player in self.players:
-            player.clear()
+            player.game_init()
+
+    def loop(self) -> None:
+        print(self)
+        self.action()
+        print(self)
+        self.proceed()
+        self.proceed()
+        self.proceed()
 
     def action(self) -> None:
         for player in self.players:
             player.assess()
+            match player.role:
+                case Role.WEREWOLF:
+                    player.props[0].aim(self.players[0])
+                    player.props[0].attempt()
+                case Role.WITCH:
+                    player.props[1].aim(self.players[0])
+                    player.props[1].attempt()
+                    player.props[0].aim(self.players[1])
+                    player.props[0].attempt()
+                case Role.HUNTER:
+                    player.props[0].aim(self.players[2])
+                    player.props[0].attempt()
 
     def proceed(self) -> None:
         match self.phase:
@@ -258,8 +294,7 @@ class PPlayer:
             f'marks={", ".join(str(i) for i in self.marks)}'
         )
 
-    def clear(self) -> None:
-        self.marks = []
+    def game_init(self) -> None:
         self.attitude = {player.name: 0 for player in game.players}
         self.assumption = {
             player.name: {role: 0 for role in Role} for player in game.players

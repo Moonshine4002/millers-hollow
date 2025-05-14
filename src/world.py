@@ -39,50 +39,21 @@ class World:
         self.character_pool = [
             Character(str(i)) for i in range(self.character_pool_num)
         ]
-        self.characters: list[Character] = []
-        self.players: list[Player] = []
 
-        self.start_game()
+        self.initialize()
 
-    def start_game(self) -> None:
+    def initialize(self) -> None:
+        self.players_info: list[Game.PlayerInfo] = []
+
         random.shuffle(self.players_role)
         for role in self.players_role:
             character = random.choice(self.character_pool)
-            self.characters.append(character)
-            self.players.append(Player(character.name, role))
-        game.init(self.players)
-        game.prepare()
+            self.players_info.append(Game.PlayerInfo(character.name, role))
 
-    def __str__(self) -> str:
-        return (
-            f'cycle={game.cycle}; '
-            f'phase={game.phase}; '
-            f'players=\n\t{"\n\t".join(str(i) for i in self.players)}'
-        )
+        game.initialize(self.players_info)
 
-    def game_loop(self) -> None:
-        print(self)
-
-        game.action()
-        for i in self.players:
-            match i.role:
-                case Role.WEREWOLF:
-                    i.props[0].aim(self.players[0])
-                    i.props[0].attempt()
-                case Role.WITCH:
-                    i.props[1].aim(self.players[0])
-                    i.props[1].attempt()
-                    i.props[0].aim(self.players[1])
-                    i.props[0].attempt()
-                case Role.HUNTER:
-                    i.props[0].aim(self.players[2])
-                    i.props[0].attempt()
-
-        print(self)
-
-        game.proceed()
-        game.proceed()
-        game.proceed()
+    def loop(self) -> None:
+        game.loop()
 
 
 world = World()
