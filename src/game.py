@@ -154,27 +154,52 @@ class PProp:
     def aim(self, seat: int) -> None:
         self.target = game.players[seat]
 
+    def _assess_ignore(
+        self,
+        candidate: list[tuple[float, int]],
+        seat: int,
+        intensity: float,
+    ) -> None:
+        candidate.append((intensity, seat))
+
+    def _assess_allied(
+        self,
+        candidate: list[tuple[float, int]],
+        seat: int,
+        intensity: float,
+    ) -> None:
+        pass
+
+    def _assess_hostile(
+        self,
+        candidate: list[tuple[float, int]],
+        seat: int,
+        intensity: float,
+    ) -> None:
+        candidate.append((1 + intensity, seat))
+
     def assess(self) -> None:
         self.value = 1
         candidate: list[tuple[float, int]] = []
         for seat, (relationship, intensity) in enumerate(
             self.source.relationships
         ):
+            if not game.players[seat].life:   # TODO: use clue instead
+                continue
             match relationship:
                 case Relationship.IGNORE:
-                    if game.players[seat].life:   # TODO: use clue instead
-                        candidate.append((intensity, seat))
+                    self._assess_ignore(candidate, seat, intensity)
                 case Relationship.ALLIED:
-                    pass
+                    self._assess_allied(candidate, seat, intensity)
                 case Relationship.HOSTILE:
-                    if game.players[seat].life:   # TODO: use clue instead
-                        candidate.append((intensity + 1, seat))
+                    self._assess_hostile(candidate, seat, intensity)
         if candidate:
             target = max(candidate)[1]
             self.aim(target)
-            self.validate()   # TODO: if validate false
+            self._validate()   # TODO: if validate false
 
-    def validate(self) -> bool:
+    # @abstractmethod
+    def _validate(self) -> bool:
         if not self.source.life:
             return False
         if self.remain == 0:
@@ -190,7 +215,7 @@ class PProp:
         self.target.marks.append(self)
 
     def action(self) -> None:
-        if not self.validate():
+        if not self._validate():
             return
         self.remain -= 1
         self.used = True
@@ -209,10 +234,10 @@ class Meet(PProp):
     def __init__(self, seat: int) -> None:
         super().__init__(seat, -1)
 
-    def validate(self) -> bool:
+    def _validate(self) -> bool:
         if game.time.phase != Time.Phase.NIGHT_MEET:
             return False
-        return super().validate()
+        return super()._validate()
 
     def _select(self) -> None:
         self.source.marks.append(self)
@@ -227,33 +252,64 @@ class Claw(PProp):
     def __init__(self, seat: int) -> None:
         super().__init__(seat, -1)
 
-    def validate(self) -> bool:
+    def _validate(self) -> bool:
         if game.time.phase != Time.Phase.NIGHT:
             return False
-        return super().validate()
+        return super()._validate()
 
     def _effect(self) -> None:
         self.target.life = False
 
 
 class Crystal(PProp):
-    def validate(self) -> bool:
+    def __init__(self, seat: int) -> None:
+        super().__init__(seat, -1)
+
+    def _validate(self) -> bool:
         if game.time.phase != Time.Phase.NIGHT:
             return False
-        return super().validate()
+        return super()._validate()
 
     def _effect(self) -> None:
-        pass
+        seat = self.target.seat
+        if self.source.role & self.target.role:
+            self.source.clues[seat].append('is not werewolf')
+        else:
+            self.source.clues[seat].append('is werewolf')
+
+    def _assess_ignore(
+        self,
+        candidate: list[tuple[float, int]],
+        seat: int,
+        intensity: float,
+    ) -> None:
+        candidate.append((3 - intensity, seat))
+
+    def _assess_allied(
+        self,
+        candidate: list[tuple[float, int]],
+        seat: int,
+        intensity: float,
+    ) -> None:
+        candidate.append((2 - intensity, seat))
+
+    def _assess_hostile(
+        self,
+        candidate: list[tuple[float, int]],
+        seat: int,
+        intensity: float,
+    ) -> None:
+        candidate.append((1 - intensity, seat))
 
 
 class Poison(PProp):
     def __init__(self, seat: int) -> None:
         super().__init__(seat, 1, 2, 1)
 
-    def validate(self) -> bool:
+    def _validate(self) -> bool:
         if game.time.phase != Time.Phase.NIGHT:
             return False
-        return super().validate()
+        return super()._validate()
 
     def _effect(self) -> None:
         self.target.life = False
@@ -263,10 +319,10 @@ class Antidote(PProp):
     def __init__(self, seat: int) -> None:
         super().__init__(seat, 1, 2, 1)
 
-    def validate(self) -> bool:
+    def _validate(self) -> bool:
         if game.time.phase != Time.Phase.NIGHT:
             return False
-        return super().validate()
+        return super()._validate()
 
     def _effect(self) -> None:
         self.target.marks = list(
@@ -290,7 +346,7 @@ class PPlayer:
         self.seat = seat
         self.props: list[PProp] = []
         self.marks: list[PProp] = []
-        self.clues: list[list[Any]] = []
+        self.clues: list[list[Any]] = []  # TODO: refactor clue
         self.attitudes: list[float] = []
         self.assumptions: list[dict[Role, float]] = []
         self.relationships: list[tuple[Relationship, float]] = []
@@ -329,6 +385,7 @@ class PPlayer:
         ]
 
     def assess(self) -> None:
+        self.attitudes[self.seat] = 1
         for seat, p_clues in enumerate(self.clues):
             if any('is werewolf' in clue for clue in p_clues):
                 if self.role & game.players[seat].role:
