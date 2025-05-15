@@ -25,7 +25,7 @@ class Role(ModifiedEnum):
             return NotImplemented
 
 
-class Attitude(ModifiedEnum):
+class Relationship(ModifiedEnum):
     IGNORE = auto()
     ALLIED = auto()
     HOSTILE = auto()
@@ -100,10 +100,10 @@ class Game:
             player.game_init()
 
     def loop(self) -> None:
-        print(self)
         for player in self.players:
             player.assess()
             player.action()
+        print(self)
         for player in self.players:
             player.execute()
             player.finalize()
@@ -128,6 +128,7 @@ class PProp:
         self.mask = mask
         self.value = 1
         self.register(seat)
+        self.aim(seat)
 
     def __str__(self) -> str:
         return f'{self.__class__.__name__}'
@@ -151,41 +152,29 @@ class PProp:
         self.source = game.players[seat]
 
     def aim(self, seat: int) -> None:
-        assert self.source
         self.target = game.players[seat]
 
     def assess(self) -> None:
         self.value = 1
-        for seat, attitude in enumerate(self.source.attitudes):
-            match attitude:
-                case Attitude.IGNORE:
+        candidate: list[tuple[float, int]] = []
+        for seat, (relationship, intensity) in enumerate(
+            self.source.relationships
+        ):
+            match relationship:
+                case Relationship.IGNORE:
+                    if game.players[seat].life:   # TODO: use clue instead
+                        candidate.append((intensity, seat))
+                case Relationship.ALLIED:
                     pass
-                case Attitude.ALLIED:
-                    pass
-                case Attitude.HOSTILE:
-                    pass
+                case Relationship.HOSTILE:
+                    if game.players[seat].life:   # TODO: use clue instead
+                        candidate.append((intensity + 1, seat))
+        if candidate:
+            target = max(candidate)[1]
+            self.aim(target)
 
     def action(self) -> None:
-        match self.source.role:
-            case Role.WEREWOLF:
-                match game.time.phase:
-                    case Time.Phase.NIGHT_MEET:
-                        if self.__class__ == Meet:
-                            self.attempt()
-                    case Time.Phase.NIGHT:
-                        if self.__class__ == Claw:
-                            self.aim(0)
-                            self.attempt()
-            case Role.WITCH:
-                if self.__class__ == Antidote:
-                    self.aim(0)
-                    self.attempt()
-                elif self.__class__ == Poison:
-                    self.aim(1)
-                    self.attempt()
-            case Role.HUNTER:
-                self.aim(2)
-                self.attempt()
+        self.attempt()
 
     def validate(self) -> bool:
         if not self.source.life:
@@ -306,7 +295,7 @@ class PPlayer:
         self.clues: list[list[Any]] = []
         self.attitudes: list[float] = []
         self.assumptions: list[dict[Role, float]] = []
-        self.relationships: list[tuple[Attitude, float]] = []
+        self.relationships: list[tuple[Relationship, float]] = []
 
     def __str__(self) -> str:
         return (
@@ -337,8 +326,9 @@ class PPlayer:
         self.assumptions = [
             {role: 0 for role in Role} for player in game.players
         ]
-        self.relationships = [(Attitude.IGNORE, 0) for player in game.players]
-        self.assess()
+        self.relationships = [
+            (Relationship.IGNORE, 0) for player in game.players
+        ]
 
     def execute(self) -> None:
         self.marks.sort()  # reverse=True)
@@ -370,11 +360,14 @@ class PPlayer:
             assumption = self.assumptions[seat]
             assumed_role = max(assumption, key=assumption.get)  # type: ignore[arg-type]
             if -1 <= attitude < -0.1:
-                self.relationships[seat] = (Attitude.HOSTILE, abs(attitude))
+                self.relationships[seat] = (
+                    Relationship.HOSTILE,
+                    abs(attitude),
+                )
             elif -0.1 <= attitude < 0.1:
-                self.relationships[seat] = (Attitude.IGNORE, 1)
+                self.relationships[seat] = (Relationship.IGNORE, 1)
             elif 0.1 <= attitude <= 1:
-                self.relationships[seat] = (Attitude.ALLIED, attitude)
+                self.relationships[seat] = (Relationship.ALLIED, attitude)
             else:
                 raise ValueError(f'wrong attitude value {attitude}')
 
