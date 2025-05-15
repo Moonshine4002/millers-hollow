@@ -172,9 +172,7 @@ class PProp:
         if candidate:
             target = max(candidate)[1]
             self.aim(target)
-
-    def action(self) -> None:
-        self.attempt()
+            self.validate()   # TODO: if validate false
 
     def validate(self) -> bool:
         if not self.source.life:
@@ -191,7 +189,7 @@ class PProp:
     def _select(self) -> None:
         self.target.marks.append(self)
 
-    def attempt(self) -> None:
+    def action(self) -> None:
         if not self.validate():
             return
         self.remain -= 1
@@ -330,20 +328,6 @@ class PPlayer:
             (Relationship.IGNORE, 0) for player in game.players
         ]
 
-    def execute(self) -> None:
-        self.marks.sort()  # reverse=True)
-        while self.marks:
-            mark = self.marks.pop()
-            mark.execute()
-
-    def finalize(self) -> None:
-        for prop in self.props:
-            prop.used = False
-
-    def deactive(self) -> None:
-        for prop in self.props:
-            prop.activate = False
-
     def assess(self) -> None:
         for seat, p_clues in enumerate(self.clues):
             if any('is werewolf' in clue for clue in p_clues):
@@ -357,6 +341,7 @@ class PPlayer:
                 else:
                     self.attitudes[seat] = -1
         for seat, attitude in enumerate(self.attitudes):
+            # TODO: assumption
             assumption = self.assumptions[seat]
             assumed_role = max(assumption, key=assumption.get)  # type: ignore[arg-type]
             if -1 <= attitude < -0.1:
@@ -377,6 +362,20 @@ class PPlayer:
     def action(self) -> None:
         for prop in self.props:
             prop.action()
+
+    def execute(self) -> None:
+        self.marks.sort()  # reverse=True)
+        while self.marks:
+            mark = self.marks.pop()
+            mark.execute()
+
+    def finalize(self) -> None:
+        for prop in self.props:
+            prop.used = False
+
+    def deactive(self) -> None:
+        for prop in self.props:
+            prop.activate = False
 
 
 class Player(PPlayer):
