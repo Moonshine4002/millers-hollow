@@ -100,36 +100,10 @@ class Game:
             player.game_init()
 
     def loop(self) -> None:
-        for player in self.players:
-            match player.role:
-                case Role.WEREWOLF:
-                    player.props[0].attempt()
-        self.proceed()
+        print(self)
         for player in self.players:
             player.assess()
-        print(self)
-        self.action()
-        print(self)
-        self.proceed()
-        self.proceed()
-        self.proceed()
-
-    def action(self) -> None:
-        for player in self.players:
-            match player.role:
-                case Role.WEREWOLF:
-                    player.props[1].aim(0)
-                    player.props[1].attempt()
-                case Role.WITCH:
-                    player.props[1].aim(0)
-                    player.props[1].attempt()
-                    player.props[0].aim(1)
-                    player.props[0].attempt()
-                case Role.HUNTER:
-                    player.props[0].aim(2)
-                    player.props[0].attempt()
-
-    def proceed(self) -> None:
+            player.action()
         for player in self.players:
             player.execute()
             player.finalize()
@@ -190,6 +164,28 @@ class PProp:
                     pass
                 case Attitude.HOSTILE:
                     pass
+
+    def action(self) -> None:
+        match self.source.role:
+            case Role.WEREWOLF:
+                match game.time.phase:
+                    case Time.Phase.NIGHT_MEET:
+                        if self.__class__ == Meet:
+                            self.attempt()
+                    case Time.Phase.NIGHT:
+                        if self.__class__ == Claw:
+                            self.aim(0)
+                            self.attempt()
+            case Role.WITCH:
+                if self.__class__ == Antidote:
+                    self.aim(0)
+                    self.attempt()
+                elif self.__class__ == Poison:
+                    self.aim(1)
+                    self.attempt()
+            case Role.HUNTER:
+                self.aim(2)
+                self.attempt()
 
     def validate(self) -> bool:
         if not self.source.life:
@@ -384,6 +380,10 @@ class PPlayer:
 
         for prop in self.props:
             prop.assess()
+
+    def action(self) -> None:
+        for prop in self.props:
+            prop.action()
 
 
 class Player(PPlayer):
