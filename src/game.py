@@ -33,12 +33,37 @@ class Attitude(ModifiedEnum):
     DECEPTIVE = auto()
 
 
-class Game:
+class Time:
     class Phase(ModifiedEnum):
+        NIGHT_MEET = auto()
         NIGHT = auto()
         DEBATE = auto()
         VOTE = auto()
 
+    def __init__(self) -> None:
+        self.cycle = 1
+        self.phase = self.first()
+
+    @classmethod
+    def first(cls) -> Phase:
+        return cls.Phase.NIGHT_MEET
+
+    def next(self) -> None:
+        match self.phase:
+            case self.Phase.NIGHT_MEET:
+                self.phase = self.Phase.NIGHT
+            case self.Phase.NIGHT:
+                self.phase = self.Phase.DEBATE
+            case self.Phase.DEBATE:
+                self.phase = self.Phase.VOTE
+            case self.Phase.VOTE:
+                self.phase = self.Phase.NIGHT_MEET
+                self.cycle += 1
+            case _:
+                raise ValueError(f'wrong phase {self.phase!r}')
+
+
+class Game:
     class PlayerInfo(NamedTuple):
         name: str
         role: Role
@@ -57,14 +82,13 @@ class Game:
 
     def __str__(self) -> str:
         return (
-            f'cycle={self.cycle}; '
-            f'phase={self.phase}; '
+            f'cycle={self.time.cycle}; '
+            f'phase={self.time.phase}; '
             f'players=\n\t{"\n\t".join(str(i) for i in self.players)}'
         )
 
     def initialize(self, players_info: Sequence[PlayerInfo]) -> None:
-        self.cycle = 1
-        self.phase = self.Phase.NIGHT
+        self.time = Time()
         self.players = [
             Player(player_info.name, player_info.role, player_info.seat)
             for player_info in players_info
@@ -76,6 +100,13 @@ class Game:
             player.game_init()
 
     def loop(self) -> None:
+        for player in self.players:
+            match player.role:
+                case Role.WEREWOLF:
+                    player.props[0].attempt()
+        self.proceed()
+        for player in self.players:
+            player.assess()
         print(self)
         self.action()
         print(self)
@@ -85,10 +116,6 @@ class Game:
 
     def action(self) -> None:
         for player in self.players:
-            match player.role:
-                case Role.WEREWOLF:
-                    player.props[0].attempt()
-            player.assess()
             match player.role:
                 case Role.WEREWOLF:
                     player.props[1].aim(0)
@@ -103,24 +130,10 @@ class Game:
                     player.props[0].attempt()
 
     def proceed(self) -> None:
-        match self.phase:
-            case self.Phase.NIGHT:
-                for player in self.players:
-                    player.execute()
-                for player in self.players:
-                    player.finalize()
-                self.phase = self.Phase.DEBATE
-            case self.Phase.DEBATE:
-                self.phase = self.Phase.VOTE
-            case self.Phase.VOTE:
-                for player in self.players:
-                    player.execute()
-                for player in self.players:
-                    player.finalize()
-                self.phase = self.Phase.NIGHT
-                self.cycle += 1
-            case _:
-                raise ValueError(f'wrong phase {self.phase}')
+        for player in self.players:
+            player.execute()
+            player.finalize()
+        self.time.next()
 
 
 game = Game()
@@ -143,7 +156,7 @@ class PProp:
         self.register(seat)
 
     def __str__(self) -> str:
-        return f'{self.__class__.__name__}(prop)'
+        return f'{self.__class__.__name__}'
 
     def _compare(self, other: Any, key: Callable[[Any, Any], bool]) -> bool:
         if isinstance(other, PProp):
@@ -167,11 +180,8 @@ class PProp:
         assert self.source
         self.target = game.players[seat]
 
-    # @abstractmethod
-    def _inference(self) -> None:
-        self.value = 1
-
     def assess(self) -> None:
+        self.value = 1
         for seat, attitude in enumerate(self.source.attitudes):
             match attitude:
                 case Attitude.IGNORE:
@@ -197,7 +207,6 @@ class PProp:
         self.target.marks.append(self)
 
     def attempt(self) -> None:
-        self._inference()
         if not self.validate():
             return
         self.remain -= 1
@@ -215,24 +224,20 @@ class PProp:
 
 class Meet(PProp):
     def __init__(self, seat: int) -> None:
-        super().__init__(seat, -1, 2, 1)
-
-    def _inference(self) -> None:
-        for player in game.players:
-            if any(isinstance(prop, Meet) for prop in player.props):
-                self.source.clues[player.seat].append('is werewolf')
-        super()._inference()
+        super().__init__(seat, -1)
 
     def validate(self) -> bool:
-        if game.phase != game.Phase.NIGHT:
+        if game.time.phase != Time.Phase.NIGHT_MEET:
             return False
         return super().validate()
 
     def _select(self) -> None:
-        pass
+        self.source.marks.append(self)
 
     def _effect(self) -> None:
-        self.target.life = False
+        for player in game.players:
+            if any(isinstance(prop, Meet) for prop in player.props):
+                self.source.clues[player.seat].append('is werewolf')
 
 
 class Claw(PProp):
@@ -240,7 +245,7 @@ class Claw(PProp):
         super().__init__(seat, -1)
 
     def validate(self) -> bool:
-        if game.phase != game.Phase.NIGHT:
+        if game.time.phase != Time.Phase.NIGHT:
             return False
         return super().validate()
 
@@ -250,7 +255,7 @@ class Claw(PProp):
 
 class Crystal(PProp):
     def validate(self) -> bool:
-        if game.phase != game.Phase.NIGHT:
+        if game.time.phase != Time.Phase.NIGHT:
             return False
         return super().validate()
 
@@ -263,7 +268,7 @@ class Poison(PProp):
         super().__init__(seat, 1, 2, 1)
 
     def validate(self) -> bool:
-        if game.phase != game.Phase.NIGHT:
+        if game.time.phase != Time.Phase.NIGHT:
             return False
         return super().validate()
 
@@ -276,7 +281,7 @@ class Antidote(PProp):
         super().__init__(seat, 1, 2, 1)
 
     def validate(self) -> bool:
-        if game.phase != game.Phase.NIGHT:
+        if game.time.phase != Time.Phase.NIGHT:
             return False
         return super().validate()
 
