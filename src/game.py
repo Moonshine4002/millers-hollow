@@ -42,6 +42,7 @@ class Game:
     class PlayerInfo(NamedTuple):
         name: str
         role: Role
+        seat: int
 
     game = None
 
@@ -65,7 +66,7 @@ class Game:
         self.cycle = 1
         self.phase = self.Phase.NIGHT
         self.players = [
-            Player(player_info.name, player_info.role)
+            Player(player_info.name, player_info.role, player_info.seat)
             for player_info in players_info
         ]
         self.game_init()
@@ -84,18 +85,21 @@ class Game:
 
     def action(self) -> None:
         for player in self.players:
+            match player.role:
+                case Role.WEREWOLF:
+                    player.props[0].attempt()
             player.assess()
             match player.role:
                 case Role.WEREWOLF:
-                    player.props[0].aim(self.players[0])
-                    player.props[0].attempt()
-                case Role.WITCH:
-                    player.props[1].aim(self.players[0])
+                    player.props[1].aim(0)
                     player.props[1].attempt()
-                    player.props[0].aim(self.players[1])
+                case Role.WITCH:
+                    player.props[1].aim(0)
+                    player.props[1].attempt()
+                    player.props[0].aim(1)
                     player.props[0].attempt()
                 case Role.HUNTER:
-                    player.props[0].aim(self.players[2])
+                    player.props[0].aim(2)
                     player.props[0].attempt()
 
     def proceed(self) -> None:
@@ -125,7 +129,7 @@ game = Game()
 class PProp:
     def __init__(
         self,
-        player: 'PPlayer',
+        seat: int,
         remain: int = 1,
         priority: int = 0,
         mask: int = 0,
@@ -135,8 +139,8 @@ class PProp:
         self.activate = False
         self.priority = priority
         self.mask = mask
-        self.register(player)
-        self._calculate()
+        self.value = 1
+        self.register(seat)
 
     def __str__(self) -> str:
         return f'{self.__class__.__name__}(prop)'
@@ -156,19 +160,28 @@ class PProp:
     def __lt__(self, other: Any) -> bool:
         return self._compare(other, lambda x, y: x < y)
 
-    def register(self, player: 'PPlayer') -> None:
-        self.source = player
+    def register(self, seat: int) -> None:
+        self.source = game.players[seat]
 
-    def aim(self, player: 'PPlayer') -> None:
+    def aim(self, seat: int) -> None:
         assert self.source
-        self.target = player
+        self.target = game.players[seat]
 
     # @abstractmethod
-    def _calculate(self) -> None:
+    def _inference(self) -> None:
         self.value = 1
 
-    @abstractmethod
-    def _validate(self) -> bool:
+    def assess(self) -> None:
+        for seat, attitude in enumerate(self.source.attitudes):
+            match attitude:
+                case Attitude.IGNORE:
+                    pass
+                case Attitude.ALLIED:
+                    pass
+                case Attitude.HOSTILE:
+                    pass
+
+    def validate(self) -> bool:
         if not self.source.life:
             return False
         if self.remain == 0:
@@ -184,8 +197,8 @@ class PProp:
         self.target.marks.append(self)
 
     def attempt(self) -> None:
-        self._calculate()
-        if not self._validate():
+        self._inference()
+        if not self.validate():
             return
         self.remain -= 1
         self.used = True
@@ -200,50 +213,72 @@ class PProp:
         self._effect()
 
 
-class Claw(PProp):
-    def __init__(self, player: 'PPlayer') -> None:
-        super().__init__(player, -1)
+class Meet(PProp):
+    def __init__(self, seat: int) -> None:
+        super().__init__(seat, -1, 2, 1)
 
-    def _validate(self) -> bool:
+    def _inference(self) -> None:
+        for player in game.players:
+            if any(isinstance(prop, Meet) for prop in player.props):
+                self.source.clues[player.seat].append('is werewolf')
+        super()._inference()
+
+    def validate(self) -> bool:
         if game.phase != game.Phase.NIGHT:
             return False
-        return super()._validate()
+        return super().validate()
+
+    def _select(self) -> None:
+        pass
+
+    def _effect(self) -> None:
+        self.target.life = False
+
+
+class Claw(PProp):
+    def __init__(self, seat: int) -> None:
+        super().__init__(seat, -1)
+
+    def validate(self) -> bool:
+        if game.phase != game.Phase.NIGHT:
+            return False
+        return super().validate()
 
     def _effect(self) -> None:
         self.target.life = False
 
 
 class Crystal(PProp):
-    def _validate(self) -> bool:
+    def validate(self) -> bool:
         if game.phase != game.Phase.NIGHT:
             return False
-        return super()._validate()
+        return super().validate()
 
     def _effect(self) -> None:
         pass
 
 
 class Poison(PProp):
-    def __init__(self, player: 'PPlayer') -> None:
-        super().__init__(player, 1, 2, 1)
+    def __init__(self, seat: int) -> None:
+        super().__init__(seat, 1, 2, 1)
 
-    def _validate(self) -> bool:
+    def validate(self) -> bool:
         if game.phase != game.Phase.NIGHT:
             return False
-        return super()._validate()
+        return super().validate()
 
     def _effect(self) -> None:
         self.target.life = False
 
 
 class Antidote(PProp):
-    def __init__(self, player: 'PPlayer') -> None:
-        super().__init__(player, 1, 2, 1)
+    def __init__(self, seat: int) -> None:
+        super().__init__(seat, 1, 2, 1)
 
-    def _validate(self) -> bool:
+    def validate(self) -> bool:
         if game.phase != game.Phase.NIGHT:
             return False
-        return super()._validate()
+        return super().validate()
 
     def _effect(self) -> None:
         self.target.marks = list(
@@ -252,56 +287,56 @@ class Antidote(PProp):
 
 
 class Shotgun(PProp):
-    def __init__(self, player: 'PPlayer') -> None:
-        super().__init__(player, 1, 4)
-
-    def _validate(self) -> bool:
-        return super()._validate()
+    def __init__(self, seat: int) -> None:
+        super().__init__(seat, 1, 4)
 
     def _effect(self) -> None:
         self.target.life = False
 
 
 class PPlayer:
-    def __init__(self, name: str, role: Role) -> None:
+    def __init__(self, name: str, role: Role, seat: int) -> None:
         self.name = name
         self.life = True
         self.role = role
+        self.seat = seat
         self.props: list[PProp] = []
-        match self.role:
-            case Role.VILLAGER:
-                pass
-            case Role.WEREWOLF:
-                self.props.append(Claw(self))
-            case Role.SEER:
-                self.props.append(Crystal(self))
-            case Role.WITCH:
-                self.props.append(Poison(self))
-                self.props.append(Antidote(self))
-            case Role.HUNTER:
-                self.props.append(Shotgun(self))
-            case _:
-                warnings.warn(f'{self.role!r} has no props added silently')
         self.marks: list[PProp] = []
-        self.attitude: dict[str, float] = {}
-        self.assumption: dict[str, dict[Role, float]] = {}
-        self.relationship: dict[str, tuple[Attitude, float]] = {}
+        self.clues: list[list[Any]] = []
+        self.attitudes: list[float] = []
+        self.assumptions: list[dict[Role, float]] = []
+        self.relationships: list[tuple[Attitude, float]] = []
 
     def __str__(self) -> str:
         return (
             f'{self.name}[{self.role}]{"†" if not self.life else ""}: '
-            f'props={", ".join(str(i) for i in self.props)}, '
-            f'marks={", ".join(str(i) for i in self.marks)}'
+            f'props={", ".join(str(i) for i in self.props)}; '
+            f'marks={", ".join(str(i) for i in self.marks)}; '
+            f'attitude={", ".join(str(i) for i in self.attitudes)}'
         )
 
     def game_init(self) -> None:
-        self.attitude = {player.name: 0 for player in game.players}
-        self.assumption = {
-            player.name: {role: 0 for role in Role} for player in game.players
-        }
-        self.relationship = {
-            player.name: (Attitude.IGNORE, 0) for player in game.players
-        }
+        match self.role:
+            case Role.VILLAGER:
+                pass
+            case Role.WEREWOLF:
+                self.props.append(Meet(self.seat))
+                self.props.append(Claw(self.seat))
+            case Role.SEER:
+                self.props.append(Crystal(self.seat))
+            case Role.WITCH:
+                self.props.append(Poison(self.seat))
+                self.props.append(Antidote(self.seat))
+            case Role.HUNTER:
+                self.props.append(Shotgun(self.seat))
+            case _:
+                warnings.warn(f'{self.role!r} has no props added silently')
+        self.clues = [[] for player in game.players]
+        self.attitudes = [0 for player in game.players]
+        self.assumptions = [
+            {role: 0 for role in Role} for player in game.players
+        ]
+        self.relationships = [(Attitude.IGNORE, 0) for player in game.players]
         self.assess()
 
     def execute(self) -> None:
@@ -319,17 +354,31 @@ class PPlayer:
             prop.activate = False
 
     def assess(self) -> None:
-        for pid, attitude in self.attitude.items():
-            assumption = self.assumption[pid]
+        for seat, p_clues in enumerate(self.clues):
+            if any('is werewolf' in clue for clue in p_clues):
+                if self.role & game.players[seat].role:
+                    self.attitudes[seat] = 1
+                else:
+                    self.attitudes[seat] = -1
+            elif any('is not werewolf' in clue for clue in p_clues):
+                if self.role & game.players[seat].role:
+                    self.attitudes[seat] = 1
+                else:
+                    self.attitudes[seat] = -1
+        for seat, attitude in enumerate(self.attitudes):
+            assumption = self.assumptions[seat]
             assumed_role = max(assumption, key=assumption.get)  # type: ignore[arg-type]
             if -1 <= attitude < -0.1:
-                self.relationship[pid] = (Attitude.HOSTILE, abs(attitude))
+                self.relationships[seat] = (Attitude.HOSTILE, abs(attitude))
             elif -0.1 <= attitude < 0.1:
-                self.relationship[pid] = (Attitude.IGNORE, 1)
+                self.relationships[seat] = (Attitude.IGNORE, 1)
             elif 0.1 <= attitude <= 1:
-                self.relationship[pid] = (Attitude.ALLIED, attitude)
+                self.relationships[seat] = (Attitude.ALLIED, attitude)
             else:
                 raise ValueError(f'wrong attitude value {attitude}')
+
+        for prop in self.props:
+            prop.assess()
 
 
 class Player(PPlayer):

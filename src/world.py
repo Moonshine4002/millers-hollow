@@ -46,9 +46,11 @@ class World:
         self.players_info: list[Game.PlayerInfo] = []
 
         random.shuffle(self.players_role)
-        for role in self.players_role:
+        for seat, role in enumerate(self.players_role):
             character = random.choice(self.character_pool)
-            self.players_info.append(Game.PlayerInfo(character.name, role))
+            self.players_info.append(
+                Game.PlayerInfo(character.name, role, seat)
+            )
 
         game.initialize(self.players_info)
 
