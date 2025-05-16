@@ -254,6 +254,10 @@ class PProp:
     def deactive(self) -> None:
         self.activate = False
 
+    # @abstractmethod
+    def _dying(self) -> None:
+        ...
+
 
 class Vote(PProp):
     def __init__(self, seat: Seat) -> None:
@@ -282,7 +286,7 @@ class Vote(PProp):
         if len(options) == 0:
             pass
         if len(options) == 1:
-            game.players[options[0]].life = False
+            game.players[options[0]].killed()
         else:
             if game.flag != 'tie':
                 game.flag = 'tie'
@@ -337,7 +341,7 @@ class Claw(PProp):
                     prop.candidates.options = [self.target.seat]
 
     def _effect(self) -> None:
-        self.target.life = False
+        self.target.killed()
 
 
 class Crystal(PProp):
@@ -376,7 +380,7 @@ class Poison(PProp):
         return super()._validate()
 
     def _effect(self) -> None:
-        self.target.life = False
+        self.target.killed()
 
 
 class Antidote(PProp):
@@ -399,8 +403,18 @@ class Shotgun(PProp):
     def __init__(self, seat: Seat) -> None:
         super().__init__(seat, 1, 4)
 
+    def _validate(self) -> bool:
+        if self.source.life:
+            return False
+        return super()._validate()
+
     def _effect(self) -> None:
-        self.target.life = False
+        self.target.killed()
+
+    def _dying(self) -> None:
+        self.mark()
+        self.action()
+        self.execute()
 
 
 class PPlayer:
@@ -435,7 +449,7 @@ class PPlayer:
             case Role.SEER:
                 self.props.append(Crystal(self.seat))
             case Role.WITCH:
-                # self.props.append(Poison(self.seat))
+                self.props.append(Poison(self.seat))
                 self.props.append(Antidote(self.seat))
             case Role.HUNTER:
                 self.props.append(Shotgun(self.seat))
@@ -449,6 +463,13 @@ class PPlayer:
         self.relationships = [
             (Relationship.IGNORE, 0) for player in game.players
         ]
+
+    def killed(self) -> None:
+        if not self.life:
+            return
+        for prop in self.props:
+            prop._dying()
+        self.life = False
 
     def assess(self) -> None:
         self.attitudes[self.seat] = 1
