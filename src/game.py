@@ -63,11 +63,14 @@ class Time:
                 raise ValueError(f'wrong phase {self.phase!r}')
 
 
+Seat: TypeAlias = int
+
+
 class Game:
     class PlayerInfo(NamedTuple):
         name: str
         role: Role
-        seat: int
+        seat: Seat
 
     game = None
 
@@ -114,13 +117,37 @@ game = Game()
 
 
 class PProp:
+    @dataclass
+    class Candidate:
+        candidates: dict[Seat, float]
+        options: list[Seat] | None = None
+
+        def clear(self) -> None:
+            self.candidates.clear()
+            self.options = None
+
+        def max(self) -> list[Seat]:
+            filtered_candidates = {
+                seat: value
+                for seat, value in self.candidates.items()
+                if self.options is None or seat in self.options
+            }
+            if not filtered_candidates:
+                return []
+            max_value = max(filtered_candidates.values())
+            return [
+                seat
+                for seat, value in filtered_candidates.items()
+                if value == max_value
+            ]
+
     class Mark(UserDict[str, 'PProp']):
         def __str__(self) -> str:
             return ', '.join(
                 cls_name
                 if prop.quantity == 1
                 else f'{cls_name}({prop.quantity})'
-                for cls_name, prop in self.data.items()
+                for cls_name, prop in self.items()
             )
 
         def get_quantity(self, key: str, default: float = 0) -> float:
@@ -131,10 +158,10 @@ class PProp:
 
         def append(self, prop: 'PProp') -> None:
             cls_name = str(prop)
-            if cls_name not in self.data:
-                self.data[cls_name] = copy.copy(prop)
+            if cls_name not in self:
+                self[cls_name] = copy.copy(prop)
             else:
-                self.data[cls_name] += prop
+                self[cls_name] += prop
 
         def remove(self, key: str) -> None:
             try:
@@ -143,15 +170,32 @@ class PProp:
                 pass
 
         def execute(self) -> None:
-            while self.data:
+            while self:
                 prior = max(self, key=self.get_quantity)
                 prop = self[prior]
                 prop.execute()
                 self.remove(prior)
 
+        def max_quantity_seats(self, prop_type: type) -> list[Seat]:
+            quantity_seat: list[tuple[float, Seat]] = []
+            for player in game.players:
+                seat = player.seat
+                quantity = player.marks.get_quantity(prop_type.__name__)
+                if quantity == 0:
+                    continue
+                quantity_seat.append((quantity, seat))
+            if not quantity_seat:
+                return []
+            max_quantity = max(quantity_seat)[0]
+            return [
+                seat
+                for quantity, seat in quantity_seat
+                if quantity == max_quantity
+            ]
+
     def __init__(
         self,
-        seat: int,
+        seat: Seat,
         remain: int = 1,
         priority: int = 0,
         mask: int = 0,
@@ -166,6 +210,7 @@ class PProp:
         self.value = 1
         self.register(seat)
         self.aim(seat)
+        self.candidates: PProp.Candidate = PProp.Candidate({})
 
     def __str__(self) -> str:
         return f'{self.__class__.__name__}'
@@ -177,55 +222,42 @@ class PProp:
             return NotImplemented
         return self
 
-    def register(self, seat: int) -> None:
+    def register(self, seat: Seat) -> None:
         self.source = game.players[seat]
 
-    def aim(self, seat: int) -> None:
+    def aim(self, seat: Seat) -> None:
         self.target = game.players[seat]
 
-    def _assess_ignore(
-        self,
-        candidate: list[tuple[float, int]],
-        seat: int,
-        intensity: float,
-    ) -> None:
-        candidate.append((intensity, seat))
+    def _assess_ignore(self, seat: Seat, intensity: float) -> None:
+        self.candidates.candidates[seat] = intensity
 
-    def _assess_allied(
-        self,
-        candidate: list[tuple[float, int]],
-        seat: int,
-        intensity: float,
-    ) -> None:
-        pass
+    def _assess_allied(self, seat: Seat, intensity: float) -> None:
+        pass  # self.candidate.candidates[seat] = 0
 
-    def _assess_hostile(
-        self,
-        candidate: list[tuple[float, int]],
-        seat: int,
-        intensity: float,
-    ) -> None:
-        candidate.append((1 + intensity, seat))
+    def _assess_hostile(self, seat: Seat, intensity: float) -> None:
+        self.candidates.candidates[seat] = 1 + intensity
 
     def assess(self) -> None:
         self.value = 1
-        candidate: list[tuple[float, int]] = []
+        self.candidates.candidates.clear()
+        self.candidates.options = [
+            player.seat for player in game.players if player.life
+        ]   # TODO: use clue instead
         for seat, (relationship, intensity) in enumerate(
             self.source.relationships
         ):
-            if not game.players[seat].life:   # TODO: use clue instead
-                continue
             match relationship:
                 case Relationship.IGNORE:
-                    self._assess_ignore(candidate, seat, intensity)
+                    self._assess_ignore(seat, intensity)
                 case Relationship.ALLIED:
-                    self._assess_allied(candidate, seat, intensity)
+                    self._assess_allied(seat, intensity)
                 case Relationship.HOSTILE:
-                    self._assess_hostile(candidate, seat, intensity)
-        if candidate:
-            target = max(candidate)[1]
-            self.aim(target)
-            self._validate()   # TODO: if validate false
+                    self._assess_hostile(seat, intensity)
+        seats = self.candidates.max()
+        for seat in seats:   # TODO
+            self.aim(seats[0])
+            if self._validate():
+                break
 
     # @abstractmethod
     def _validate(self) -> bool:
@@ -235,6 +267,11 @@ class PProp:
             return False
         if self.mask != 0 and any(
             self.mask == prop.mask and prop.used for prop in self.source.props
+        ):
+            return False
+        if (
+            self.candidates.options is not None
+            and self.target.seat not in self.candidates.candidates
         ):
             return False
         return True
@@ -261,7 +298,7 @@ class PProp:
 
 
 class Vote(PProp):
-    def __init__(self, seat: int) -> None:
+    def __init__(self, seat: Seat) -> None:
         super().__init__(seat, -1)
 
     def _validate(self) -> bool:
@@ -270,19 +307,48 @@ class Vote(PProp):
         return super()._validate()
 
     def _effect(self) -> None:
-        candidate = [
-            (player.marks.get_quantity(str(self)), player)
-            for player in game.players
-        ]
-        if candidate:
-            target = max(candidate, key=lambda key: key[0])[1]
-            target.life = False
+        candidates = PProp.Candidate(
+            {
+                player.seat: player.marks.get_quantity(str(self))
+                for player in game.players
+            },
+            [player.seat for player in game.players if player.life],
+        )
+        options = candidates.max()
+        if len(options) == 0:
+            return
+        if len(options) == 1:
+            game.players[options[0]].life = False
+        else:
+            for player in game.players:
+                for prop in player.props:
+                    if not isinstance(prop, Vote):
+                        continue
+                    prop.candidates.options = options
+                player.marks.remove(str(self))
+            for player in game.players:
+                player.assess()
+                player.action()
+
+            candidates.candidates = {
+                player.seat: player.marks.get_quantity(str(self))
+                for player in game.players
+            }
+            candidates.options = options
+            options = candidates.max()
+            if len(options) == 0:
+                return
+            if len(options) == 1:
+                game.players[options[0]].life = False
+            else:
+                pass
+
         for player in game.players:
             player.marks.remove(str(self))
 
 
 class Meet(PProp):
-    def __init__(self, seat: int) -> None:
+    def __init__(self, seat: Seat) -> None:
         super().__init__(seat, -1)
 
     def _validate(self) -> bool:
@@ -300,7 +366,7 @@ class Meet(PProp):
 
 
 class Claw(PProp):
-    def __init__(self, seat: int) -> None:
+    def __init__(self, seat: Seat) -> None:
         super().__init__(seat, -1)
 
     def _validate(self) -> bool:
@@ -313,7 +379,7 @@ class Claw(PProp):
 
 
 class Crystal(PProp):
-    def __init__(self, seat: int) -> None:
+    def __init__(self, seat: Seat) -> None:
         super().__init__(seat, -1)
 
     def _validate(self) -> bool:
@@ -328,33 +394,18 @@ class Crystal(PProp):
         else:
             self.source.clues[seat].append('is werewolf')
 
-    def _assess_ignore(
-        self,
-        candidate: list[tuple[float, int]],
-        seat: int,
-        intensity: float,
-    ) -> None:
-        candidate.append((3 - intensity, seat))
+    def _assess_ignore(self, seat: Seat, intensity: float) -> None:
+        self.candidates.candidates[seat] = 3 - intensity
 
-    def _assess_allied(
-        self,
-        candidate: list[tuple[float, int]],
-        seat: int,
-        intensity: float,
-    ) -> None:
-        candidate.append((2 - intensity, seat))
+    def _assess_allied(self, seat: Seat, intensity: float) -> None:
+        self.candidates.candidates[seat] = 2 - intensity
 
-    def _assess_hostile(
-        self,
-        candidate: list[tuple[float, int]],
-        seat: int,
-        intensity: float,
-    ) -> None:
-        candidate.append((1 - intensity, seat))
+    def _assess_hostile(self, seat: Seat, intensity: float) -> None:
+        self.candidates.candidates[seat] = 1 - intensity
 
 
 class Poison(PProp):
-    def __init__(self, seat: int) -> None:
+    def __init__(self, seat: Seat) -> None:
         super().__init__(seat, 1, 2, 1)
 
     def _validate(self) -> bool:
@@ -367,7 +418,7 @@ class Poison(PProp):
 
 
 class Antidote(PProp):
-    def __init__(self, seat: int) -> None:
+    def __init__(self, seat: Seat) -> None:
         super().__init__(seat, 1, 2, 1)
 
     def _validate(self) -> bool:
@@ -381,7 +432,7 @@ class Antidote(PProp):
 
 
 class Shotgun(PProp):
-    def __init__(self, seat: int) -> None:
+    def __init__(self, seat: Seat) -> None:
         super().__init__(seat, 1, 4)
 
     def _effect(self) -> None:
@@ -389,7 +440,7 @@ class Shotgun(PProp):
 
 
 class PPlayer:
-    def __init__(self, name: str, role: Role, seat: int) -> None:
+    def __init__(self, name: str, role: Role, seat: Seat) -> None:
         self.name = name
         self.life = True
         self.role = role

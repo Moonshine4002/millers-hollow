@@ -1,9 +1,10 @@
 from abc import abstractmethod
-from collections import UserDict
+from collections import UserList, UserDict
 from collections.abc import Callable, Sequence
 import copy
+from dataclasses import dataclass
 from enum import Enum, auto
 import random
 import time
-from typing import Self, Any, NamedTuple
+from typing import TypeAlias, Self, Any, NamedTuple
 import warnings
