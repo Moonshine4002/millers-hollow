@@ -2,6 +2,8 @@ from .header import *
 
 from .utility import *
 
+game: 'Game'
+
 
 class Role(ModifiedEnum):
     VILLAGER = 1
@@ -33,6 +35,9 @@ class Relationship(ModifiedEnum):
     DECEPTIVE = auto()
 
 
+Seat: TypeAlias = int
+
+
 class Time:
     class Phase(ModifiedEnum):
         NIGHT_MEET = auto()
@@ -57,63 +62,13 @@ class Time:
             case self.Phase.DEBATE:
                 self.phase = self.Phase.VOTE
             case self.Phase.VOTE:
+                if game.flag == 'tie':
+                    self.phase = self.Phase.DEBATE
+                    return
                 self.phase = self.Phase.NIGHT_MEET
                 self.cycle += 1
             case _:
                 raise ValueError(f'wrong phase {self.phase!r}')
-
-
-Seat: TypeAlias = int
-
-
-class Game:
-    class PlayerInfo(NamedTuple):
-        name: str
-        role: Role
-        seat: Seat
-
-    game = None
-
-    def __init__(self) -> None:
-        cls = self.__class__
-        if cls.game is None:
-            cls.game = self
-        else:
-            raise RuntimeError(f'{cls.__name__} should be a Singleton')
-
-        self.initialize([])
-
-    def __str__(self) -> str:
-        return (
-            f'cycle={self.time.cycle}; '
-            f'phase={self.time.phase}; '
-            f'players=\n\t{"\n\t".join(str(i) for i in self.players)}'
-        )
-
-    def initialize(self, players_info: Sequence[PlayerInfo]) -> None:
-        self.time = Time()
-        self.players = [
-            Player(player_info.name, player_info.role, player_info.seat)
-            for player_info in players_info
-        ]
-        self.game_init()
-
-    def game_init(self) -> None:
-        for player in self.players:
-            player.game_init()
-
-    def loop(self) -> None:
-        for player in self.players:
-            player.assess()
-            player.action()
-        print(self)
-        for player in self.players:
-            player.execute()
-            player.finalize()
-        self.time.next()
-
-
-game = Game()
 
 
 class PProp:
@@ -311,38 +266,26 @@ class Vote(PProp):
             {
                 player.seat: player.marks.get_quantity(str(self))
                 for player in game.players
-            },
-            [player.seat for player in game.players if player.life],
+            }
         )
+        if game.flag != 'tie':
+            candidates.options = [
+                player.seat for player in game.players if player.life
+            ]
+        else:
+            candidates.options = game.user
+
         options = candidates.max()
         if len(options) == 0:
-            return
+            pass
         if len(options) == 1:
             game.players[options[0]].life = False
         else:
-            for player in game.players:
-                for prop in player.props:
-                    if not isinstance(prop, Vote):
-                        continue
-                    prop.candidates.options = options
-                player.marks.remove(str(self))
-            for player in game.players:
-                player.assess()
-                player.action()
-
-            candidates.candidates = {
-                player.seat: player.marks.get_quantity(str(self))
-                for player in game.players
-            }
-            candidates.options = options
-            options = candidates.max()
-            if len(options) == 0:
-                return
-            if len(options) == 1:
-                game.players[options[0]].life = False
+            if game.flag != 'tie':
+                game.flag = 'tie'
+                game.user = options
             else:
-                pass
-
+                game.flag = ''
         for player in game.players:
             player.marks.remove(str(self))
 
@@ -536,3 +479,55 @@ class PPlayer:
 
 class Player(PPlayer):
     ...
+
+
+class Game:
+    class PlayerInfo(NamedTuple):
+        name: str
+        role: Role
+        seat: Seat
+
+    game = None
+
+    def __init__(self) -> None:
+        cls = self.__class__
+        if cls.game is None:
+            cls.game = self
+        else:
+            raise RuntimeError(f'{cls.__name__} should be a Singleton')
+
+        self.initialize([])
+
+    def __str__(self) -> str:
+        return (
+            f'cycle={self.time.cycle}; '
+            f'phase={self.time.phase}; '
+            f'players=\n\t{"\n\t".join(str(i) for i in self.players)}'
+        )
+
+    def initialize(self, players_info: Sequence[PlayerInfo]) -> None:
+        self.time = Time()
+        self.players = [
+            Player(player_info.name, player_info.role, player_info.seat)
+            for player_info in players_info
+        ]
+        self.flag = ''
+        self.user: Any = None
+        self.game_init()
+
+    def game_init(self) -> None:
+        for player in self.players:
+            player.game_init()
+
+    def loop(self) -> None:
+        for player in self.players:
+            player.assess()
+            player.action()
+        print(self)
+        for player in self.players:
+            player.execute()
+            player.finalize()
+        self.time.next()
+
+
+game = Game()
