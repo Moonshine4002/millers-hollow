@@ -114,18 +114,43 @@ game = Game()
 
 
 class PProp:
+    class Mark(UserDict[str, 'PProp']):
+        def __str__(self) -> str:
+            return ', '.join(
+                cls_name
+                if prop.quantity == 1
+                else f'{cls_name}({prop.quantity})'
+                for cls_name, prop in self.data.items()
+            )
+
+        def append(self, prop: 'PProp') -> None:
+            cls_name = str(prop)
+            if cls_name not in self.data:
+                self.data[cls_name] = copy.copy(prop)
+            else:
+                self.data[cls_name] += prop
+
+        def execute(self) -> None:
+            while self.data:
+                Prior = max(self.data, key=lambda key: self.data[key].priority)
+                prop = self.data[Prior]
+                del self.data[Prior]
+                prop.execute()
+
     def __init__(
         self,
         seat: int,
         remain: int = 1,
         priority: int = 0,
         mask: int = 0,
+        quantity: float = 1,
     ) -> None:
         self.remain = remain
         self.used = False
         self.activate = False
         self.priority = priority
         self.mask = mask
+        self.quantity = quantity
         self.value = 1
         self.register(seat)
         self.aim(seat)
@@ -133,20 +158,12 @@ class PProp:
     def __str__(self) -> str:
         return f'{self.__class__.__name__}'
 
-    def _compare(self, other: Any, key: Callable[[Any, Any], bool]) -> bool:
+    def __iadd__(self, other: Any) -> Self:
         if isinstance(other, PProp):
-            return key(self.priority, other.priority)
+            self.quantity += other.quantity
         else:
             return NotImplemented
-
-    def __eq__(self, other: Any) -> bool:
-        return self._compare(other, lambda x, y: x == y)
-
-    def __le__(self, other: Any) -> bool:
-        return self._compare(other, lambda x, y: x <= y)
-
-    def __lt__(self, other: Any) -> bool:
-        return self._compare(other, lambda x, y: x < y)
+        return self
 
     def register(self, seat: int) -> None:
         self.source = game.players[seat]
@@ -214,13 +231,14 @@ class PProp:
     def _select(self) -> None:
         self.target.marks.append(self)
 
-    def action(self) -> None:
+    def action(self) -> bool:
         if not self._validate():
-            return
+            return False
         self.remain -= 1
         self.used = True
         self.activate = True
         self._select()
+        return True
 
     @abstractmethod
     def _effect(self) -> None:
@@ -228,6 +246,36 @@ class PProp:
 
     def execute(self) -> None:
         self._effect()
+
+
+class Vote(PProp):
+    def __init__(self, seat: int) -> None:
+        super().__init__(seat, -1)
+
+    def _validate(self) -> bool:
+        if game.time.phase != Time.Phase.VOTE:
+            return False
+        return super()._validate()
+
+    def _effect(self) -> None:
+        candidate = [
+            (
+                player.marks.get(
+                    str(self), PProp(self.target.seat, quantity=0)
+                ).quantity
+                + (self.quantity if self.target.seat == player.seat else 0),
+                player,
+            )
+            for player in game.players
+        ]
+        if candidate:
+            target = max(candidate, key=lambda key: key[0])[1]
+            target.life = False
+        for player in game.players:
+            try:
+                del player.marks[str(self)]
+            except KeyError:
+                pass
 
 
 class Meet(PProp):
@@ -325,9 +373,10 @@ class Antidote(PProp):
         return super()._validate()
 
     def _effect(self) -> None:
-        self.target.marks = list(
-            filter(lambda mark: not isinstance(mark, Claw), self.target.marks)
-        )
+        try:
+            del self.target.marks[Claw.__name__]
+        except KeyError:
+            warnings.warn(f'{self} used silently')   # TODO: error
 
 
 class Shotgun(PProp):
@@ -345,7 +394,7 @@ class PPlayer:
         self.role = role
         self.seat = seat
         self.props: list[PProp] = []
-        self.marks: list[PProp] = []
+        self.marks: PProp.Mark = PProp.Mark()
         self.clues: list[list[Any]] = []  # TODO: refactor clue
         self.attitudes: list[float] = []
         self.assumptions: list[dict[Role, float]] = []
@@ -355,11 +404,12 @@ class PPlayer:
         return (
             f'{self.name}[{self.role}]{"†" if not self.life else ""}: '
             f'props={", ".join(str(i) for i in self.props)}; '
-            f'marks={", ".join(str(i) for i in self.marks)}; '
+            f'marks={self.marks}; '
             f'attitude={", ".join(str(i) for i in self.attitudes)}'
         )
 
     def game_init(self) -> None:
+        self.props.append(Vote(self.seat))
         match self.role:
             case Role.VILLAGER:
                 pass
@@ -374,7 +424,7 @@ class PPlayer:
             case Role.HUNTER:
                 self.props.append(Shotgun(self.seat))
             case _:
-                warnings.warn(f'{self.role!r} has no props added silently')
+                warnings.warn(f'{self.role} has no props added silently')
         self.clues = [[] for player in game.players]
         self.attitudes = [0 for player in game.players]
         self.assumptions = [
@@ -421,10 +471,7 @@ class PPlayer:
             prop.action()
 
     def execute(self) -> None:
-        self.marks.sort()  # reverse=True)
-        while self.marks:
-            mark = self.marks.pop()
-            mark.execute()
+        self.marks.execute()
 
     def finalize(self) -> None:
         for prop in self.props:
