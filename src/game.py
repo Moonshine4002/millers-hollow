@@ -123,6 +123,12 @@ class PProp:
                 for cls_name, prop in self.data.items()
             )
 
+        def get_quantity(self, key: str, default: float = 0) -> float:
+            try:
+                return self[key].quantity
+            except KeyError:
+                return default
+
         def append(self, prop: 'PProp') -> None:
             cls_name = str(prop)
             if cls_name not in self.data:
@@ -130,12 +136,18 @@ class PProp:
             else:
                 self.data[cls_name] += prop
 
+        def remove(self, key: str) -> None:
+            try:
+                del self[key]
+            except KeyError:
+                pass
+
         def execute(self) -> None:
             while self.data:
-                Prior = max(self.data, key=lambda key: self.data[key].priority)
-                prop = self.data[Prior]
-                del self.data[Prior]
+                prior = max(self, key=self.get_quantity)
+                prop = self[prior]
                 prop.execute()
+                self.remove(prior)
 
     def __init__(
         self,
@@ -259,23 +271,14 @@ class Vote(PProp):
 
     def _effect(self) -> None:
         candidate = [
-            (
-                player.marks.get(
-                    str(self), PProp(self.target.seat, quantity=0)
-                ).quantity
-                + (self.quantity if self.target.seat == player.seat else 0),
-                player,
-            )
+            (player.marks.get_quantity(str(self)), player)
             for player in game.players
         ]
         if candidate:
             target = max(candidate, key=lambda key: key[0])[1]
             target.life = False
         for player in game.players:
-            try:
-                del player.marks[str(self)]
-            except KeyError:
-                pass
+            player.marks.remove(str(self))
 
 
 class Meet(PProp):
@@ -368,15 +371,13 @@ class Antidote(PProp):
         super().__init__(seat, 1, 2, 1)
 
     def _validate(self) -> bool:
+        # TODO: check Claw
         if game.time.phase != Time.Phase.NIGHT:
             return False
         return super()._validate()
 
     def _effect(self) -> None:
-        try:
-            del self.target.marks[Claw.__name__]
-        except KeyError:
-            warnings.warn(f'{self} used silently')   # TODO: error
+        self.target.marks.remove(Claw.__name__)
 
 
 class Shotgun(PProp):
