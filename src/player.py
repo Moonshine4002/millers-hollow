@@ -10,30 +10,31 @@ Seat: TypeAlias = int
 
 
 class Faction:
-    _instances: dict[tuple[str, str], Self] = {}
-    # __match_args__ = (f'_{__qualname__}__faction', f'{__qualname__}__category')  # type: ignore
-
-    def __new__(cls, faction: str, category: str = 'standard') -> Self:
-        key = (faction, category)
-        if key in cls._instances:
-            return cls._instances[key]
-        instance = super().__new__(cls)
-        cls._instances[key] = instance
-        return instance
+    __match_args__ = ('faction', 'category')
 
     def __init__(self, faction: str, category: str = 'standard') -> None:
-        self.__faction = faction
-        self.__category = category
+        self.faction = faction
+        self.category = category
 
     def __str__(self) -> str:
-        return self.__faction
+        return (
+            self.faction + ''
+            if self.category == 'standard'
+            else '' + self.category
+        )
 
     def __bool__(self) -> bool:
-        return bool(self.__faction)
+        return bool(self.faction)
+
+    def eq_faction(self, value: Self) -> bool:
+        return self.faction == value.faction
+
+    def eq_category(self, value: Self) -> bool:
+        return self.category == value.category
 
     def __eq__(self, value: Any) -> bool:
         if isinstance(value, self.__class__):
-            return self.__faction == value.__faction
+            return self.eq_category(value) and self.eq_category(value)
         return NotImplemented
 
 
@@ -83,13 +84,13 @@ class Villager(BPlayer):
 
 class Werewolf(BPlayer):
     def __init__(self, character: InfoCharacter, role: InfoRole) -> None:
-        role.faction = Faction('werewolf')
+        role.faction.faction = 'werewolf'
         super().__init__(character, role)
 
 
 class Seer(BPlayer):
     def __init__(self, character: InfoCharacter, role: InfoRole) -> None:
-        role.faction = Faction('villager', 'god')
+        role.faction.category = 'god'
         super().__init__(character, role)
 
 
@@ -137,21 +138,25 @@ class Game:
         count_werewolfs = 0
         count_god = 0
         for player in self.players:
+            if not player.life:
+                continue
             match player.faction:
-                case x if x is Faction('villager', 'standard'):
+                case Faction('villager', 'standard'):
                     count_villagers += 1
-                case x if x is Faction('werewolf'):
+                case Faction('werewolf'):
                     count_werewolfs += 1
-                case x if x is Faction('villager', 'god'):
+                case Faction('villager', 'god'):
                     count_god += 1
                 case _:
                     raise NotImplementedError('unknown faction')
-        if count_villagers + count_god == 0:
+        if count_villagers + count_werewolfs + count_god == 0:
+            return Faction('nobody')
+        elif count_villagers + count_god == 0:   # count_villagers * count_god
             return Faction('werewolf')
         elif count_werewolfs == 0:
             return Faction('villager')
-        elif count_villagers + count_god < count_werewolfs:
-            return Faction('werewolf')
+        # elif count_villagers + count_god < count_werewolfs:
+        #    return Faction('werewolf')
         else:
             return Faction('')
 
@@ -161,5 +166,14 @@ print(game)
 winner = game.winner()
 if winner:
     print(winner, 'win')
+    print(
+        'winners:\n\t'
+        + '\n\t'.join(
+            str(player)
+            for player in game.players
+            if winner.eq_faction(player.faction)
+        )
+    )
+
 else:
     print('not yet')
