@@ -38,7 +38,7 @@ class Faction:
 
     def __eq__(self, value: Any) -> bool:
         if isinstance(value, self.__class__):
-            return self.eq_category(value) and self.eq_category(value)
+            return self.eq_faction(value) and self.eq_category(value)
         return NotImplemented
 
 
@@ -60,6 +60,7 @@ class Phase(NamedEnum):
     DAY = auto()
 
     FIRST = NIGHT
+    LAST = DAY
 
     def __next__(self) -> Self:
         match self:
@@ -73,9 +74,9 @@ class Phase(NamedEnum):
 
 @dataclass
 class Time:
-    cycle: int
-    phase: Phase
-    round: int = 1
+    cycle: int = 0
+    phase: Phase = Phase.LAST
+    round: int = 0
 
     def __str__(self) -> str:
         return f'{self.cycle}:{self.phase}:{self.round}'
@@ -92,7 +93,11 @@ class Time:
 
 class Clue(NamedTuple):
     time: Time
+    source: Seat | None
     clue: str
+
+    def __str__(self) -> str:
+        return f'"[{self.time}]{self.source if self.source is not None else "Moderator"}> {self.clue}"'
 
 
 class PPlayer(Protocol):
@@ -128,10 +133,20 @@ class BPlayer:
 
     def __str__(self) -> str:
         life = '☥' if self.life else '†'
-        return f'{life}{self.character}[{self.role}]: {self.clues}'
+        clues = ', '.join(str(clue) for clue in self.clues)
+        return f'{life}{self.character}[{self.role}]: [{clues}]'
 
     def choose(self, candidates: Sequence[Seat]) -> Seat:
-        return 0
+        candidate: Seat = -1
+        while candidate not in candidates:
+            candidate = Seat(input('candidate: '))
+        return candidate
+
+    def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
+        for seat in audiences:
+            game.players[seat].clues.append(
+                Clue(copy(game.time), self.role.seat, content)
+            )
 
 
 class Villager(BPlayer):
@@ -180,12 +195,18 @@ class Game:
         for seat, role in enumerate(self.roles):
             self.players.append(role(self.characters[seat], InfoRole(seat)))
 
-        self.time = Time(1, Phase.NIGHT)
+        self.time = Time()
 
     def __str__(self) -> str:
         info_player = '\n\t'.join(str(player) for player in game.players)
         info_time = str(self.time)
         return f'[{info_time}]players: \n\t{info_player}'
+
+    def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
+        for seat in audiences:
+            game.players[seat].clues.append(
+                Clue(copy(game.time), None, content)
+            )
 
     def winner(self) -> Faction:
         count_villagers = 0
@@ -216,6 +237,43 @@ class Game:
 
 
 game = Game()
+print(game)
+
+# dark
+game.time.inc_phase()
+audiences = [player.role.seat for player in game.players]
+game.boardcast(
+    audiences,
+    "It's dark, everyone close your eyes. I will talk with you/your team secretly at night.",
+)
+
+# werewolf
+game.time.inc_round()
+werewolves = [
+    player.role.seat
+    for player in game.players
+    if player.role.faction == Faction('werewolf')
+]
+game.boardcast(audiences, 'Werewolves, please open your eyes!')
+game.boardcast(audiences, 'Werewolves, I secretly tell you that ...')
+game.boardcast(
+    werewolves,
+    f'seat {werewolves} are all of the {len(werewolves)} werewolves!',
+)
+game.boardcast(
+    audiences,
+    f'Choose one from the following living options please: seat {audiences}.',
+)
+
+# seer
+game.time.inc_round()
+game.boardcast(audiences, 'Seer, please open your eyes!')
+
+# day
+game.time.inc_phase()
+game.boardcast(audiences, "It's daytime. Everyone woke up.")
+
+
 print(game)
 winner = game.winner()
 if winner:

@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from collections import UserDict, UserList
 from collections.abc import Callable, Sequence
-import copy
+from copy import copy, deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, auto
 import itertools
