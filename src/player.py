@@ -1,9 +1,13 @@
 from header import *
+from utility import *
 
 
 @dataclass
 class InfoCharacter:
     name: str
+
+    def __str__(self) -> str:
+        return f'{self.name}'
 
 
 Seat: TypeAlias = int
@@ -12,15 +16,15 @@ Seat: TypeAlias = int
 class Faction:
     __match_args__ = ('faction', 'category')
 
-    def __init__(self, faction: str, category: str = 'standard') -> None:
+    def __init__(
+        self, faction: str = 'villager', category: str = 'standard'
+    ) -> None:
         self.faction = faction
         self.category = category
 
     def __str__(self) -> str:
-        return (
-            self.faction + ''
-            if self.category == 'standard'
-            else '' + self.category
+        return self.faction + (
+            '-' + self.category if self.category != 'standard' else ''
         )
 
     def __bool__(self) -> bool:
@@ -38,16 +42,64 @@ class Faction:
         return NotImplemented
 
 
+Role: TypeAlias = str
+
+
 @dataclass
 class InfoRole:
     seat: Seat
-    faction: Faction
+    faction: Faction = field(default_factory=Faction)
+    role: Role = 'blank'
+
+    def __str__(self) -> str:
+        return f'{self.role}'
+
+
+class Phase(NamedEnum):
+    NIGHT = auto()
+    DAY = auto()
+
+    FIRST = NIGHT
+
+    def __next__(self) -> Self:
+        match self:
+            case self.DAY:
+                return self.NIGHT
+            case self.NIGHT:
+                return self.DAY
+            case _:
+                raise NotImplementedError('unknown phase')
+
+
+@dataclass
+class Time:
+    cycle: int
+    phase: Phase
+    round: int = 1
+
+    def __str__(self) -> str:
+        return f'{self.cycle}:{self.phase}:{self.round}'
+
+    def inc_phase(self) -> None:
+        self.phase = next(self.phase)
+        if self.phase == Phase.FIRST:
+            self.cycle += 1
+            self.round = 0
+
+    def inc_round(self) -> None:
+        self.round += 1
+
+
+class Clue(NamedTuple):
+    time: Time
+    clue: str
 
 
 class PPlayer(Protocol):
     life: bool
-    seat: Seat
-    faction: Faction
+    character: InfoCharacter
+    role: InfoRole
+    clues: list[Clue]
 
     def __init__(self, character: InfoCharacter, role: InfoRole) -> None:
         ...
@@ -55,6 +107,7 @@ class PPlayer(Protocol):
 
 class PGame(Protocol):
     players: list[PPlayer]
+    time: Time
 
 
 """
@@ -68,14 +121,17 @@ Faction('villager', 'god')
 class BPlayer:
     def __init__(self, character: InfoCharacter, role: InfoRole) -> None:
         self.life = True
-        self.name = character.name
-        self.seat = role.seat
-        self.faction = role.faction
+        self.character = character
+        self.role = role
+        self.role.role = self.__class__.__name__.lower()
+        self.clues: list[Clue] = []
 
     def __str__(self) -> str:
         life = '☥' if self.life else '†'
-        role = self.__class__.__name__
-        return f'{life}{self.name}[{role}]'
+        return f'{life}{self.character}[{self.role}]: {self.clues}'
+
+    def choose(self, candidates: Sequence[Seat]) -> Seat:
+        return 0
 
 
 class Villager(BPlayer):
@@ -122,16 +178,14 @@ class Game:
         random.shuffle(self.roles)
 
         for seat, role in enumerate(self.roles):
-            self.players.append(
-                role(
-                    self.characters[seat], InfoRole(seat, Faction('villager'))
-                )
-            )
+            self.players.append(role(self.characters[seat], InfoRole(seat)))
+
+        self.time = Time(1, Phase.NIGHT)
 
     def __str__(self) -> str:
-        return 'players: \n\t' + '\n\t'.join(
-            str(player) for player in game.players
-        )
+        info_player = '\n\t'.join(str(player) for player in game.players)
+        info_time = str(self.time)
+        return f'[{info_time}]players: \n\t{info_player}'
 
     def winner(self) -> Faction:
         count_villagers = 0
@@ -140,7 +194,7 @@ class Game:
         for player in self.players:
             if not player.life:
                 continue
-            match player.faction:
+            match player.role.faction:
                 case Faction('villager', 'standard'):
                     count_villagers += 1
                 case Faction('werewolf'):
@@ -171,9 +225,8 @@ if winner:
         + '\n\t'.join(
             str(player)
             for player in game.players
-            if winner.eq_faction(player.faction)
+            if winner.eq_faction(player.role.faction)
         )
     )
-
 else:
     print('not yet')

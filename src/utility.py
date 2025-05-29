@@ -1,6 +1,6 @@
-from .header import *
+from enum import Enum, auto
 
 
-class ModifiedEnum(Enum):
+class NamedEnum(Enum):
     def __str__(self) -> str:
         return f'{self.name.lower()}'

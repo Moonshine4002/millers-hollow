@@ -5,7 +5,7 @@ from .utility import *
 game: 'Game'
 
 
-class Role(ModifiedEnum):
+class Role(NamedEnum):
     VILLAGER = 1
     WEREWOLF = -1
     SEER = 2
@@ -27,7 +27,7 @@ class Role(ModifiedEnum):
             return NotImplemented
 
 
-class Relationship(ModifiedEnum):
+class Relationship(NamedEnum):
     IGNORE = auto()
     ALLIED = auto()
     HOSTILE = auto()
@@ -39,7 +39,7 @@ Seat: TypeAlias = int
 
 
 class Time:
-    class Phase(ModifiedEnum):
+    class Phase(NamedEnum):
         NIGHT_MEET = auto()
         NIGHT = auto()
         DEBATE = auto()
