@@ -6,9 +6,6 @@ from utility import *
 class InfoCharacter:
     name: str
 
-    def __str__(self) -> str:
-        return f'{self.name}'
-
 
 Seat: TypeAlias = int
 
@@ -21,11 +18,6 @@ class Faction:
     ) -> None:
         self.faction = faction
         self.category = category
-
-    def __str__(self) -> str:
-        return self.faction + (
-            '-' + self.category if self.category != 'standard' else ''
-        )
 
     def __bool__(self) -> bool:
         return bool(self.faction)
@@ -50,9 +42,6 @@ class InfoRole:
     seat: Seat
     faction: Faction = field(default_factory=Faction)
     role: Role = 'blank'
-
-    def __str__(self) -> str:
-        return f'{self.role}'
 
 
 class Phase(NamedEnum):
@@ -82,13 +71,24 @@ class Time:
         return f'{self.cycle}:{self.phase}:{self.round}'
 
     def inc_phase(self) -> None:
+        self.round = 0
         self.phase = next(self.phase)
         if self.phase == Phase.FIRST:
             self.cycle += 1
-            self.round = 0
 
     def inc_round(self) -> None:
         self.round += 1
+
+
+class Mark(NamedTuple):
+    name: str
+    source: Seat
+    target: Seat
+    func: Callable[[Seat, Seat], None]
+    priority: int = 0
+
+    def exec(self) -> None:
+        self.func(self.source, self.target)
 
 
 class Clue(NamedTuple):
@@ -109,10 +109,20 @@ class PPlayer(Protocol):
     def __init__(self, character: InfoCharacter, role: InfoRole) -> None:
         ...
 
+    def mark(self, target: Seat) -> Mark:
+        ...
+
+    def choose(self, candidates: Sequence[Seat]) -> Seat:
+        ...
+
+    def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
+        ...
+
 
 class PGame(Protocol):
-    players: list[PPlayer]
     time: Time
+    players: list[PPlayer]
+    marks: list[Mark]
 
 
 """
@@ -134,12 +144,20 @@ class BPlayer:
     def __str__(self) -> str:
         life = '☥' if self.life else '†'
         clues = ', '.join(str(clue) for clue in self.clues)
-        return f'{life}{self.character}[{self.role}]: [{clues}]'
+        return f'{life}{self.character.name}[{self.role.role}]: [{clues}]'
+
+    def mark(self, target: Seat) -> Mark:
+        return Mark(
+            self.role.role, self.role.seat, target, lambda source, target: None
+        )
 
     def choose(self, candidates: Sequence[Seat]) -> Seat:
         candidate: Seat = -1
         while candidate not in candidates:
-            candidate = Seat(input('candidate: '))
+            try:
+                candidate = Seat(input(f'[{candidates}]: '))
+            except:
+                pass
         return candidate
 
     def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
@@ -157,6 +175,12 @@ class Werewolf(BPlayer):
     def __init__(self, character: InfoCharacter, role: InfoRole) -> None:
         role.faction.faction = 'werewolf'
         super().__init__(character, role)
+
+    def mark(self, target: Seat) -> Mark:
+        def func(source: Seat, target: Seat) -> None:
+            game.players[target].life = False
+
+        return Mark(self.role.role, self.role.seat, target, func)
 
 
 class Seer(BPlayer):
@@ -189,18 +213,23 @@ class Game:
     ]
 
     def __init__(self) -> None:
+        self.time = Time()
         self.players: list[PPlayer] = []
-        random.shuffle(self.roles)
+        self.marks: list[Mark] = []
 
+        random.shuffle(self.roles)
         for seat, role in enumerate(self.roles):
             self.players.append(role(self.characters[seat], InfoRole(seat)))
 
-        self.time = Time()
-
     def __str__(self) -> str:
         info_player = '\n\t'.join(str(player) for player in game.players)
-        info_time = str(self.time)
-        return f'[{info_time}]players: \n\t{info_player}'
+        return f'[{self.time}]players: \n\t{info_player}'
+
+    def exec(self) -> None:
+        self.marks.sort(key=lambda mark: mark.priority)
+        while self.marks:
+            mark = self.marks.pop()
+            mark.exec()
 
     def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
         for seat in audiences:
@@ -241,7 +270,7 @@ print(game)
 
 # dark
 game.time.inc_phase()
-audiences = [player.role.seat for player in game.players]
+audiences = [player.role.seat for player in game.players if player.life]
 game.boardcast(
     audiences,
     "It's dark, everyone close your eyes. I will talk with you/your team secretly at night.",
@@ -264,13 +293,20 @@ game.boardcast(
     audiences,
     f'Choose one from the following living options please: seat {audiences}.',
 )
+target = game.players[werewolves[0]].choose(audiences)
+mark = game.players[werewolves[0]].mark(target)
+game.marks.append(mark)
 
 # seer
 game.time.inc_round()
 game.boardcast(audiences, 'Seer, please open your eyes!')
 
+# exec
+game.exec()
+
 # day
 game.time.inc_phase()
+audiences = [player.role.seat for player in game.players if player.life]
 game.boardcast(audiences, "It's daytime. Everyone woke up.")
 
 
