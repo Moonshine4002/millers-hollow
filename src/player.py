@@ -222,7 +222,7 @@ class Game:
             self.players.append(role(self.characters[seat], InfoRole(seat)))
 
     def __str__(self) -> str:
-        info_player = '\n\t'.join(str(player) for player in game.players)
+        info_player = '\n\t'.join(str(player) for player in self.players)
         return f'[{self.time}]players: \n\t{info_player}'
 
     def exec(self) -> None:
@@ -231,10 +231,27 @@ class Game:
             mark = self.marks.pop()
             mark.exec()
 
+    def vote(
+        self, candidates: Sequence[Seat]
+    ) -> tuple[list[Seat], list[tuple[Seat, Seat]]]:
+        votes = [0] * len(self.players)
+        record: list[tuple[Seat, Seat]] = []
+        for player in self.players:
+            if not player.life:
+                continue
+            vote = player.choose(candidates)
+            votes[vote] += 1
+            record.append((player.role.seat, vote))
+        highest = max(votes)
+        targets = [
+            index for index, value in enumerate(votes) if value == highest
+        ]
+        return targets, record
+
     def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
         for seat in audiences:
-            game.players[seat].clues.append(
-                Clue(copy(game.time), None, content)
+            self.players[seat].clues.append(
+                Clue(copy(self.time), None, content)
             )
 
     def winner(self) -> Faction:
@@ -309,6 +326,32 @@ game.time.inc_phase()
 audiences = [player.role.seat for player in game.players if player.life]
 game.boardcast(audiences, "It's daytime. Everyone woke up.")
 
+# vote
+game.boardcast(
+    audiences,
+    f"It's time to vote. Choose one from the following living options please: seat {audiences}.",
+)
+targets, record = game.vote(audiences)
+record_text = ', '.join(f'{source} vote {target}' for source, target in record)
+if len(targets) == 1:
+    game.players[targets[0]].life = False
+    game.boardcast(
+        audiences, f'{targets[0]} was eliminated. Vote result: {record_text}'
+    )
+else:
+    game.boardcast(audiences, f"It's a tie. Vote result: {record_text}")
+    targets, record = game.vote(audiences)
+    record_text = ', '.join(
+        f'{source} vote {target}' for source, target in record
+    )
+    if len(targets) == 1:
+        game.players[targets[0]].life = False
+        game.boardcast(
+            audiences,
+            f'{targets[0]} was eliminated. Vote result: {record_text}',
+        )
+    else:
+        game.boardcast(audiences, f"It's a tie. Vote result: {record_text}")
 
 print(game)
 winner = game.winner()
