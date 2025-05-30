@@ -380,7 +380,7 @@ while True:
     )
     game.boardcast(
         game.audience(),
-        f'Choose one from the following living options please: seat {audiences}.',
+        f'Werewolves, you can choose one player to kill. Who are you going to kill tonight? Choose one from the following living options to kill please: seat {audiences}.',
     )
     targets, record = game.vote(audiences, werewolves)
     target = targets[0]
@@ -393,11 +393,7 @@ while True:
     game.boardcast(game.audience(), 'Seer, please open your eyes!')
     game.boardcast(
         game.audience(),
-        "Seer, you can check one player's identity. Who are you going to verify its identity tonight?",
-    )
-    game.boardcast(
-        game.audience(),
-        f'Choose one from the following living options please: seat {audiences}.',
+        f"Seer, you can check one player's identity. Who are you going to verify its identity tonight? Choose one from the following living options please: seat {audiences}.",
     )
     if seers:
         target = game.players[seers[0]].choose(audiences)
