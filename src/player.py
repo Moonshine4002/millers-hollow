@@ -234,6 +234,7 @@ class Game:
         self.players: list[PPlayer] = []
         self.marks: list[Mark] = []
 
+        random.shuffle(self.characters)
         random.shuffle(self.roles)
         for seat, role in enumerate(self.roles):
             self.players.append(role(self.characters[seat], InfoRole(seat)))
@@ -302,6 +303,18 @@ class Game:
         else:
             return Faction('')
 
+    @functools.cache
+    def audience(self) -> list[Seat]:
+        return [player.role.seat for player in self.players]
+
+    @functools.cache
+    def audience_role(self, role: str) -> list[Seat]:
+        return [
+            player.role.seat
+            for player in self.players
+            if player.role.role == role
+        ]
+
     def alived(self) -> list[Seat]:
         return [player.role.seat for player in self.players if player.life]
 
@@ -323,7 +336,7 @@ for player in game.players:
 # rule
 audiences = game.alived()
 game.boardcast(
-    audiences,
+    game.audience(),
     "This game is called The Werewolves of Miller's Hollow. The game setup is 5 villagers, 3 werewolves, and 1 seer. Players list from seat 0 to 8.",
 )
 
@@ -333,21 +346,21 @@ while not winner:
     game.time.inc_phase()
     audiences = game.alived()
     game.boardcast(
-        audiences,
+        game.audience(),
         "It's dark, everyone close your eyes. I will talk with you/your team secretly at night.",
     )
 
     # werewolf
     game.time.inc_round()
     werewolves = game.alived_role('werewolf')
-    game.boardcast(audiences, 'Werewolves, please open your eyes!')
-    game.boardcast(audiences, 'Werewolves, I secretly tell you that ...')
+    game.boardcast(game.audience(), 'Werewolves, please open your eyes!')
+    game.boardcast(game.audience(), 'Werewolves, I secretly tell you that ...')
     game.boardcast(
-        werewolves,
+        game.audience_role('werewolf'),
         f'seat {werewolves} are all of the {len(werewolves)} werewolves!',
     )
     game.boardcast(
-        audiences,
+        game.audience(),
         f'Choose one from the following living options please: seat {audiences}.',
     )
     targets, record = game.vote(audiences, werewolves)
@@ -358,19 +371,19 @@ while not winner:
     # seer
     game.time.inc_round()
     seers = game.alived_role('seer')
-    game.boardcast(audiences, 'Seer, please open your eyes!')
+    game.boardcast(game.audience(), 'Seer, please open your eyes!')
     game.boardcast(
-        audiences,
+        game.audience(),
         "Seer, you can check one player's identity. Who are you going to verify its identity tonight?",
     )
     game.boardcast(
-        audiences,
+        game.audience(),
         f'Choose one from the following living options please: seat {audiences}.',
     )
     if seers:
         target = game.players[seers[0]].choose(audiences)
         game.boardcast(
-            seers,
+            game.audience_role('seer'),
             f'Seat {target} is {game.players[target].role.faction.faction}.',
         )
 
@@ -381,13 +394,13 @@ while not winner:
     game.time.inc_phase()
     audiences = game.alived()
     game.boardcast(
-        audiences,
+        game.audience(),
         f"It's daytime. Everyone woke up. Seat {audiences} are still alive.",
     )
 
     # speech
     game.boardcast(
-        audiences,
+        game.audience(),
         f'Now freely talk about the current situation based on your observation with a few sentences. E.g. decide whether to reveal your identity.',
     )
     for seat in audiences:
@@ -398,12 +411,12 @@ while not winner:
                 speech = input(f'{seat}> ')
             case 'ai':
                 speech = get_speech(str(player))
-        player.boardcast(audiences, speech)
+        player.boardcast(game.audience(), speech)
 
     # vote
     game.time.inc_round()
     game.boardcast(
-        audiences,
+        game.audience(),
         f"It's time to vote. Choose one from the following living options please: seat {audiences}.",
     )
     targets, record = game.vote(audiences, audiences)
@@ -411,12 +424,12 @@ while not winner:
     if len(targets) == 1:
         game.players[targets[0]].life = False
         game.boardcast(
-            audiences,
+            game.audience(),
             f'{targets[0]} was eliminated. Vote result: {record_text}.',
         )
     else:
         game.boardcast(
-            audiences,
+            game.audience(),
             f"It's a tie. Vote result: {record_text}. Choose one from voters with highest votes please: seat {targets}.",
         )
         targets, record = game.vote(targets, audiences)
@@ -426,14 +439,13 @@ while not winner:
         if len(targets) == 1:
             game.players[targets[0]].life = False
             game.boardcast(
-                audiences,
+                game.audience(),
                 f'{targets[0]} was eliminated. Vote result: {record_text}.',
             )
         else:
             game.boardcast(
-                audiences, f"It's a tie. Vote result: {record_text}."
+                game.audience(), f"It's a tie. Vote result: {record_text}."
             )
-    audiences = game.alived()
 
     # winner
     winner = game.winner()
