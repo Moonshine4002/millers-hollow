@@ -1,5 +1,5 @@
 # cache
 __pycache__/
 
-# ai
-src/ai/
+# key
+src/ai/key.py
