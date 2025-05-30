@@ -1,10 +1,13 @@
 from header import *
 from utility import *
 
+from ai.ai import get_seat, get_speech
+
 
 @dataclass
 class InfoCharacter:
     name: str
+    control: str = 'input'
 
 
 Seat: TypeAlias = int
@@ -68,8 +71,8 @@ class Phase(NamedEnum):
 
 @dataclass
 class Time:
-    cycle: int = 0
-    phase: Phase = Phase.LAST
+    cycle: int = 1
+    phase: Phase = Phase.FIRST
     round: int = 0
 
     def __str__(self) -> str:
@@ -149,7 +152,7 @@ class BPlayer:
     def __str__(self) -> str:
         life = '☥' if self.life else '†'
         clues = ', '.join(str(clue) for clue in self.clues)
-        return f'{life}{self.character.name}[{self.role.role}]: [{clues}]'
+        return f'{life}{self.character.name}(seat {self.role.seat})[{self.role.role}]: [{clues}]'
 
     def mark(self, target: Seat) -> Mark:
         return Mark(
@@ -160,7 +163,13 @@ class BPlayer:
         candidate: Seat = -1
         while candidate not in candidates:
             try:
-                candidate = Seat(input(f'[{candidates}]: '))
+                match self.character.control:
+                    case 'input':
+                        candidate = Seat(input(str(self)))
+                    case 'ai':
+                        candidate = Seat(get_seat(str(self)))
+                    case _:
+                        raise NotImplementedError('unknown control')
             except:
                 pass
         return candidate
@@ -196,13 +205,13 @@ class Seer(BPlayer):
 
 class Game:
     characters = [
-        InfoCharacter('A'),
-        InfoCharacter('B'),
-        InfoCharacter('C'),
-        InfoCharacter('D'),
-        InfoCharacter('E'),
-        InfoCharacter('F'),
-        InfoCharacter('G'),
+        InfoCharacter('A', control='ai'),
+        InfoCharacter('B', control='ai'),
+        InfoCharacter('C', control='ai'),
+        InfoCharacter('D', control='ai'),
+        InfoCharacter('E', control='ai'),
+        InfoCharacter('F', control='ai'),
+        InfoCharacter('G', control='ai'),
         InfoCharacter('H'),
         InfoCharacter('I'),
     ]
@@ -296,9 +305,22 @@ class Game:
 game = Game()
 print(game)
 
-# dark
-game.time.inc_phase()
+# rule
 audiences = game.alived()
+game.boardcast(
+    audiences,
+    """Game rules: Werewolf is a social deduction game where players are secretly assigned roles: 
+Werewolves try to eliminate Villagers, while the Seer can check one player's role each night. 
+During the day, players debate and vote to eliminate someone they suspect is a Werewolf. 
+The game ends when either all Werewolves are eliminated (Villagers win) or the Werewolves outnumber the Villagers (Werewolves win).""",
+)
+game.boardcast(
+    audiences,
+    'The game setup is three villagers, three werewolves, and one seer. Players list from seat 0 to 6.',
+)
+
+# dark
+game.time = Time()
 game.boardcast(
     audiences,
     "It's dark, everyone close your eyes. I will talk with you/your team secretly at night.",
@@ -351,7 +373,26 @@ game.exec()
 # day
 game.time.inc_phase()
 audiences = game.alived()
-game.boardcast(audiences, "It's daytime. Everyone woke up.")
+game.boardcast(
+    audiences,
+    f"It's daytime. Everyone woke up. Seat {audiences} are still alive.",
+)
+
+
+# speech
+game.boardcast(
+    audiences,
+    f'Now freely talk about the current situation based on your observation with a few sentences. E.g. decide whether to reveal your identity.',
+)
+for seat in audiences:
+    player = game.players[seat]
+    speech = ''
+    match player.character.control:
+        case 'input':
+            speech = input(str(player))
+        case 'ai':
+            speech = get_speech(str(player))
+    player.boardcast(audiences, speech)
 
 # vote
 game.boardcast(
@@ -363,20 +404,23 @@ record_text = ', '.join(f'{source}->{target}' for source, target in record)
 if len(targets) == 1:
     game.players[targets[0]].life = False
     game.boardcast(
-        audiences, f'{targets[0]} was eliminated. Vote result: {record_text}'
+        audiences, f'{targets[0]} was eliminated. Vote result: {record_text}.'
     )
 else:
-    game.boardcast(audiences, f"It's a tie. Vote result: {record_text}")
-    targets, record = game.vote(audiences, audiences)
+    game.boardcast(
+        audiences,
+        f"It's a tie. Vote result: {record_text}. Choose one from voters with highest votes please: seat {targets}.",
+    )
+    targets, record = game.vote(targets, audiences)
     record_text = ', '.join(f'{source}->{target}' for source, target in record)
     if len(targets) == 1:
         game.players[targets[0]].life = False
         game.boardcast(
             audiences,
-            f'{targets[0]} was eliminated. Vote result: {record_text}',
+            f'{targets[0]} was eliminated. Vote result: {record_text}.',
         )
     else:
-        game.boardcast(audiences, f"It's a tie. Vote result: {record_text}")
+        game.boardcast(audiences, f"It's a tie. Vote result: {record_text}.")
 
 print(game)
 winner = game.winner()
