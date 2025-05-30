@@ -71,8 +71,8 @@ class Phase(NamedEnum):
 
 @dataclass
 class Time:
-    cycle: int = 1
-    phase: Phase = Phase.FIRST
+    cycle: int = 0
+    phase: Phase = Phase.LAST
     round: int = 0
 
     def __str__(self) -> str:
@@ -205,13 +205,13 @@ class Seer(BPlayer):
 
 class Game:
     characters = [
-        InfoCharacter('A', control='ai'),
-        InfoCharacter('B', control='ai'),
-        InfoCharacter('C', control='ai'),
-        InfoCharacter('D', control='ai'),
-        InfoCharacter('E', control='ai'),
-        InfoCharacter('F', control='ai'),
-        InfoCharacter('G', control='ai'),
+        InfoCharacter('A'),
+        InfoCharacter('B'),
+        InfoCharacter('C'),
+        InfoCharacter('D'),
+        InfoCharacter('E'),
+        InfoCharacter('F'),
+        InfoCharacter('G'),
         InfoCharacter('H'),
         InfoCharacter('I'),
     ]
@@ -301,6 +301,13 @@ class Game:
     def alived(self) -> list[Seat]:
         return [player.role.seat for player in self.players if player.life]
 
+    def alived_role(self, role: str) -> list[Seat]:
+        return [
+            player.role.seat
+            for player in self.players
+            if player.life and player.role.role == role
+        ]
+
 
 game = Game()
 print(game)
@@ -309,109 +316,87 @@ print(game)
 audiences = game.alived()
 game.boardcast(
     audiences,
-    """Game rules: Werewolf is a social deduction game where players are secretly assigned roles: 
-Werewolves try to eliminate Villagers, while the Seer can check one player's role each night. 
-During the day, players debate and vote to eliminate someone they suspect is a Werewolf. 
-The game ends when either all Werewolves are eliminated (Villagers win) or the Werewolves outnumber the Villagers (Werewolves win).""",
-)
-game.boardcast(
-    audiences,
-    'The game setup is three villagers, three werewolves, and one seer. Players list from seat 0 to 6.',
+    "This game is called The Werewolves of Miller's Hollow. The game setup is three villagers, three werewolves, and one seer. Players list from seat 0 to 6.",
 )
 
-# dark
-game.time = Time()
-game.boardcast(
-    audiences,
-    "It's dark, everyone close your eyes. I will talk with you/your team secretly at night.",
-)
-
-# werewolf
-game.time.inc_round()
-werewolves = [
-    player.role.seat
-    for player in game.players
-    if player.role.faction == Faction('werewolf')
-]
-game.boardcast(audiences, 'Werewolves, please open your eyes!')
-game.boardcast(audiences, 'Werewolves, I secretly tell you that ...')
-game.boardcast(
-    werewolves,
-    f'seat {werewolves} are all of the {len(werewolves)} werewolves!',
-)
-game.boardcast(
-    audiences,
-    f'Choose one from the following living options please: seat {audiences}.',
-)
-targets, record = game.vote(audiences, werewolves)
-target = targets[0]
-mark = game.players[werewolves[0]].mark(target)
-game.marks.append(mark)
-
-# seer
-game.time.inc_round()
-seers = [
-    player.role.seat for player in game.players if player.role.role == 'seer'
-]
-game.boardcast(audiences, 'Seer, please open your eyes!')
-game.boardcast(
-    audiences,
-    "Seer, you can check one player's identity. Who are you going to verify its identity tonight?",
-)
-game.boardcast(
-    audiences,
-    f'Choose one from the following living options please: seat {audiences}.',
-)
-target = game.players[seers[0]].choose(audiences)
-game.boardcast(
-    seers, f'Seat {target} is {game.players[target].role.faction.faction}.'
-)
-
-# exec
-game.exec()
-
-# day
-game.time.inc_phase()
-audiences = game.alived()
-game.boardcast(
-    audiences,
-    f"It's daytime. Everyone woke up. Seat {audiences} are still alive.",
-)
-
-
-# speech
-game.boardcast(
-    audiences,
-    f'Now freely talk about the current situation based on your observation with a few sentences. E.g. decide whether to reveal your identity.',
-)
-for seat in audiences:
-    player = game.players[seat]
-    speech = ''
-    match player.character.control:
-        case 'input':
-            speech = input(str(player))
-        case 'ai':
-            speech = get_speech(str(player))
-    player.boardcast(audiences, speech)
-
-# vote
-game.boardcast(
-    audiences,
-    f"It's time to vote. Choose one from the following living options please: seat {audiences}.",
-)
-targets, record = game.vote(audiences, audiences)
-record_text = ', '.join(f'{source}->{target}' for source, target in record)
-if len(targets) == 1:
-    game.players[targets[0]].life = False
-    game.boardcast(
-        audiences, f'{targets[0]} was eliminated. Vote result: {record_text}.'
-    )
-else:
+winner = Faction('')
+while not winner:
+    # dark
+    game.time.inc_phase()
+    audiences = game.alived()
     game.boardcast(
         audiences,
-        f"It's a tie. Vote result: {record_text}. Choose one from voters with highest votes please: seat {targets}.",
+        "It's dark, everyone close your eyes. I will talk with you/your team secretly at night.",
     )
-    targets, record = game.vote(targets, audiences)
+
+    # werewolf
+    game.time.inc_round()
+    werewolves = game.alived_role('werewolf')
+    game.boardcast(audiences, 'Werewolves, please open your eyes!')
+    game.boardcast(audiences, 'Werewolves, I secretly tell you that ...')
+    game.boardcast(
+        werewolves,
+        f'seat {werewolves} are all of the {len(werewolves)} werewolves!',
+    )
+    game.boardcast(
+        audiences,
+        f'Choose one from the following living options please: seat {audiences}.',
+    )
+    targets, record = game.vote(audiences, werewolves)
+    target = targets[0]
+    mark = game.players[werewolves[0]].mark(target)
+    game.marks.append(mark)
+
+    # seer
+    game.time.inc_round()
+    seers = game.alived_role('seer')
+    game.boardcast(audiences, 'Seer, please open your eyes!')
+    game.boardcast(
+        audiences,
+        "Seer, you can check one player's identity. Who are you going to verify its identity tonight?",
+    )
+    game.boardcast(
+        audiences,
+        f'Choose one from the following living options please: seat {audiences}.',
+    )
+    target = game.players[seers[0]].choose(audiences)
+    game.boardcast(
+        seers, f'Seat {target} is {game.players[target].role.faction.faction}.'
+    )
+
+    # exec
+    game.exec()
+
+    # day
+    game.time.inc_phase()
+    audiences = game.alived()
+    game.boardcast(
+        audiences,
+        f"It's daytime. Everyone woke up. Seat {audiences} are still alive.",
+    )
+
+    # speech
+    game.boardcast(
+        audiences,
+        f'Now freely talk about the current situation based on your observation with a few sentences. E.g. decide whether to reveal your identity.',
+    )
+    for seat in audiences:
+        player = game.players[seat]
+        speech = ''
+        match player.character.control:
+            case 'input':
+                speech = input(str(player))
+            case 'ai':
+                speech = get_speech(str(player))
+        player.boardcast(audiences, speech)
+
+    # vote
+    game.time.inc_round()
+    game.boardcast(
+        audiences,
+        f"It's time to vote. Choose one from the following living options please: seat {audiences}.",
+    )
+    targets, record = game.vote(audiences, audiences)
     record_text = ', '.join(f'{source}->{target}' for source, target in record)
     if len(targets) == 1:
         game.players[targets[0]].life = False
@@ -420,19 +405,37 @@ else:
             f'{targets[0]} was eliminated. Vote result: {record_text}.',
         )
     else:
-        game.boardcast(audiences, f"It's a tie. Vote result: {record_text}.")
+        game.boardcast(
+            audiences,
+            f"It's a tie. Vote result: {record_text}. Choose one from voters with highest votes please: seat {targets}.",
+        )
+        targets, record = game.vote(targets, audiences)
+        record_text = ', '.join(
+            f'{source}->{target}' for source, target in record
+        )
+        if len(targets) == 1:
+            game.players[targets[0]].life = False
+            game.boardcast(
+                audiences,
+                f'{targets[0]} was eliminated. Vote result: {record_text}.',
+            )
+        else:
+            game.boardcast(
+                audiences, f"It's a tie. Vote result: {record_text}."
+            )
+    audiences = game.alived()
+
+    # winner
+    winner = game.winner()
+
+print(winner, 'win')
+print(
+    'winners:\n\t'
+    + '\n\t'.join(
+        str(player)
+        for player in game.players
+        if winner.eq_faction(player.role.faction)
+    )
+)
 
 print(game)
-winner = game.winner()
-if winner:
-    print(winner, 'win')
-    print(
-        'winners:\n\t'
-        + '\n\t'.join(
-            str(player)
-            for player in game.players
-            if winner.eq_faction(player.role.faction)
-        )
-    )
-else:
-    print('not yet')
