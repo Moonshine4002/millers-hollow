@@ -10,10 +10,15 @@ client = OpenAI(
 
 def get_seat(messages: str) -> str:
     prompt = (
-        'The info given by the user is formatted as [[your life][your name]([your seat])[[your role]]: [[clues]]]. '
-        'The clue, component of the "clues", is formatted as [[[time]][speaker]> [content]]. '
-        'Please answer the last question in the "clues" asked by the Moderator (starting with "Moderator> ") '
-        'Your answer format: [[a integer] reason: [a few sentences]], do not output any brackets.\n'
+        'You will be given a formatted input describing a game scenario. The format is:\n'
+        '[[your life][your name]([your seat])[[your role]]: [[clues]]].\n'
+        "Each 'clue' is formatted as: [[[time]][speaker]> [content]].\n\n"
+        'Task:\n'
+        "- Identify the **last question** asked by the Moderator (it will start with 'Moderator>') in the clues.\n"
+        '- Answer that question directly.\n\n'
+        'Output format:\n'
+        '<an integer> reason: <a few sentences explaining your choice>\n'
+        '(Do not keep the words in <> as they are prompts.)\n\n'
     )
     chat_completion = client.chat.completions.create(
         model=key.model,
@@ -27,21 +32,28 @@ def get_seat(messages: str) -> str:
     if not output:
         raise ValueError('empty output')
     target = output[0]
-    print(prompt + messages)
-    print(output)
+    print(messages, end='\n\n')
+    print(output, end='\n\n')
     return target
 
 
 def get_speech(messages: str) -> str:
     prompt = (
-        'The info given by the user is formatted as [[your life][your name]([your seat])[[your role]]: [[clues]]]. '
-        'The clue, component of the "clues", is formatted as [[[time]][speaker]> [content]]. '
-        'Please answer the last question in the "clues" asked by the Moderator (starting with "Moderator> ") '
-        'Your answer format: [[a few sentences] --- reason: [a few sentences]], do not output any brackets. '
-        'Please be aware that your speech ahead of the "---" are boardcast to everyone.\n'
+        'You will be given a formatted input describing a game scenario. The format is:\n'
+        '[[your life][your name]([your seat])[[your role]]: [[clues]]]\n'
+        "Each 'clue' is formatted as: [[[time]][speaker]> [content]]\n\n"
+        'Task:\n'
+        "- Identify the **last question** asked by the Moderator (it will start with 'Moderator>') in the clues.\n"
+        '- Compose a response to this question.\n'
+        '- Your response will be **broadcast to everyone**, so split your answer into two parts:\n'
+        '  1. The speech to be broadcast.\n'
+        '  2. The reasoning behind your answer.\n\n'
+        'Output format:\n'
+        '<speech to everyone> --- reason: <a few sentences explaining your choice>\n'
+        '(Do not keep the words in <> as they are prompts.)\n\n'
     )
     chat_completion = client.chat.completions.create(
-        model='glm-4',
+        model=key.model,
         messages=[
             {'role': 'system', 'content': prompt},
             {'role': 'user', 'content': messages},
@@ -52,6 +64,6 @@ def get_speech(messages: str) -> str:
     if not output:
         raise ValueError('empty output')
     target = output.split('---')[0].rstrip()
-    print(prompt + messages)
-    print(output)
+    print(messages, end='\n\n')
+    print(output, end='\n\n')
     return target

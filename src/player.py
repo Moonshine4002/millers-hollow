@@ -205,15 +205,15 @@ class Seer(BPlayer):
 
 class Game:
     characters = [
-        InfoCharacter('A'),
-        InfoCharacter('B'),
-        InfoCharacter('C'),
-        InfoCharacter('D'),
-        InfoCharacter('E'),
-        InfoCharacter('F'),
-        InfoCharacter('G'),
-        InfoCharacter('H'),
-        InfoCharacter('I'),
+        InfoCharacter('A', 'ai'),
+        InfoCharacter('B', 'ai'),
+        InfoCharacter('C', 'ai'),
+        InfoCharacter('D', 'ai'),
+        InfoCharacter('E', 'ai'),
+        InfoCharacter('F', 'ai'),
+        InfoCharacter('G', 'ai'),
+        InfoCharacter('H', 'ai'),
+        InfoCharacter('I', 'ai'),
     ]
 
     roles: list[type[PPlayer]] = [
@@ -359,10 +359,12 @@ while not winner:
         audiences,
         f'Choose one from the following living options please: seat {audiences}.',
     )
-    target = game.players[seers[0]].choose(audiences)
-    game.boardcast(
-        seers, f'Seat {target} is {game.players[target].role.faction.faction}.'
-    )
+    if seers:
+        target = game.players[seers[0]].choose(audiences)
+        game.boardcast(
+            seers,
+            f'Seat {target} is {game.players[target].role.faction.faction}.',
+        )
 
     # exec
     game.exec()
