@@ -19,6 +19,11 @@ class Faction:
         self.faction = faction
         self.category = category
 
+    def __str__(self) -> str:
+        return self.faction + (
+            '-' + self.category if self.category != 'standard' else ''
+        )
+
     def __bool__(self) -> bool:
         return bool(self.faction)
 
@@ -232,19 +237,22 @@ class Game:
             mark.exec()
 
     def vote(
-        self, candidates: Sequence[Seat]
+        self, candidates: Sequence[Seat] = [], voters: Sequence[Seat] = []
     ) -> tuple[list[Seat], list[tuple[Seat, Seat]]]:
-        votes = [0] * len(self.players)
+        ballot = [0] * len(self.players)
+        if not candidates:
+            candidates = self.alived()
+        if not voters:
+            voters = self.alived()
         record: list[tuple[Seat, Seat]] = []
-        for player in self.players:
-            if not player.life:
-                continue
+        for seat in voters:
+            player = self.players[seat]
             vote = player.choose(candidates)
-            votes[vote] += 1
+            ballot[vote] += 1
             record.append((player.role.seat, vote))
-        highest = max(votes)
+        highest = max(ballot)
         targets = [
-            index for index, value in enumerate(votes) if value == highest
+            index for index, value in enumerate(ballot) if value == highest
         ]
         return targets, record
 
@@ -258,9 +266,9 @@ class Game:
         count_villagers = 0
         count_werewolfs = 0
         count_god = 0
-        for player in self.players:
-            if not player.life:
-                continue
+        alived = self.alived()
+        for seat in alived:
+            player = self.players[seat]
             match player.role.faction:
                 case Faction('villager', 'standard'):
                     count_villagers += 1
@@ -281,13 +289,16 @@ class Game:
         else:
             return Faction('')
 
+    def alived(self) -> list[Seat]:
+        return [player.role.seat for player in self.players if player.life]
+
 
 game = Game()
 print(game)
 
 # dark
 game.time.inc_phase()
-audiences = [player.role.seat for player in game.players if player.life]
+audiences = game.alived()
 game.boardcast(
     audiences,
     "It's dark, everyone close your eyes. I will talk with you/your team secretly at night.",
@@ -310,7 +321,8 @@ game.boardcast(
     audiences,
     f'Choose one from the following living options please: seat {audiences}.',
 )
-target = game.players[werewolves[0]].choose(audiences)
+targets, record = game.vote(audiences, werewolves)
+target = targets[0]
 mark = game.players[werewolves[0]].mark(target)
 game.marks.append(mark)
 
@@ -323,7 +335,7 @@ game.exec()
 
 # day
 game.time.inc_phase()
-audiences = [player.role.seat for player in game.players if player.life]
+audiences = game.alived()
 game.boardcast(audiences, "It's daytime. Everyone woke up.")
 
 # vote
@@ -331,8 +343,8 @@ game.boardcast(
     audiences,
     f"It's time to vote. Choose one from the following living options please: seat {audiences}.",
 )
-targets, record = game.vote(audiences)
-record_text = ', '.join(f'{source} vote {target}' for source, target in record)
+targets, record = game.vote(audiences, audiences)
+record_text = ', '.join(f'{source}->{target}' for source, target in record)
 if len(targets) == 1:
     game.players[targets[0]].life = False
     game.boardcast(
@@ -340,10 +352,8 @@ if len(targets) == 1:
     )
 else:
     game.boardcast(audiences, f"It's a tie. Vote result: {record_text}")
-    targets, record = game.vote(audiences)
-    record_text = ', '.join(
-        f'{source} vote {target}' for source, target in record
-    )
+    targets, record = game.vote(audiences, audiences)
+    record_text = ', '.join(f'{source}->{target}' for source, target in record)
     if len(targets) == 1:
         game.players[targets[0]].life = False
         game.boardcast(
