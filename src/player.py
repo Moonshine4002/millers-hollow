@@ -165,7 +165,7 @@ class BPlayer:
             try:
                 match self.character.control:
                     case 'input':
-                        candidate = Seat(input(str(self)))
+                        candidate = Seat(input(f'{self.role.seat}> '))
                     case 'ai':
                         candidate = Seat(get_seat(str(self)))
                     case _:
@@ -176,9 +176,10 @@ class BPlayer:
 
     def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
         for seat in audiences:
-            game.players[seat].clues.append(
-                Clue(copy(game.time), self.role.seat, content)
-            )
+            player = game.players[seat]
+            player.clues.append(Clue(copy(game.time), self.role.seat, content))
+            if player.character.control == 'input':
+                print(f'{self.role.seat}> {content}')
 
 
 class Villager(BPlayer):
@@ -205,7 +206,7 @@ class Seer(BPlayer):
 
 class Game:
     characters = [
-        InfoCharacter('A', 'ai'),
+        InfoCharacter('A'),
         InfoCharacter('B', 'ai'),
         InfoCharacter('C', 'ai'),
         InfoCharacter('D', 'ai'),
@@ -224,6 +225,8 @@ class Game:
         Werewolf,
         Werewolf,
         Seer,
+        Villager,
+        Villager,
     ]
 
     def __init__(self) -> None:
@@ -267,9 +270,10 @@ class Game:
 
     def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
         for seat in audiences:
-            self.players[seat].clues.append(
-                Clue(copy(self.time), None, content)
-            )
+            player = self.players[seat]
+            player.clues.append(Clue(copy(self.time), None, content))
+            if player.character.control == 'input':
+                print(f'Moderator> {content}')
 
     def winner(self) -> Faction:
         count_villagers = 0
@@ -310,13 +314,17 @@ class Game:
 
 
 game = Game()
-print(game)
+log('', clear=True, end='')
+log(str(game))
+for player in game.players:
+    if player.character.control == 'input':
+        print(f'You are seat {player.role.seat}, a {player.role.role}.')
 
 # rule
 audiences = game.alived()
 game.boardcast(
     audiences,
-    "This game is called The Werewolves of Miller's Hollow. The game setup is three villagers, three werewolves, and one seer. Players list from seat 0 to 6.",
+    "This game is called The Werewolves of Miller's Hollow. The game setup is 5 villagers, 3 werewolves, and 1 seer. Players list from seat 0 to 8.",
 )
 
 winner = Faction('')
@@ -387,7 +395,7 @@ while not winner:
         speech = ''
         match player.character.control:
             case 'input':
-                speech = input(str(player))
+                speech = input(f'{seat}> ')
             case 'ai':
                 speech = get_speech(str(player))
         player.boardcast(audiences, speech)
@@ -430,8 +438,8 @@ while not winner:
     # winner
     winner = game.winner()
 
-print(winner, 'win')
-print(
+log(f'{winner} win')
+log(
     'winners:\n\t'
     + '\n\t'.join(
         str(player)
@@ -440,4 +448,4 @@ print(
     )
 )
 
-print(game)
+log(str(game))

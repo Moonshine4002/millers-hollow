@@ -1,6 +1,7 @@
 from openai import OpenAI
 
 from ai import key
+from utility import *
 
 client = OpenAI(
     api_key=key.api_key,
@@ -32,8 +33,8 @@ def get_seat(messages: str) -> str:
     if not output:
         raise ValueError('empty output')
     target = output[0]
-    print(messages, end='\n\n')
-    print(output, end='\n\n')
+    log(messages, end='\n\n')
+    log(output, end='\n\n')
     return target
 
 
@@ -64,6 +65,6 @@ def get_speech(messages: str) -> str:
     if not output:
         raise ValueError('empty output')
     target = output.split('---')[0].rstrip()
-    print(messages, end='\n\n')
-    print(output, end='\n\n')
+    log(messages, end='\n\n')
+    log(output, end='\n\n')
     return target
