@@ -9,17 +9,23 @@ client = OpenAI(
 )
 
 
-def get_seat(messages: str) -> str:
+def get_seat(messages: str, seat: int, role: str) -> str:
     prompt = (
-        'You will be given a formatted input describing a game scenario. The format is:\n'
-        '[[your life][your name]([your seat])[[your role]]: [[clues]]].\n'
-        "Each 'clue' is formatted as: [[[time]][speaker]> [content]].\n\n"
+        "You are playing a game called The Werewolves of Miller's Hollow. "
+        'Please be sure that you know the rules. '
+        'You will be given a input describing the game scenario.\n'
+        f'You are seat {seat}, and your role is {role}.\n\n'
         'Task:\n'
-        "- Identify the **last question** asked by the Moderator (it will start with 'Moderator>') in the clues.\n"
-        '- Answer that question directly.\n\n'
+        '- Try your best to win the game.\n'
+        '- You also win if your teammates win in the end.\n\n'
+        'Instructions:\n'
+        "- Identify the **last question** asked by the Moderator (it will start with 'Moderator>') that asks you to choose a seat.\n"
+        "- Choose a seat. It can either benefit or harm the target according to the Moderator's question.\n"
+        '- You must not harm yourself unless you are more likely to win by doing that.\n\n'
         'Output format:\n'
-        '<an integer> reason: <a few sentences explaining your choice>\n'
-        '(Do not keep the words in <> as they are prompts.)\n\n'
+        "<a number which is your target seat asked by the Moderator's question> reason: <a few sentences explaining your choice>\n"
+        '(Do not keep the words in <> as they are prompts.)\n'
+        '(Avoid to output anything before the interger.)\n\n'
     )
     chat_completion = client.chat.completions.create(
         model=key.model,
@@ -38,20 +44,26 @@ def get_seat(messages: str) -> str:
     return target
 
 
-def get_speech(messages: str) -> str:
+def get_speech(messages: str, seat: int, role: str) -> str:
     prompt = (
-        'You will be given a formatted input describing a game scenario. The format is:\n'
-        '[[your life][your name]([your seat])[[your role]]: [[clues]]]\n'
-        "Each 'clue' is formatted as: [[[time]][speaker]> [content]]\n\n"
+        "You are playing a game called The Werewolves of Miller's Hollow. "
+        'Please be sure that you know the rules. '
+        'You will be given a input describing the game scenario.\n'
+        f'You are seat {seat}, and your role is {role}.\n\n'
         'Task:\n'
-        "- Identify the **last question** asked by the Moderator (it will start with 'Moderator>') in the clues.\n"
+        '- Try your best to win the game.\n'
+        '- You also win if your teammates win in the end.\n\n'
+        'Instructions:\n'
+        "- Identify the **last question** asked by the Moderator (it will start with 'Moderator>') where players are asked to speak.\n"
         '- Compose a response to this question.\n'
-        '- Your response will be **broadcast to everyone**, so split your answer into two parts:\n'
+        '- Your first part of the response will be **broadcast to everyone**, so split your answer into two parts:\n'
         '  1. The speech to be broadcast.\n'
-        '  2. The reasoning behind your answer.\n\n'
+        '  2. The reasoning behind your answer.\n'
+        '- You must not harm yourself unless you are more likely to win by doing that.\n\n'
         'Output format:\n'
         '<speech to everyone> --- reason: <a few sentences explaining your choice>\n'
-        '(Do not keep the words in <> as they are prompts.)\n\n'
+        '(Do not keep the words in <> as they are prompts.)\n'
+        '(Avoid to output any newline character.)\n\n'
     )
     chat_completion = client.chat.completions.create(
         model=key.model,

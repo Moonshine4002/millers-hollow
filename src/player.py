@@ -126,6 +126,9 @@ class PPlayer(Protocol):
     def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
         ...
 
+    def text_clues(self) -> str:
+        ...
+
 
 class PGame(Protocol):
     time: Time
@@ -152,7 +155,7 @@ class BPlayer:
     def __str__(self) -> str:
         life = '☥' if self.life else '†'
         clues = ', '.join(str(clue) for clue in self.clues)
-        return f'{life}{self.character.name}(seat {self.role.seat})[{self.role.role}]: [{clues}]'
+        return f'{life}{self.character.name}(seat {self.role.seat})[{self.role.role}]'
 
     def mark(self, target: Seat) -> Mark:
         return Mark(
@@ -167,7 +170,13 @@ class BPlayer:
                     case 'input':
                         candidate = Seat(input(f'{self.role.seat}> '))
                     case 'ai':
-                        candidate = Seat(get_seat(str(self)))
+                        candidate = Seat(
+                            get_seat(
+                                self.text_clues(),
+                                self.role.seat,
+                                self.role.role,
+                            )
+                        )
                     case _:
                         raise NotImplementedError('unknown control')
             except:
@@ -180,6 +189,16 @@ class BPlayer:
             player.clues.append(Clue(copy(game.time), self.role.seat, content))
             if player.character.control == 'input':
                 print(f'{self.role.seat}> {content}')
+
+    def text_clues(self) -> str:
+        dialogues = '\n'.join(
+            f'{clue.source if clue.source is not None else "Moderator"}> {clue.clue}'
+            for clue in self.clues
+        )
+        return (
+            f'Your info:\n- Your name: {self.character.name}.\n- Your seat: {self.role.seat}.\n- Your role: {self.role.role}.\n'
+            f'Dialogues:\n{dialogues}'
+        )
 
 
 class Villager(BPlayer):
@@ -206,7 +225,7 @@ class Seer(BPlayer):
 
 class Game:
     characters = [
-        InfoCharacter('A'),
+        InfoCharacter('A', 'ai'),
         InfoCharacter('B', 'ai'),
         InfoCharacter('C', 'ai'),
         InfoCharacter('D', 'ai'),
@@ -340,8 +359,8 @@ game.boardcast(
     "This game is called The Werewolves of Miller's Hollow. The game setup is 5 villagers, 3 werewolves, and 1 seer. Players list from seat 0 to 8.",
 )
 
-winner = Faction('')
-while not winner:
+
+while True:
     # dark
     game.time.inc_phase()
     audiences = game.alived()
@@ -398,6 +417,10 @@ while not winner:
         f"It's daytime. Everyone woke up. Seat {audiences} are still alive.",
     )
 
+    # winner
+    if game.winner():
+        break
+
     # speech
     game.boardcast(
         game.audience(),
@@ -410,7 +433,9 @@ while not winner:
             case 'input':
                 speech = input(f'{seat}> ')
             case 'ai':
-                speech = get_speech(str(player))
+                speech = get_speech(
+                    player.text_clues(), player.role.seat, player.role.role
+                )
         player.boardcast(game.audience(), speech)
 
     # vote
@@ -448,9 +473,12 @@ while not winner:
             )
 
     # winner
-    winner = game.winner()
+    if game.winner():
+        break
 
+winner = game.winner()
 log(f'{winner} win')
+print(f'{winner} win')
 log(
     'winners:\n\t'
     + '\n\t'.join(
@@ -461,3 +489,4 @@ log(
 )
 
 log(str(game))
+print(str(game))
