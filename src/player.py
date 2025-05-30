@@ -328,7 +328,22 @@ game.marks.append(mark)
 
 # seer
 game.time.inc_round()
+seers = [
+    player.role.seat for player in game.players if player.role.role == 'seer'
+]
 game.boardcast(audiences, 'Seer, please open your eyes!')
+game.boardcast(
+    audiences,
+    "Seer, you can check one player's identity. Who are you going to verify its identity tonight?",
+)
+game.boardcast(
+    audiences,
+    f'Choose one from the following living options please: seat {audiences}.',
+)
+target = game.players[seers[0]].choose(audiences)
+game.boardcast(
+    seers, f'Seat {target} is {game.players[target].role.faction.faction}.'
+)
 
 # exec
 game.exec()
