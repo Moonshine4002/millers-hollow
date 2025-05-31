@@ -138,6 +138,7 @@ class PPlayer(Protocol):
     character: InfoCharacter
     role: InfoRole
     clues: list[Clue]
+    death_causes: list[str]
 
     def __init__(self, character: InfoCharacter, role: InfoRole) -> None:
         ...
@@ -159,3 +160,4 @@ class PGame(Protocol):
     time: Time
     players: list[PPlayer]
     marks: list[Mark]
+    post_marks: list[Mark]
