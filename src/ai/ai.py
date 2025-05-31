@@ -73,7 +73,7 @@ def get_seat(player: PPlayer, candidates: Sequence[Seat]) -> Seat:
                     candidate = Seat(target)
                     if candidate in candidates:
                         log(
-                            f'{player.role.seat}[{player.role.role}]~> target: {candidate}, reason: {reason}'
+                            f'{player.role.seat}[{player.role.role}]~> {candidate}: {reason}'
                         )
                         return candidate
                 except Exception as e:
@@ -121,7 +121,7 @@ def get_word(player: PPlayer, candidates: Sequence[str]) -> str:
                     candidate = target
                     if candidate in candidates:
                         log(
-                            f'{player.role.seat}[{player.role.role}]~> target: {candidate}, reason: {reason}'
+                            f'{player.role.seat}[{player.role.role}]~> {candidate}: {reason}'
                         )
                         return candidate
                 except Exception as e:
@@ -170,7 +170,7 @@ def get_speech(player: PPlayer) -> str:
                     candidate = target
                     if True:
                         log(
-                            f'{player.role.seat}[{player.role.role}]~> target: {candidate}, reason: {reason}'
+                            f'{player.role.seat}[{player.role.role}]~> {reason}'
                         )
                         return candidate
                 except Exception as e:

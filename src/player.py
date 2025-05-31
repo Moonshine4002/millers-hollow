@@ -167,12 +167,13 @@ class Game:
         content: str,
         source: str = 'Moderator',
     ) -> None:
-        log(f'{source}> {content} > {audiences}')
+        clue = Clue(copy(self.time), source, content)
+        log(f'{clue} > {audiences}')
         for seat in audiences:
             player = self.players[seat]
-            player.clues.append(Clue(copy(self.time), source, content))
+            player.clues.append(clue)
             if player.character.control == 'input':
-                print(f'{source}> {content}')
+                print(str(clue))
 
     def winner(self) -> Faction:
         count_villagers = 0
