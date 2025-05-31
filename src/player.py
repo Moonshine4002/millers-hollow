@@ -1,138 +1,6 @@
-from .utility import *
+from .header import *
 
-from .ai.ai import get_seat, get_speech
-
-
-@dataclass
-class InfoCharacter:
-    name: str
-    control: str = 'input'
-
-
-Seat: TypeAlias = int
-
-
-class Faction:
-    __match_args__ = ('faction', 'category')
-
-    def __init__(
-        self, faction: str = 'villager', category: str = 'standard'
-    ) -> None:
-        self.faction = faction
-        self.category = category
-
-    def __str__(self) -> str:
-        return self.faction + (
-            '-' + self.category if self.category != 'standard' else ''
-        )
-
-    def __bool__(self) -> bool:
-        return bool(self.faction)
-
-    def eq_faction(self, value: Self) -> bool:
-        return self.faction == value.faction
-
-    def eq_category(self, value: Self) -> bool:
-        return self.category == value.category
-
-    def __eq__(self, value: Any) -> bool:
-        if isinstance(value, self.__class__):
-            return self.eq_faction(value) and self.eq_category(value)
-        return NotImplemented
-
-
-Role: TypeAlias = str
-
-
-@dataclass
-class InfoRole:
-    seat: Seat
-    faction: Faction = field(default_factory=Faction)
-    role: Role = 'blank'
-
-
-class Phase(NamedEnum):
-    NIGHT = auto()
-    DAY = auto()
-
-    FIRST = NIGHT
-    LAST = DAY
-
-    def __next__(self) -> Self:
-        match self:
-            case self.DAY:
-                return self.NIGHT
-            case self.NIGHT:
-                return self.DAY
-            case _:
-                raise NotImplementedError('unknown phase')
-
-
-@dataclass
-class Time:
-    cycle: int = 0
-    phase: Phase = Phase.LAST
-    round: int = 0
-
-    def __str__(self) -> str:
-        return f'{self.cycle}:{self.phase}:{self.round}'
-
-    def inc_phase(self) -> None:
-        self.round = 0
-        self.phase = next(self.phase)
-        if self.phase == Phase.FIRST:
-            self.cycle += 1
-
-    def inc_round(self) -> None:
-        self.round += 1
-
-
-class Mark(NamedTuple):
-    name: str
-    source: Seat
-    target: Seat
-    func: Callable[[Seat, Seat], None]
-    priority: int = 0
-
-    def exec(self) -> None:
-        self.func(self.source, self.target)
-
-
-class Clue(NamedTuple):
-    time: Time
-    source: Seat | None
-    clue: str
-
-    def __str__(self) -> str:
-        return f'"[{self.time}]{self.source if self.source is not None else "Moderator"}> {self.clue}"'
-
-
-class PPlayer(Protocol):
-    life: bool
-    character: InfoCharacter
-    role: InfoRole
-    clues: list[Clue]
-
-    def __init__(self, character: InfoCharacter, role: InfoRole) -> None:
-        ...
-
-    def mark(self, target: Seat) -> Mark:
-        ...
-
-    def choose(self, candidates: Sequence[Seat]) -> Seat:
-        ...
-
-    def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
-        ...
-
-    def text_clues(self) -> str:
-        ...
-
-
-class PGame(Protocol):
-    time: Time
-    players: list[PPlayer]
-    marks: list[Mark]
+from .ai.ai import get_seat, get_speech, get_word
 
 
 """
@@ -153,7 +21,6 @@ class BPlayer:
 
     def __str__(self) -> str:
         life = '☥' if self.life else '†'
-        clues = ', '.join(str(clue) for clue in self.clues)
         return f'{life}{self.character.name}(seat {self.role.seat})[{self.role.role}]'
 
     def mark(self, target: Seat) -> Mark:
@@ -162,43 +29,14 @@ class BPlayer:
         )
 
     def choose(self, candidates: Sequence[Seat]) -> Seat:
-        candidate: Seat = -1
-        while candidate not in candidates:
-            try:
-                match self.character.control:
-                    case 'input':
-                        candidate = Seat(input(f'{self.role.seat}> '))
-                    case 'ai':
-                        candidate = Seat(
-                            get_seat(
-                                self.text_clues(),
-                                self.role.seat,
-                                self.role.role,
-                            )
-                        )
-                    case _:
-                        raise NotImplementedError('unknown control')
-            except Exception as e:
-                log(str(e))
-        return candidate
+        return get_seat(self, candidates)
 
     def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
-        log(f'{self.role.seat}> {content} > {audiences}')
-        for seat in audiences:
-            player = game.players[seat]
-            player.clues.append(Clue(copy(game.time), self.role.seat, content))
-            if player.character.control == 'input':
-                print(f'{self.role.seat}> {content}')
+        game.boardcast(audiences, content, str(self.role.seat))
 
     def text_clues(self) -> str:
-        dialogues = '\n'.join(
-            f'{clue.source if clue.source is not None else "Moderator"}> {clue.clue}'
-            for clue in self.clues
-        )
-        return (
-            f'Your info:\n- Your name: {self.character.name}.\n- Your seat: {self.role.seat}.\n- Your role: {self.role.role}.\n'
-            f'Dialogues:\n{dialogues}'
-        )
+        dialogues = '\n'.join(str(clue) for clue in self.clues)
+        return f'Dialogues:\n{dialogues}'
 
 
 class Villager(BPlayer):
@@ -223,17 +61,52 @@ class Seer(BPlayer):
         super().__init__(character, role)
 
 
+class Witch(BPlayer):
+    def __init__(self, character: InfoCharacter, role: InfoRole) -> None:
+        role.faction.category = 'god'
+        super().__init__(character, role)
+
+        self.antidote = True
+        self.poison = True
+        self.potion_decision = 'pass'
+
+    def mark(self, target: Seat) -> Mark:
+        def func(source: Seat, target: Seat) -> None:
+            source_player = game.players[source]
+            target_player = game.players[target]
+            if not isinstance(source_player, Witch):
+                raise TypeError('player is not a witch')
+            match source_player.potion_decision:
+                case 'antidote':
+                    source_player.antidote = False
+                    game.marks = [
+                        mark
+                        for mark in game.marks
+                        if not (
+                            mark.target == target
+                            and mark.name == Werewolf.__name__.lower()
+                        )
+                    ]
+                case 'poison':
+                    source_player.poison = False
+                    target_player.life = False
+                case _:
+                    raise ValueError('unknown potion decision')
+
+        return Mark(self.role.role, self.role.seat, target, func, priority=1)
+
+
 class Game:
     characters = [
-        InfoCharacter('A', 'ai'),
-        InfoCharacter('B', 'ai'),
-        InfoCharacter('C', 'ai'),
-        InfoCharacter('D', 'ai'),
-        InfoCharacter('E', 'ai'),
-        InfoCharacter('F', 'ai'),
-        InfoCharacter('G', 'ai'),
-        InfoCharacter('H', 'ai'),
-        InfoCharacter('I', 'ai'),
+        InfoCharacter('A'),
+        InfoCharacter('B'),
+        InfoCharacter('C'),
+        InfoCharacter('D'),
+        InfoCharacter('E'),
+        InfoCharacter('F'),
+        InfoCharacter('G'),
+        InfoCharacter('H'),
+        InfoCharacter('I'),
     ]
 
     roles: list[type[PPlayer]] = [
@@ -244,7 +117,7 @@ class Game:
         Werewolf,
         Werewolf,
         Seer,
-        Villager,
+        Witch,
         Villager,
     ]
 
@@ -288,13 +161,18 @@ class Game:
         ]
         return targets, record
 
-    def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
-        log(f'Moderator> {content} > {audiences}')
+    def boardcast(
+        self,
+        audiences: Sequence[Seat],
+        content: str,
+        source: str = 'Moderator',
+    ) -> None:
+        log(f'{source}> {content} > {audiences}')
         for seat in audiences:
             player = self.players[seat]
-            player.clues.append(Clue(copy(self.time), None, content))
+            player.clues.append(Clue(copy(self.time), source, content))
             if player.character.control == 'input':
-                print(f'Moderator> {content}')
+                print(f'{source}> {content}')
 
     def winner(self) -> Faction:
         count_villagers = 0
@@ -357,7 +235,7 @@ for player in game.players:
 audiences = game.alived()
 game.boardcast(
     game.audience(),
-    "This game is called The Werewolves of Miller's Hollow. The game setup is 5 villagers, 3 werewolves, and 1 seer. Players list from seat 0 to 8.",
+    "This game is called The Werewolves of Miller's Hollow. The game setup is 4 villagers, 3 werewolves, 1 seer, and 1 witch. Players list from seat 0 to 8.",
 )
 
 
@@ -381,12 +259,74 @@ while True:
     )
     game.boardcast(
         game.audience(),
-        f'Werewolves, you can choose one player to kill. Who are you going to kill tonight? Choose one from the following living options to kill please: seat {audiences}.',
+        (
+            f'Werewolves, you can choose one player to kill. Who are you going to kill tonight? '
+            f'Choose one from the following living options to kill please: seat {audiences}. '
+            '(The player with the highest vote count will be selected. In case of a tie, the one with the smallest seat number will be chosen.)'
+        ),
     )
     targets, record = game.vote(audiences, werewolves)
     target = targets[0]
     mark = game.players[werewolves[0]].mark(target)
     game.marks.append(mark)
+    target_for_witch = target
+
+    # witch
+    game.time.inc_round()
+    witches = game.alived_role('witch')
+    game.boardcast(game.audience(), 'Witch, please open your eyes!')
+    game.boardcast(game.audience(), f'Witch, I secretly tell you that ...')
+    game.boardcast(
+        witches,
+        f'tonight seat {target_for_witch} has been killed by the werewolves.',
+    )
+    game.boardcast(
+        game.audience(),
+        f'You have a bottle of antidote, would you like to save him/her? If so, say "save", else, say "pass".',
+    )
+    witch_decision = 'pass'
+    if witches:
+        witch = game.players[witches[0]]
+        if not isinstance(witch, Witch):
+            raise TypeError('player is not a witch')
+        if witch.antidote:
+            word = get_word(witch, ['save', 'pass']).lower()
+            match word:
+                case 'save':
+                    witch_decision = 'antidote'
+                    witch.potion_decision = 'antidote'
+                    mark = witch.mark(target_for_witch)
+                    game.marks.append(mark)
+                case 'pass':
+                    pass
+                case _:
+                    raise ValueError('value outsides candidates')
+    game.boardcast(
+        game.audience(),
+        f'Witch you decided whether to use the antidote previously. Now you also have a bottle of poison, would you like to use it to kill one of the living players? If so, say "kill", else, say "pass".',
+    )
+    if witches:
+        witch = game.players[witches[0]]
+        if not isinstance(witch, Witch):
+            raise TypeError('player is not a witch')
+        if witch_decision == 'pass' and witch.poison:
+            word = get_word(witch, ['kill', 'pass']).lower()
+            match word:
+                case 'kill':
+                    witch_decision = 'poison'
+                    witch.potion_decision = 'poison'
+                case 'pass':
+                    pass
+                case _:
+                    raise ValueError('value outsides candidates')
+        if witch_decision == 'poison':
+            game.boardcast(
+                witches,
+                f'Choose one from the following living options: {audiences}.',
+            )
+            seat = get_seat(witch, audiences)
+            mark = witch.mark(seat)
+            game.marks.append(mark)
 
     # seer
     game.time.inc_round()
@@ -436,18 +376,7 @@ while True:
         player = game.players[seat]
         speech = ''
         while not speech:
-            try:
-                match player.character.control:
-                    case 'input':
-                        speech = input(f'{seat}> ')
-                    case 'ai':
-                        speech = get_speech(
-                            player.text_clues(),
-                            player.role.seat,
-                            player.role.role,
-                        )
-            except Exception as e:
-                log(str(e))
+            speech = get_speech(player)
         player.boardcast(game.audience(), speech)
 
     # vote
@@ -489,16 +418,10 @@ while True:
         break
 
 winner = game.winner()
-log(f'{winner} win')
-print(f'{winner} win')
-log(
-    'winners:\n\t'
-    + '\n\t'.join(
-        str(player)
-        for player in game.players
-        if winner.eq_faction(player.role.faction)
-    )
-)
-
-log(str(game))
-print(str(game))
+end_message = f'{winner} win.\n' 'winners:\n\t' + '\n\t'.join(
+    str(player)
+    for player in game.players
+    if winner.eq_faction(player.role.faction)
+) + '\n' + str(game)
+print(end_message)
+log(end_message)
