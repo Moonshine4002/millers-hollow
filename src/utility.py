@@ -1,5 +1,4 @@
-from collections.abc import Sequence
-from enum import Enum, auto
+from .header import *
 
 
 class NamedEnum(Enum):

@@ -1,7 +1,6 @@
-from header import *
-from utility import *
+from .utility import *
 
-from ai.ai import get_seat, get_speech
+from .ai.ai import get_seat, get_speech
 
 
 @dataclass
@@ -407,10 +406,19 @@ while True:
 
     # day
     game.time.inc_phase()
+    audiences_old = audiences
     audiences = game.alived()
+    audiences_died = [
+        audience for audience in audiences_old if audience not in audiences
+    ]
+    summary = (
+        f'Seat {audiences_died} are killed last night.'
+        if audiences_died
+        else 'Nobody died last night.'
+    )
     game.boardcast(
         game.audience(),
-        f"It's daytime. Everyone woke up. Seat {audiences} are still alive.",
+        f"It's daytime. Everyone woke up. {summary} Seat {audiences} are still alive.",
     )
 
     # winner

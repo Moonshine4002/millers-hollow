@@ -1,7 +1,7 @@
 from openai import OpenAI
 
-from ai import key
-from utility import *
+from ..utility import log
+from . import key
 
 client = OpenAI(
     api_key=key.api_key,
@@ -21,13 +21,13 @@ def get_seat(messages: str, seat: int, role: str) -> str:
         'Instructions:\n'
         "- Identify the **last question** asked by the Moderator (it will start with 'Moderator>') that asks you to choose a seat.\n"
         "- Choose a seat. It can either benefit or harm the chosen player according to the Moderator's question.\n"
-        '- You must not harm yourself unless you are more likely to win by doing that.\n\n'
+        '- You must not harm yourself or your teammates unless you are more likely to win by doing that.\n\n'
         'Output format:\n'
-        '<number> reason: <reason>\n'
-        "(<number> is your chosen seat asked by the Moderator's question. Avoid to output anything before <number>.)\n"
+        'Reason: <reason> --- <number>\n'
+        "(<number> is your chosen seat asked by the Moderator's question. You MUST only output the number.)\n"
         '(<reason> is a few sentences explaining your choice.)\n'
-        '(Your <number> and <reason> should match and make your winning rate higher. Do NOT contradict your <reason> with your <number>.)\n'
-        '(Do not keep the words in <> as they are prompts.)\n\n'
+        '(Do not keep the words in <> as they are prompts.)\n'
+        '(Do not output any newline character.)\n\n'
     )
     chat_completion = client.chat.completions.create(
         model=key.model,
@@ -40,7 +40,7 @@ def get_seat(messages: str, seat: int, role: str) -> str:
     output = chat_completion.choices[0].message.content
     if not output:
         raise ValueError('empty output')
-    target = output[0]
+    target = output.split('---')[-1].lstrip().rstrip()
     log(messages, end='\n\n')
     log(output, end='\n\n')
     return target
@@ -58,14 +58,14 @@ def get_speech(messages: str, seat: int, role: str) -> str:
         'Instructions:\n'
         "- Identify the **last question** asked by the Moderator (it will start with 'Moderator>') where players are asked to speak.\n"
         '- Compose a response to this question.\n'
-        '- Your first part of the response will be **broadcast to everyone**, so split your answer into two parts:\n'
-        '  1. The speech to be broadcast.\n'
-        '  2. The reasoning behind your answer.\n'
-        '- You must not harm yourself unless you are more likely to win by doing that.\n\n'
+        '- Your second part of the response will be **broadcast to everyone**, so split your answer into two parts:\n'
+        '  1. The reasoning behind your speech.\n'
+        '  2. The speech to be broadcast.\n'
+        '- You must not harm yourself or your teammates unless you are more likely to win by doing that.\n\n'
         'Output format:\n'
-        '<speech to everyone> --- reason: <a few sentences explaining your choice>\n'
+        'Reason: <a few sentences explaining your choice> --- <speech to everyone>\n'
         '(Do not keep the words in <> as they are prompts.)\n'
-        '(Avoid to output any newline character.)\n\n'
+        '(Do not output any newline character.)\n\n'
     )
     chat_completion = client.chat.completions.create(
         model=key.model,
@@ -78,7 +78,7 @@ def get_speech(messages: str, seat: int, role: str) -> str:
     output = chat_completion.choices[0].message.content
     if not output:
         raise ValueError('empty output')
-    target = output.split('---')[0].rstrip()
+    target = output.split('---')[-1].lstrip().rstrip()
     log(messages, end='\n\n')
     log(output, end='\n\n')
     return target
