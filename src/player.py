@@ -178,11 +178,12 @@ class BPlayer:
                         )
                     case _:
                         raise NotImplementedError('unknown control')
-            except:
-                pass
+            except Exception as e:
+                log(str(e))
         return candidate
 
     def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
+        log(f'{self.role.seat}> {content} > {audiences}')
         for seat in audiences:
             player = game.players[seat]
             player.clues.append(Clue(copy(game.time), self.role.seat, content))
@@ -288,6 +289,7 @@ class Game:
         return targets, record
 
     def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
+        log(f'Moderator> {content} > {audiences}')
         for seat in audiences:
             player = self.players[seat]
             player.clues.append(Clue(copy(self.time), None, content))
@@ -433,13 +435,19 @@ while True:
     for seat in audiences:
         player = game.players[seat]
         speech = ''
-        match player.character.control:
-            case 'input':
-                speech = input(f'{seat}> ')
-            case 'ai':
-                speech = get_speech(
-                    player.text_clues(), player.role.seat, player.role.role
-                )
+        while not speech:
+            try:
+                match player.character.control:
+                    case 'input':
+                        speech = input(f'{seat}> ')
+                    case 'ai':
+                        speech = get_speech(
+                            player.text_clues(),
+                            player.role.seat,
+                            player.role.role,
+                        )
+            except Exception as e:
+                log(str(e))
         player.boardcast(game.audience(), speech)
 
     # vote

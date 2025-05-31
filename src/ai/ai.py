@@ -40,9 +40,14 @@ def get_seat(messages: str, seat: int, role: str) -> str:
     output = chat_completion.choices[0].message.content
     if not output:
         raise ValueError('empty output')
-    target = output.split('---')[-1].lstrip().rstrip()
-    log(messages, end='\n\n')
-    log(output, end='\n\n')
+    if '---' not in output:
+        raise ValueError('wrong format')
+    output_split = output.split('---')
+    if len(output_split) != 2:
+        raise ValueError('wrong format')
+    reason = output_split[0].lstrip().rstrip()
+    target = output_split[-1].lstrip().rstrip()
+    log(f'{seat}[{role}]~> target: {target}, reason: {reason}')
     return target
 
 
@@ -78,7 +83,12 @@ def get_speech(messages: str, seat: int, role: str) -> str:
     output = chat_completion.choices[0].message.content
     if not output:
         raise ValueError('empty output')
-    target = output.split('---')[-1].lstrip().rstrip()
-    log(messages, end='\n\n')
-    log(output, end='\n\n')
+    if '---' not in output:
+        raise ValueError('wrong format')
+    output_split = output.split('---')
+    if len(output_split) != 2:
+        raise ValueError('wrong format')
+    reason = output_split[0].lstrip().rstrip()
+    target = output_split[-1].lstrip().rstrip()
+    log(f'{seat}[{role}]~> target: {target}, reason: {reason}')
     return target
