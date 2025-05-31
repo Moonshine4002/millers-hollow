@@ -363,6 +363,20 @@ while True:
         f"It's daytime. Everyone woke up. {summary} Seat {audiences} are still alive.",
     )
 
+    # testament
+    if game.time.cycle == 1:
+        game.boardcast(
+            game.audience(),
+            f"Since it's the first day, we are able to hear the last words of those who are dying.",
+        )
+        game.boardcast(
+            audiences_died, 'You are dying, any last words (a few sentences)?'
+        )
+        for seat in audiences_died:
+            player = game.players[seat]
+            speech = get_speech(player)
+            player.boardcast(game.audience(), speech)
+
     # winner
     if game.winner():
         break
@@ -374,9 +388,7 @@ while True:
     )
     for seat in audiences:
         player = game.players[seat]
-        speech = ''
-        while not speech:
-            speech = get_speech(player)
+        speech = get_speech(player)
         player.boardcast(game.audience(), speech)
 
     # vote

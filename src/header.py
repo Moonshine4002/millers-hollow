@@ -101,7 +101,7 @@ class Time:
     round: int = 0
 
     def __str__(self) -> str:
-        return f'cycle {self.cycle}-{self.phase}-round {self.round}'
+        return f'cycle {self.cycle} - {self.phase} - round {self.round}'
 
     def inc_phase(self) -> None:
         self.round = 0
