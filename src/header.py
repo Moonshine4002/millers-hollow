@@ -14,18 +14,21 @@ import warnings
 
 DEBUG = True
 
+from . import user_data
+
 
 class NamedEnum(Enum):
     def __str__(self) -> str:
         return f'{self.name.lower()}'
 
 
-def log(text: str, clear: bool = False, end: str = '\n') -> None:
-    if clear:
-        with open('log.txt', 'w', encoding='utf-8') as file:
-            pass
+def log_clear() -> None:
+    with open(f'log_{user_data.model}.log', 'w', encoding='utf-8') as file:
+        pass
 
-    with open('log.txt', 'a', encoding='utf-8') as file:
+
+def log(text: str, end: str = '\n') -> None:
+    with open(f'log_{user_data.model}.log', 'a', encoding='utf-8') as file:
         file.write(text)
         file.write(end)
 

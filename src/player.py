@@ -1,7 +1,7 @@
 from .header import *
 
 from .ai import get_seat, get_speech, get_word
-from . import key
+from . import user_data
 
 """
 Factions:
@@ -160,9 +160,9 @@ class Game:
         random.shuffle(self.roles)
         for seat, role in enumerate(self.roles):
             self.players.append(role(self.characters[seat], InfoRole(seat)))
-        if key.user_name:
+        if user_data.user_name:
             random.choice(self.players).character = InfoCharacter(
-                key.user_name
+                user_data.user_name
             )
 
     def __str__(self) -> str:
@@ -482,7 +482,7 @@ class Game:
 
 
 game = Game()
-log('', clear=True, end='')
+log_clear()
 log(str(game))
 for player in game.players:
     if player.character.control == 'input':

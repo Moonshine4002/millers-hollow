@@ -1,11 +1,14 @@
 from openai import OpenAI
+from openai.types.chat.chat_completion_message_param import (
+    ChatCompletionMessageParam,
+)
 
 from .header import *
-from . import key
+from . import user_data
 
 client = OpenAI(
-    api_key=key.api_key,
-    base_url=key.base_url,
+    api_key=user_data.api_key,
+    base_url=user_data.base_url,
 )
 
 
@@ -13,13 +16,23 @@ def control_input(prompt: str) -> str:
     return input(prompt)
 
 
-def control_ai(prompt: str, message: str) -> tuple[str, str]:
+def control_ai(player: PPlayer, prompt: str) -> tuple[str, str]:
+    messages: list[ChatCompletionMessageParam] = [
+        {'role': 'system', 'content': prompt},
+    ]
+    for clue in player.clues:
+        d: ChatCompletionMessageParam = {
+            'role': 'user',
+            'content': clue.clue,
+            'name': clue.source,
+        }
+        # if clue.source == 'Moderator':
+        #    d['role'] = 'system'
+        messages.append(d)
+
     chat_completion = client.chat.completions.create(
-        model=key.model,
-        messages=[
-            {'role': 'system', 'content': prompt},
-            {'role': 'user', 'content': message},
-        ],
+        model=user_data.model,
+        messages=messages,
     )
     output = chat_completion.choices[0].message.content
     if not output:
@@ -54,7 +67,6 @@ def get_seat(player: PPlayer, candidates: Sequence[Seat]) -> Seat:
         '(Do not keep the words in <> as they are prompts.)\n'
         '(Do not output any newline character.)\n\n'
     )
-    message = player.text_clues()
 
     match player.character.control:
         case 'input':
@@ -71,7 +83,7 @@ def get_seat(player: PPlayer, candidates: Sequence[Seat]) -> Seat:
         case 'ai':
             while True:
                 try:
-                    reason, target = control_ai(prompt, message)
+                    reason, target = control_ai(player, prompt)
                     candidate = Seat(target)
                     if candidate in candidates:
                         log(
@@ -106,7 +118,6 @@ def get_word(player: PPlayer, candidates: Sequence[str]) -> str:
         '(Do not keep the words in <> as they are prompts.)\n'
         '(Do not output any newline character.)\n\n'
     )
-    message = player.text_clues()
 
     match player.character.control:
         case 'input':
@@ -123,7 +134,7 @@ def get_word(player: PPlayer, candidates: Sequence[str]) -> str:
         case 'ai':
             while True:
                 try:
-                    reason, target = control_ai(prompt, message)
+                    reason, target = control_ai(player, prompt)
                     candidate = target
                     if candidate in candidates:
                         log(
@@ -159,7 +170,6 @@ def get_speech(player: PPlayer) -> str:
         '(Do not keep the words in <> as they are prompts.)\n'
         '(Do not output any newline character.)\n\n'
     )
-    message = player.text_clues()
 
     match player.character.control:
         case 'input':
@@ -174,7 +184,7 @@ def get_speech(player: PPlayer) -> str:
         case 'ai':
             while True:
                 try:
-                    reason, target = control_ai(prompt, message)
+                    reason, target = control_ai(player, prompt)
                     candidate = target
                     if True:
                         log(

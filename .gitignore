@@ -1,6 +1,6 @@
 # cache
 __pycache__/
-log*.*
+*.log
 
-# key
-src/key.py
+# user data
+user*.py
