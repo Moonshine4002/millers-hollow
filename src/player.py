@@ -223,7 +223,7 @@ class Game:
             if player.character.control == 'input':
                 print(str(clue))
 
-    def testament(self) -> None:
+    def testament(self, audiences_died: Sequence[Seat]) -> None:
         for seat in audiences_died:
             player = game.players[seat]
             if (
@@ -295,7 +295,6 @@ for player in game.players:
         print(f'You are seat {player.role.seat}, a {player.role.role}.')
 
 # rule
-audiences = game.alived()
 game.boardcast(
     game.audience(),
     "This game is called The Werewolves of Miller's Hollow. The game setup is 3 villagers, 3 werewolves, 1 seer, 1 witch, and 1 hunter. Players list from seat 0 to 8.",
@@ -305,7 +304,7 @@ game.boardcast(
 while True:
     # dark
     game.time.inc_phase()
-    audiences = game.alived()
+    alived_old = game.alived()
     game.boardcast(
         game.audience(),
         "It's dark, everyone close your eyes. I will talk with you/your team secretly at night.",
@@ -324,11 +323,11 @@ while True:
         game.audience(),
         (
             f'Werewolves, you can choose one player to kill. Who are you going to kill tonight? '
-            f'Choose one from the following living options to kill please: seat {audiences}. '
+            f'Choose one from the following living options to kill please: seat {alived_old}. '
             '(The player with the highest vote count will be selected. In case of a tie, the one with the smallest seat number will be chosen.)'
         ),
     )
-    targets, record = game.vote(audiences, werewolves)
+    targets, record = game.vote(alived_old, werewolves)
     target = targets[0]
     mark = game.players[werewolves[0]].mark(target)
     game.marks.append(mark)
@@ -385,9 +384,9 @@ while True:
         if witch_decision == 'poison':
             game.boardcast(
                 witches,
-                f'Choose one from the following living options: {audiences}.',
+                f'Choose one from the following living options: {alived_old}.',
             )
-            seat = get_seat(witch, audiences)
+            seat = get_seat(witch, alived_old)
             mark = witch.mark(seat)
             game.marks.append(mark)
 
@@ -397,10 +396,10 @@ while True:
     game.boardcast(game.audience(), 'Seer, please open your eyes!')
     game.boardcast(
         game.audience(),
-        f"Seer, you can check one player's identity. Who are you going to verify its identity tonight? Choose one from the following living options please: seat {audiences}.",
+        f"Seer, you can check one player's identity. Who are you going to verify its identity tonight? Choose one from the following living options please: seat {alived_old}.",
     )
     if seers:
-        target = game.players[seers[0]].choose(audiences)
+        target = game.players[seers[0]].choose(alived_old)
         game.boardcast(
             game.audience_role('seer'),
             f'Seat {target} is {game.players[target].role.faction.faction}.',
@@ -411,11 +410,10 @@ while True:
 
     # day
     game.time.inc_phase()
-    audiences_old = audiences
-    audiences = game.alived()
     audiences_died = [
-        audience for audience in audiences_old if audience not in audiences
+        audience for audience in alived_old if audience not in game.alived()
     ]
+    alived_old = game.alived()
     summary = (
         f'Seat {audiences_died} are killed last night.'
         if audiences_died
@@ -423,7 +421,7 @@ while True:
     )
     game.boardcast(
         game.audience(),
-        f"It's daytime. Everyone woke up. {summary} Seat {audiences} are still alive.",
+        f"It's daytime. Everyone woke up. {summary} Seat {alived_old} are still alive.",
     )
 
     # verdict
@@ -434,15 +432,16 @@ while True:
             game.audience(),
             f"Since it's the first day, we are able to hear the last words of those who was fatally injured last night.",
         )
-        game.testament()
+        game.testament(audiences_died)
     game.post_exec()
+    alived_old = game.alived()
 
     # speech
     game.boardcast(
         game.audience(),
         f'Now freely talk about the current situation based on your observation with a few sentences. E.g. decide whether to reveal your identity.',
     )
-    for seat in audiences:
+    for seat in alived_old:
         player = game.players[seat]
         speech = get_speech(player)
         player.boardcast(game.audience(), speech)
@@ -451,9 +450,9 @@ while True:
     game.time.inc_round()
     game.boardcast(
         game.audience(),
-        f"It's time to vote. Choose one from the following living options please: seat {audiences}.",
+        f"It's time to vote. Choose one from the following living options please: seat {alived_old}.",
     )
-    targets, record = game.vote(audiences, audiences)
+    targets, record = game.vote(alived_old, alived_old)
     record_text = ', '.join(f'{source}->{target}' for source, target in record)
     if len(targets) == 1:
         game.players[targets[0]].death_causes.append('vote')
@@ -467,7 +466,7 @@ while True:
             game.audience(),
             f"It's a tie. Vote result: {record_text}. Choose one from voters with highest votes please: seat {targets}.",
         )
-        targets, record = game.vote(targets, audiences)
+        targets, record = game.vote(targets, alived_old)
         record_text = ', '.join(
             f'{source}->{target}' for source, target in record
         )
@@ -484,9 +483,12 @@ while True:
             )
 
     # verdict
+    audiences_died = [
+        audience for audience in alived_old if audience not in game.alived()
+    ]
     if game.winner():
         break
-    game.testament()
+    game.testament(audiences_died)
     game.post_exec()
 
 winner = game.winner()

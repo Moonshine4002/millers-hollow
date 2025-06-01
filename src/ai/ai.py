@@ -64,6 +64,8 @@ def get_seat(player: PPlayer, candidates: Sequence[Seat]) -> Seat:
                     candidate = Seat(target)
                     if candidate in candidates:
                         return candidate
+                    else:
+                        raise ValueError('wrong value')
                 except Exception as e:
                     pass
         case 'ai':
@@ -76,6 +78,8 @@ def get_seat(player: PPlayer, candidates: Sequence[Seat]) -> Seat:
                             f'{player.role.seat}[{player.role.role}]~> {candidate}: {reason}'
                         )
                         return candidate
+                    else:
+                        raise ValueError('wrong value')
                 except Exception as e:
                     log(str(e))
         case _:
@@ -112,6 +116,8 @@ def get_word(player: PPlayer, candidates: Sequence[str]) -> str:
                     candidate = target
                     if candidate in candidates:
                         return candidate
+                    else:
+                        raise ValueError('wrong value')
                 except Exception as e:
                     pass
         case 'ai':
@@ -124,6 +130,8 @@ def get_word(player: PPlayer, candidates: Sequence[str]) -> str:
                             f'{player.role.seat}[{player.role.role}]~> {candidate}: {reason}'
                         )
                         return candidate
+                    else:
+                        raise ValueError('wrong value')
                 except Exception as e:
                     log(str(e))
         case _:
