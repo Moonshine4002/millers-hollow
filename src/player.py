@@ -280,6 +280,206 @@ class Game:
             if player.life and player.role.role == role
         ]
 
+    def loop(self) -> bool:
+        # dark
+        self.time.inc_phase()
+        alived_old = self.alived()
+        self.boardcast(
+            self.audience(),
+            "It's dark, everyone close your eyes. I will talk with you/your team secretly at night.",
+        )
+
+        # werewolf
+        self.time.inc_round()
+        werewolves = self.alived_role('werewolf')
+        self.boardcast(self.audience(), 'Werewolves, please open your eyes!')
+        self.boardcast(
+            self.audience(), 'Werewolves, I secretly tell you that ...'
+        )
+        self.boardcast(
+            self.audience_role('werewolf'),
+            f'seat {werewolves} are all of the {len(werewolves)} werewolves!',
+        )
+        self.boardcast(
+            self.audience(),
+            (
+                f'Werewolves, you can choose one player to kill. Who are you going to kill tonight? '
+                f'Choose one from the following living options to kill please: seat {alived_old}. '
+                '(The player with the highest vote count will be selected. In case of a tie, the one with the smallest seat number will be chosen.)'
+            ),
+        )
+        targets, record = self.vote(alived_old, werewolves)
+        target = targets[0]
+        mark = self.players[werewolves[0]].mark(target)
+        self.marks.append(mark)
+        target_for_witch = target
+
+        # witch
+        self.time.inc_round()
+        witches = self.alived_role('witch')
+        self.boardcast(self.audience(), 'Witch, please open your eyes!')
+        self.boardcast(self.audience(), f'Witch, I secretly tell you that ...')
+        self.boardcast(
+            witches,
+            f'tonight seat {target_for_witch} has been killed by the werewolves.',
+        )
+        self.boardcast(
+            self.audience(),
+            f'You have a bottle of antidote, would you like to save him/her? If so, say "save", else, say "pass".',
+        )
+        witch_decision = 'pass'
+        if witches:
+            witch = self.players[witches[0]]
+            if not isinstance(witch, Witch):
+                raise TypeError('player is not a witch')
+            if witch.antidote:
+                word = get_word(witch, ['save', 'pass']).lower()
+                match word:
+                    case 'save':
+                        witch_decision = 'antidote'
+                        witch.potion_decision = 'antidote'
+                        mark = witch.mark(target_for_witch)
+                        self.marks.append(mark)
+                    case 'pass':
+                        pass
+                    case _:
+                        raise ValueError('value outsides candidates')
+        self.boardcast(
+            self.audience(),
+            f'Witch you decided whether to use the antidote previously. Now you also have a bottle of poison, would you like to use it to kill one of the living players? If so, say "kill", else, say "pass".',
+        )
+        if witches:
+            witch = self.players[witches[0]]
+            if not isinstance(witch, Witch):
+                raise TypeError('player is not a witch')
+            if witch_decision == 'pass' and witch.poison:
+                word = get_word(witch, ['kill', 'pass']).lower()
+                match word:
+                    case 'kill':
+                        witch_decision = 'poison'
+                        witch.potion_decision = 'poison'
+                    case 'pass':
+                        pass
+                    case _:
+                        raise ValueError('value outsides candidates')
+            if witch_decision == 'poison':
+                self.boardcast(
+                    witches,
+                    f'Choose one from the following living options: {alived_old}.',
+                )
+                seat = get_seat(witch, alived_old)
+                mark = witch.mark(seat)
+                self.marks.append(mark)
+
+        # seer
+        self.time.inc_round()
+        seers = self.alived_role('seer')
+        self.boardcast(self.audience(), 'Seer, please open your eyes!')
+        self.boardcast(
+            self.audience(),
+            f"Seer, you can check one player's identity. Who are you going to verify its identity tonight? Choose one from the following living options please: seat {alived_old}.",
+        )
+        if seers:
+            target = self.players[seers[0]].choose(alived_old)
+            self.boardcast(
+                self.audience_role('seer'),
+                f'Seat {target} is {self.players[target].role.faction.faction}.',
+            )
+
+        # exec
+        self.exec()
+
+        # day
+        self.time.inc_phase()
+        audiences_died = [
+            audience
+            for audience in alived_old
+            if audience not in self.alived()
+        ]
+        alived_old = self.alived()
+        summary = (
+            f'Seat {audiences_died} are killed last night.'
+            if audiences_died
+            else 'Nobody died last night.'
+        )
+        self.boardcast(
+            self.audience(),
+            f"It's daytime. Everyone woke up. {summary} Seat {alived_old} are still alive.",
+        )
+
+        # verdict
+        if self.winner():
+            return True
+        if self.time.cycle == 1:
+            self.boardcast(
+                self.audience(),
+                f"Since it's the first day, we are able to hear the last words of those who was fatally injured last night.",
+            )
+            self.testament(audiences_died)
+        self.post_exec()
+        alived_old = self.alived()
+
+        # speech
+        self.boardcast(
+            self.audience(),
+            f'Now freely talk about the current situation based on your observation with a few sentences. E.g. decide whether to reveal your identity.',
+        )
+        for seat in alived_old:
+            player = self.players[seat]
+            speech = get_speech(player)
+            player.boardcast(self.audience(), speech)
+
+        # vote
+        self.time.inc_round()
+        self.boardcast(
+            self.audience(),
+            f"It's time to vote. Choose one from the following living options please: seat {alived_old}.",
+        )
+        targets, record = self.vote(alived_old, alived_old)
+        record_text = ', '.join(
+            f'{source}->{target}' for source, target in record
+        )
+        if len(targets) == 1:
+            self.players[targets[0]].death_causes.append('vote')
+            self.players[targets[0]].life = False
+            self.boardcast(
+                self.audience(),
+                f'{targets[0]} was eliminated. Vote result: {record_text}.',
+            )
+        else:
+            self.boardcast(
+                self.audience(),
+                f"It's a tie. Vote result: {record_text}. Choose one from voters with highest votes please: seat {targets}.",
+            )
+            targets, record = self.vote(targets, alived_old)
+            record_text = ', '.join(
+                f'{source}->{target}' for source, target in record
+            )
+            if len(targets) == 1:
+                self.players[targets[0]].death_causes.append('vote')
+                self.players[targets[0]].life = False
+                self.boardcast(
+                    self.audience(),
+                    f'{targets[0]} was eliminated. Vote result: {record_text}.',
+                )
+            else:
+                self.boardcast(
+                    self.audience(), f"It's a tie. Vote result: {record_text}."
+                )
+
+        # verdict
+        audiences_died = [
+            audience
+            for audience in alived_old
+            if audience not in self.alived()
+        ]
+        if self.winner():
+            return True
+        self.testament(audiences_died)
+        self.post_exec()
+
+        return False
+
 
 game = Game()
 log('', clear=True, end='')
@@ -295,195 +495,8 @@ game.boardcast(
 )
 
 
-while True:
-    # dark
-    game.time.inc_phase()
-    alived_old = game.alived()
-    game.boardcast(
-        game.audience(),
-        "It's dark, everyone close your eyes. I will talk with you/your team secretly at night.",
-    )
-
-    # werewolf
-    game.time.inc_round()
-    werewolves = game.alived_role('werewolf')
-    game.boardcast(game.audience(), 'Werewolves, please open your eyes!')
-    game.boardcast(game.audience(), 'Werewolves, I secretly tell you that ...')
-    game.boardcast(
-        game.audience_role('werewolf'),
-        f'seat {werewolves} are all of the {len(werewolves)} werewolves!',
-    )
-    game.boardcast(
-        game.audience(),
-        (
-            f'Werewolves, you can choose one player to kill. Who are you going to kill tonight? '
-            f'Choose one from the following living options to kill please: seat {alived_old}. '
-            '(The player with the highest vote count will be selected. In case of a tie, the one with the smallest seat number will be chosen.)'
-        ),
-    )
-    targets, record = game.vote(alived_old, werewolves)
-    target = targets[0]
-    mark = game.players[werewolves[0]].mark(target)
-    game.marks.append(mark)
-    target_for_witch = target
-
-    # witch
-    game.time.inc_round()
-    witches = game.alived_role('witch')
-    game.boardcast(game.audience(), 'Witch, please open your eyes!')
-    game.boardcast(game.audience(), f'Witch, I secretly tell you that ...')
-    game.boardcast(
-        witches,
-        f'tonight seat {target_for_witch} has been killed by the werewolves.',
-    )
-    game.boardcast(
-        game.audience(),
-        f'You have a bottle of antidote, would you like to save him/her? If so, say "save", else, say "pass".',
-    )
-    witch_decision = 'pass'
-    if witches:
-        witch = game.players[witches[0]]
-        if not isinstance(witch, Witch):
-            raise TypeError('player is not a witch')
-        if witch.antidote:
-            word = get_word(witch, ['save', 'pass']).lower()
-            match word:
-                case 'save':
-                    witch_decision = 'antidote'
-                    witch.potion_decision = 'antidote'
-                    mark = witch.mark(target_for_witch)
-                    game.marks.append(mark)
-                case 'pass':
-                    pass
-                case _:
-                    raise ValueError('value outsides candidates')
-    game.boardcast(
-        game.audience(),
-        f'Witch you decided whether to use the antidote previously. Now you also have a bottle of poison, would you like to use it to kill one of the living players? If so, say "kill", else, say "pass".',
-    )
-    if witches:
-        witch = game.players[witches[0]]
-        if not isinstance(witch, Witch):
-            raise TypeError('player is not a witch')
-        if witch_decision == 'pass' and witch.poison:
-            word = get_word(witch, ['kill', 'pass']).lower()
-            match word:
-                case 'kill':
-                    witch_decision = 'poison'
-                    witch.potion_decision = 'poison'
-                case 'pass':
-                    pass
-                case _:
-                    raise ValueError('value outsides candidates')
-        if witch_decision == 'poison':
-            game.boardcast(
-                witches,
-                f'Choose one from the following living options: {alived_old}.',
-            )
-            seat = get_seat(witch, alived_old)
-            mark = witch.mark(seat)
-            game.marks.append(mark)
-
-    # seer
-    game.time.inc_round()
-    seers = game.alived_role('seer')
-    game.boardcast(game.audience(), 'Seer, please open your eyes!')
-    game.boardcast(
-        game.audience(),
-        f"Seer, you can check one player's identity. Who are you going to verify its identity tonight? Choose one from the following living options please: seat {alived_old}.",
-    )
-    if seers:
-        target = game.players[seers[0]].choose(alived_old)
-        game.boardcast(
-            game.audience_role('seer'),
-            f'Seat {target} is {game.players[target].role.faction.faction}.',
-        )
-
-    # exec
-    game.exec()
-
-    # day
-    game.time.inc_phase()
-    audiences_died = [
-        audience for audience in alived_old if audience not in game.alived()
-    ]
-    alived_old = game.alived()
-    summary = (
-        f'Seat {audiences_died} are killed last night.'
-        if audiences_died
-        else 'Nobody died last night.'
-    )
-    game.boardcast(
-        game.audience(),
-        f"It's daytime. Everyone woke up. {summary} Seat {alived_old} are still alive.",
-    )
-
-    # verdict
-    if game.winner():
-        break
-    if game.time.cycle == 1:
-        game.boardcast(
-            game.audience(),
-            f"Since it's the first day, we are able to hear the last words of those who was fatally injured last night.",
-        )
-        game.testament(audiences_died)
-    game.post_exec()
-    alived_old = game.alived()
-
-    # speech
-    game.boardcast(
-        game.audience(),
-        f'Now freely talk about the current situation based on your observation with a few sentences. E.g. decide whether to reveal your identity.',
-    )
-    for seat in alived_old:
-        player = game.players[seat]
-        speech = get_speech(player)
-        player.boardcast(game.audience(), speech)
-
-    # vote
-    game.time.inc_round()
-    game.boardcast(
-        game.audience(),
-        f"It's time to vote. Choose one from the following living options please: seat {alived_old}.",
-    )
-    targets, record = game.vote(alived_old, alived_old)
-    record_text = ', '.join(f'{source}->{target}' for source, target in record)
-    if len(targets) == 1:
-        game.players[targets[0]].death_causes.append('vote')
-        game.players[targets[0]].life = False
-        game.boardcast(
-            game.audience(),
-            f'{targets[0]} was eliminated. Vote result: {record_text}.',
-        )
-    else:
-        game.boardcast(
-            game.audience(),
-            f"It's a tie. Vote result: {record_text}. Choose one from voters with highest votes please: seat {targets}.",
-        )
-        targets, record = game.vote(targets, alived_old)
-        record_text = ', '.join(
-            f'{source}->{target}' for source, target in record
-        )
-        if len(targets) == 1:
-            game.players[targets[0]].death_causes.append('vote')
-            game.players[targets[0]].life = False
-            game.boardcast(
-                game.audience(),
-                f'{targets[0]} was eliminated. Vote result: {record_text}.',
-            )
-        else:
-            game.boardcast(
-                game.audience(), f"It's a tie. Vote result: {record_text}."
-            )
-
-    # verdict
-    audiences_died = [
-        audience for audience in alived_old if audience not in game.alived()
-    ]
-    if game.winner():
-        break
-    game.testament(audiences_died)
-    game.post_exec()
+while not game.loop():
+    pass
 
 winner = game.winner()
 end_message = f'{winner} win.\n' 'winners:\n\t' + '\n\t'.join(
