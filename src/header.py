@@ -13,7 +13,6 @@ from typing import Any, Literal, NamedTuple, Protocol, Self, TypeAlias
 import warnings
 
 DEBUG = True
-user_name = ''
 
 
 class NamedEnum(Enum):

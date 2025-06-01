@@ -1,7 +1,7 @@
 from .header import *
 
-from .ai.ai import get_seat, get_speech, get_word
-
+from .ai import get_seat, get_speech, get_word
+from . import key
 
 """
 Factions:
@@ -160,8 +160,10 @@ class Game:
         random.shuffle(self.roles)
         for seat, role in enumerate(self.roles):
             self.players.append(role(self.characters[seat], InfoRole(seat)))
-        if user_name:
-            random.choice(self.players).character = InfoCharacter(user_name)
+        if key.user_name:
+            random.choice(self.players).character = InfoCharacter(
+                key.user_name
+            )
 
     def __str__(self) -> str:
         info_player = '\n\t'.join(str(player) for player in self.players)

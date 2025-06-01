@@ -1,6 +1,6 @@
 from openai import OpenAI
 
-from ..header import *
+from .header import *
 from . import key
 
 client = OpenAI(

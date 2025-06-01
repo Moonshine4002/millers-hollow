@@ -1,6 +1,6 @@
 # cache
 __pycache__/
-log.*
+log*.*
 
 # key
-src/ai/key.py
+src/key.py
