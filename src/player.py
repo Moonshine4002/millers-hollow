@@ -136,17 +136,7 @@ class Hunter(BPlayer):
 
 
 class Game:
-    characters = [
-        InfoCharacter('A'),
-        InfoCharacter('B'),
-        InfoCharacter('C'),
-        InfoCharacter('D'),
-        InfoCharacter('E'),
-        InfoCharacter('F'),
-        InfoCharacter('G'),
-        InfoCharacter('H'),
-        InfoCharacter('I'),
-    ]
+    characters = [InfoCharacter(name, 'ai') for name in string.ascii_uppercase]
 
     roles: list[type[PPlayer]] = [
         Villager,
@@ -170,6 +160,8 @@ class Game:
         random.shuffle(self.roles)
         for seat, role in enumerate(self.roles):
             self.players.append(role(self.characters[seat], InfoRole(seat)))
+        if user_name:
+            random.choice(self.players).character = InfoCharacter(user_name)
 
     def __str__(self) -> str:
         info_player = '\n\t'.join(str(player) for player in self.players)

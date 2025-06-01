@@ -7,11 +7,13 @@ from enum import Enum, auto
 import functools
 import itertools
 import random
+import string
 import time
 from typing import Any, Literal, NamedTuple, Protocol, Self, TypeAlias
 import warnings
 
 DEBUG = True
+user_name = ''
 
 
 class NamedEnum(Enum):
