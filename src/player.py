@@ -320,20 +320,16 @@ class Game:
         witches = self.alived_role('witch')
         self.boardcast(self.audience(), 'Witch, please open your eyes!')
         self.boardcast(self.audience(), f'Witch, I secretly tell you that ...')
-        self.boardcast(
-            witches,
-            f'tonight seat {target_for_witch} has been killed by the werewolves.',
-        )
-        self.boardcast(
-            self.audience(),
-            f'You have a bottle of antidote, would you like to save him/her? If so, say "save", else, say "pass".',
-        )
         witch_decision = 'pass'
         if witches:
             witch = self.players[witches[0]]
             if not isinstance(witch, Witch):
                 raise TypeError('player is not a witch')
             if witch.antidote:
+                self.boardcast(
+                    witches,
+                    f'tonight seat {target_for_witch} has been killed by the werewolves. You have a bottle of antidote, would you like to save him/her? If so, say "save", else, say "pass".',
+                )
                 word = get_word(witch, ['save', 'pass']).lower()
                 match word:
                     case 'save':
@@ -345,15 +341,11 @@ class Game:
                         pass
                     case _:
                         raise ValueError('value outsides candidates')
-        self.boardcast(
-            self.audience(),
-            f'Witch you decided whether to use the antidote previously. Now you also have a bottle of poison, would you like to use it to kill one of the living players? If so, say "kill", else, say "pass".',
-        )
-        if witches:
-            witch = self.players[witches[0]]
-            if not isinstance(witch, Witch):
-                raise TypeError('player is not a witch')
             if witch_decision == 'pass' and witch.poison:
+                self.boardcast(
+                    witches,
+                    f'Witch you decided whether to use the antidote previously. Now you also have a bottle of poison, would you like to use it to kill one of the living players? If so, say "kill", else, say "pass".',
+                )
                 word = get_word(witch, ['kill', 'pass']).lower()
                 match word:
                     case 'kill':
