@@ -36,7 +36,7 @@ def log(text: str, end: str = '\n') -> None:
 @dataclass
 class InfoCharacter:
     name: str
-    control: str = 'input'
+    control: str = 'console'
 
 
 Seat: TypeAlias = int

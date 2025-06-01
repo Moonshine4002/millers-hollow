@@ -13,11 +13,23 @@ client = OpenAI(
 )
 
 
-def control_input(prompt: str) -> str:
+def output(player: PPlayer, content: str) -> None:
+    match player.character.control:
+        case 'console':
+            print(content)
+        case 'ai':
+            pass
+        case 'gui':
+            pass
+        case _:
+            raise NotImplementedError('unknown control')
+
+
+def input_console(prompt: str) -> str:
     return input(prompt)
 
 
-def control_ai(player: PPlayer, **prompts: str) -> tuple[str, str]:
+def input_ai(player: PPlayer, **prompts: str) -> tuple[str, str]:
     prompt = (
         "You are playing a game called The Werewolves of Miller's Hollow. "
         'Please be sure that you know the rules. '
@@ -64,6 +76,39 @@ def control_ai(player: PPlayer, **prompts: str) -> tuple[str, str]:
     return reason, target
 
 
+def input_gui(prompt: str) -> str:
+    return input(prompt)
+
+
+def get(
+    player: PPlayer, condition: Callable[[str], bool], **prompts: str
+) -> str:
+    while True:
+        try:
+            match player.character.control:
+                case 'console':
+                    candidate = input_console(f'{player.role.seat}> ')
+                    if not condition(candidate):
+                        raise ValueError('wrong value')
+                    return candidate
+                case 'ai':
+                    reason, candidate = input_ai(player, **prompts)
+                    if not condition(candidate):
+                        raise ValueError('wrong value')
+                    log(
+                        f'{player.role.seat}[{player.role.role}]~> {candidate}: {reason}'
+                    )
+                    return candidate
+                case 'gui':
+                    pass
+                case _:
+                    raise NotImplementedError('unknown control')
+        except NotImplementedError as e:
+            raise
+        except Exception as e:
+            log(str(e))
+
+
 def get_seat(player: PPlayer, candidates: Sequence[Seat]) -> Seat:
     prompts = {
         'instructions': "- Identify the **last question** asked by the Moderator (it will start with 'Moderator>') that asks you to choose a seat.\n"
@@ -74,34 +119,14 @@ def get_seat(player: PPlayer, candidates: Sequence[Seat]) -> Seat:
         '(<reason> is a few sentences explaining your choice.)\n',
     }
 
-    match player.character.control:
-        case 'input':
-            while True:
-                try:
-                    target = control_input(f'{player.role.seat}> ')
-                    candidate = Seat(target)
-                    if candidate in candidates:
-                        return candidate
-                    else:
-                        raise ValueError('wrong value')
-                except Exception as e:
-                    pass
-        case 'ai':
-            while True:
-                try:
-                    reason, target = control_ai(player, **prompts)
-                    candidate = Seat(target)
-                    if candidate in candidates:
-                        log(
-                            f'{player.role.seat}[{player.role.role}]~> {candidate}: {reason}'
-                        )
-                        return candidate
-                    else:
-                        raise ValueError('wrong value')
-                except Exception as e:
-                    log(str(e))
-        case _:
-            raise NotImplementedError('unknown control')
+    def condition(output: str) -> bool:
+        seat = Seat(output)
+        if seat not in candidates:
+            return False
+        return True
+
+    seat = get(player, condition, **prompts)
+    return Seat(seat)
 
 
 def get_word(player: PPlayer, candidates: Sequence[str]) -> str:
@@ -114,34 +139,13 @@ def get_word(player: PPlayer, candidates: Sequence[str]) -> str:
         '(<reason> is a few sentences explaining your choice.)\n',
     }
 
-    match player.character.control:
-        case 'input':
-            while True:
-                try:
-                    target = control_input(f'{player.role.seat}> ')
-                    candidate = target
-                    if candidate in candidates:
-                        return candidate
-                    else:
-                        raise ValueError('wrong value')
-                except Exception as e:
-                    pass
-        case 'ai':
-            while True:
-                try:
-                    reason, target = control_ai(player, **prompts)
-                    candidate = target
-                    if candidate in candidates:
-                        log(
-                            f'{player.role.seat}[{player.role.role}]~> {candidate}: {reason}'
-                        )
-                        return candidate
-                    else:
-                        raise ValueError('wrong value')
-                except Exception as e:
-                    log(str(e))
-        case _:
-            raise NotImplementedError('unknown control')
+    def condition(output: str) -> bool:
+        if output not in candidates:
+            return False
+        return True
+
+    candidate = get(player, condition, **prompts)
+    return candidate
 
 
 def get_speech(player: PPlayer) -> str:
@@ -155,27 +159,8 @@ def get_speech(player: PPlayer) -> str:
         'format': 'Reason: <a few sentences explaining your choice> --- <speech to everyone>\n',
     }
 
-    match player.character.control:
-        case 'input':
-            while True:
-                try:
-                    target = control_input(f'{player.role.seat}> ')
-                    candidate = target
-                    if True:
-                        return candidate
-                except Exception as e:
-                    pass
-        case 'ai':
-            while True:
-                try:
-                    reason, target = control_ai(player, **prompts)
-                    candidate = target
-                    if True:
-                        log(
-                            f'{player.role.seat}[{player.role.role}]~> {reason}'
-                        )
-                        return candidate
-                except Exception as e:
-                    log(str(e))
-        case _:
-            raise NotImplementedError('unknown control')
+    def condition(output: str) -> bool:
+        return True
+
+    candidate = get(player, condition, **prompts)
+    return candidate

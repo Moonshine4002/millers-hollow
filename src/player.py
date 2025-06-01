@@ -1,6 +1,6 @@
 from .header import *
 
-from .ai import get_seat, get_speech, get_word
+from .ai import output, get_seat, get_speech, get_word
 from . import user_data
 
 """
@@ -215,8 +215,7 @@ class Game:
         for seat in audiences:
             player = self.players[seat]
             player.clues.append(clue)
-            if player.character.control == 'input':
-                print(str(clue))
+            output(player, str(clue))
 
     def testament(self, audiences_died: Sequence[Seat]) -> None:
         for seat in audiences_died:
@@ -482,8 +481,7 @@ game = Game()
 log_clear()
 log(str(game))
 for player in game.players:
-    if player.character.control == 'input':
-        print(f'You are seat {player.role.seat}, a {player.role.role}.')
+    output(player, f'You are seat {player.role.seat}, a {player.role.role}.')
 
 # rule
 game.boardcast(
@@ -501,5 +499,7 @@ end_message = f'{winner} win.\n' 'winners:\n\t' + '\n\t'.join(
     for player in game.players
     if winner.eq_faction(player.role.faction)
 ) + '\n' + str(game)
-print(end_message)
+for seat in game.audience():
+    player = game.players[seat]
+    output(player, end_message)
 log(end_message)
