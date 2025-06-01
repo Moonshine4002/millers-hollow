@@ -177,6 +177,7 @@ class Game:
 
     def post_exec(self) -> None:
         while self.post_marks:
+            self.time.inc_round()
             self.post_marks.sort(key=lambda mark: mark.priority)
             mark = self.post_marks.pop()
             mark.exec()
@@ -417,6 +418,8 @@ class Game:
             )
             self.testament(audiences_died)
         self.post_exec()
+        if self.winner():
+            return True
         alived_old = self.alived()
 
         # speech
@@ -477,6 +480,8 @@ class Game:
             return True
         self.testament(audiences_died)
         self.post_exec()
+        if self.winner():
+            return True
 
         return False
 
