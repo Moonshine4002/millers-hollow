@@ -35,7 +35,7 @@ def input_ai(player: PPlayer, **prompts: str) -> list[str]:
         f'{user_data.prompt}'
         'Output format:\n'
         f"{prompts['format']}"
-        '(Do not keep the words in <> as they are prompts.)\n'
+        '(Keep "---" as separator. Do not keep the words in <> as they are prompts.)\n'
         '(Do not output any newline character.)\n'
         f'(Output using "{user_data.language}".)\n\n'
     )
@@ -61,10 +61,10 @@ def input_ai(player: PPlayer, **prompts: str) -> list[str]:
         raise ValueError('empty output')
     if DEBUG:
         if '---' not in output:
-            raise ValueError('wrong format')
+            raise ValueError('wrong format: no "---"')
         output_split = output.split('---')
         if len(output_split) != 2:
-            raise ValueError('wrong format')
+            raise ValueError('wrong format: more than one "---"')
         reason = output_split[0].lstrip().rstrip()
         target = output_split[-1].lstrip().rstrip()
         return [reason, target]
@@ -97,7 +97,7 @@ def get(
                 case 'console':
                     candidate = input_console(f'{player.role.seat}> ')
                     if not condition(candidate):
-                        raise ValueError('wrong value')
+                        raise ValueError(f'wrong value: {candidate}')
                     return candidate
                 case 'ai':
                     if DEBUG:
@@ -105,7 +105,7 @@ def get(
                     else:
                         candidate = input_ai(player, **prompts)[0]
                     if not condition(candidate):
-                        raise ValueError('wrong value')
+                        raise ValueError(f'wrong value: {candidate}')
                     if DEBUG:
                         log(
                             f'{player.role.seat}[{player.role.role}]~> {candidate}: {reason}\n'
@@ -118,7 +118,7 @@ def get(
                 case 'file':
                     candidate = input_file(player)
                     if not condition(candidate):
-                        raise ValueError('wrong value')
+                        raise ValueError(f'wrong value: {candidate}')
                     return candidate
                 case _:
                     raise NotImplementedError('unknown control')
@@ -170,16 +170,14 @@ def get_word(player: PPlayer, candidates: Sequence[str]) -> str:
 def get_speech(player: PPlayer) -> str:
     prompts = {
         'instructions': "- Compose a response to the Moderator's question.\n"
-        '- Your second part of the response will be **broadcast to everyone**, so split your answer into two parts:\n'
+        "- Your second part of the response will be broadcast (audiences depend on the Moderator's question), so split your answer into two parts:\n"
         '  1. The reasoning behind your speech.\n'
         '  2. The speech to be broadcast.\n',
-        'format': 'Reason: <a few sentences explaining your choice> --- <speech to everyone>\n',
+        'format': 'Reason: <a few sentences explaining your choice> --- <speech to be broadcast>\n',
     }
     if not DEBUG:
-        prompts[
-            'instructions'
-        ] = "- Compose a response to the Moderator's question.\n"
-        prompts['format'] = '<speech to everyone>\n'
+        prompts['instructions'] = '- Compose a speech to be broadcast.\n'
+        prompts['format'] = '<speech to be broadcast>\n'
 
     def condition(output: str) -> bool:
         return True
