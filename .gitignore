@@ -4,3 +4,4 @@ __pycache__/
 
 # user data
 user*.py
+io/

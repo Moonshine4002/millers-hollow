@@ -136,7 +136,9 @@ class Hunter(BPlayer):
 
 
 class Game:
-    characters = [InfoCharacter(name, 'ai') for name in string.ascii_uppercase]
+    characters = [
+        InfoCharacter(name, 'gui') for name in string.ascii_uppercase
+    ]
 
     roles: list[type[PPlayer]] = [
         Villager,
@@ -211,11 +213,14 @@ class Game:
         source: str = 'Moderator',
     ) -> None:
         clue = Clue(copy(self.time), source, content)
-        log(f'{clue} > {audiences}')
         for seat in audiences:
-            player = self.players[seat]
-            player.clues.append(clue)
-            output(player, str(clue))
+            self.players[seat].clues.append(clue)
+        log(f'{clue} > {audiences}')
+        output(
+            [self.players[seat] for seat in audiences],
+            clue,
+            boardcast=audiences == self.audience(),
+        )
 
     def testament(self, audiences_died: Sequence[Seat]) -> None:
         for seat in audiences_died:
@@ -481,7 +486,15 @@ game = Game()
 log_clear()
 log(str(game))
 for player in game.players:
-    output(player, f'You are seat {player.role.seat}, a {player.role.role}.')
+    output(
+        [player],
+        Clue(
+            game.time,
+            'Moderator',
+            f'This line for input.\nYou are seat {player.role.seat}, a {player.role.role}.',
+        ),
+        clear=True,
+    )
 
 # rule
 game.boardcast(
@@ -499,7 +512,5 @@ end_message = f'{winner} win.\n' 'winners:\n\t' + '\n\t'.join(
     for player in game.players
     if winner.eq_faction(player.role.faction)
 ) + '\n' + str(game)
-for seat in game.audience():
-    player = game.players[seat]
-    output(player, end_message)
 log(end_message)
+output(game.players, Clue(game.time, 'Moderator', end_message), boardcast=True)

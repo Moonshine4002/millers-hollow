@@ -13,16 +13,25 @@ client = OpenAI(
 )
 
 
-def output(player: PPlayer, content: str) -> None:
-    match player.character.control:
-        case 'console':
-            print(content)
-        case 'ai':
-            pass
-        case 'gui':
-            pass
-        case _:
-            raise NotImplementedError('unknown control')
+def output(
+    players: Sequence[PPlayer],
+    clue: Clue,
+    boardcast: bool = False,
+    clear: bool = False,
+) -> None:
+    if boardcast:
+        print(str(clue))
+    elif any(player.character.control == 'console' for player in players):
+        print(str(clue))
+    for player in players:
+        if player.character.control != 'gui':
+            return
+        file_path = pathlib.Path(f'io/{player.role.seat}.txt')
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        if clear:
+            file_path.write_text('', encoding='utf-8')
+        with file_path.open(mode='a', encoding='utf-8') as file:
+            file.write(f'{clue}\n')
 
 
 def input_console(prompt: str) -> str:
@@ -76,8 +85,20 @@ def input_ai(player: PPlayer, **prompts: str) -> tuple[str, str]:
     return reason, target
 
 
-def input_gui(prompt: str) -> str:
-    return input(prompt)
+def input_gui(player: PPlayer) -> str:
+    file_path = pathlib.Path(f'io/{player.role.seat}.txt')
+    while True:
+        time.sleep(1)
+        with file_path.open('r', encoding='utf-8') as file:
+            lines = file.readlines()
+        if not lines:
+            continue
+        output = lines[0].lstrip('Input:').lstrip().rstrip()
+        lines[0] = 'Input: \n'
+        with file_path.open('w', encoding='utf-8') as file:
+            file.writelines(lines)
+        if output:
+            return output
 
 
 def get(
@@ -100,7 +121,10 @@ def get(
                     )
                     return candidate
                 case 'gui':
-                    pass
+                    candidate = input_gui(player)
+                    if not condition(candidate):
+                        raise ValueError('wrong value')
+                    return candidate
                 case _:
                     raise NotImplementedError('unknown control')
         except NotImplementedError as e:
