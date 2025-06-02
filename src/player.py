@@ -136,36 +136,39 @@ class Hunter(BPlayer):
 
 
 class Game:
-    characters = [
-        InfoCharacter(name, 'gui') for name in string.ascii_uppercase
-    ]
-
-    roles: list[type[PPlayer]] = [
-        Villager,
-        Villager,
-        Villager,
-        Werewolf,
-        Werewolf,
-        Werewolf,
-        Seer,
-        Witch,
-        Hunter,
-    ]
-
     def __init__(self) -> None:
         self.time = Time()
         self.players: list[PPlayer] = []
         self.marks: list[Mark] = []
         self.post_marks: list[Mark] = []
 
-        random.shuffle(self.characters)
+        self.characters = [
+            InfoCharacter(name, 'ai') for name in string.ascii_uppercase
+        ]
+
+        self.roles: list[type[PPlayer]] = [
+            Villager,
+            Villager,
+            Villager,
+            Werewolf,
+            Werewolf,
+            Werewolf,
+            Seer,
+            Witch,
+            Hunter,
+        ]
+
+        users = len(user_data.user_names)
+        ai = len(self.roles) - users
+        if ai < 0:
+            raise ValueError('too many users')
+        characters = random.sample(self.characters, ai)
+        for user_name in user_data.user_names:
+            characters.append(InfoCharacter(user_name, 'file'))
+        random.shuffle(characters)
         random.shuffle(self.roles)
         for seat, role in enumerate(self.roles):
-            self.players.append(role(self.characters[seat], InfoRole(seat)))
-        if user_data.user_name:
-            random.choice(self.players).character = InfoCharacter(
-                user_data.user_name
-            )
+            self.players.append(role(characters[seat], InfoRole(seat)))
 
     def __str__(self) -> str:
         info_player = '\n\t'.join(str(player) for player in self.players)
@@ -483,17 +486,27 @@ class Game:
 
 
 game = Game()
+start_message = f"players: \n\t{'\n\t'.join(f'{player.character.name}(seat {player.role.seat})' for player in game.players)}"
 log_clear()
 log(str(game))
+output(
+    game.players,
+    Clue(
+        game.time,
+        'Moderator',
+        f'{start_message}\n',
+    ),
+    boardcast=True,
+    clear_text=f'Input: \nThe upper line for input.\n',
+)
 for player in game.players:
     output(
         [player],
         Clue(
             game.time,
             'Moderator',
-            f'This line for input.\nYou are seat {player.role.seat}, a {player.role.role}.',
+            f'You are seat {player.role.seat}, a {player.role.role}.',
         ),
-        clear=True,
     )
 
 # rule

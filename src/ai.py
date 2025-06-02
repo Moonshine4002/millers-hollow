@@ -17,19 +17,19 @@ def output(
     players: Sequence[PPlayer],
     clue: Clue,
     boardcast: bool = False,
-    clear: bool = False,
+    clear_text: str = '',
 ) -> None:
     if boardcast:
         print(str(clue))
     elif any(player.character.control == 'console' for player in players):
         print(str(clue))
     for player in players:
-        if player.character.control != 'gui':
-            return
+        if player.character.control != 'file':
+            continue
         file_path = pathlib.Path(f'io/{player.role.seat}.txt')
         file_path.parent.mkdir(parents=True, exist_ok=True)
-        if clear:
-            file_path.write_text('', encoding='utf-8')
+        if clear_text:
+            file_path.write_text(clear_text, encoding='utf-8')
         with file_path.open(mode='a', encoding='utf-8') as file:
             file.write(f'{clue}\n')
 
@@ -85,7 +85,7 @@ def input_ai(player: PPlayer, **prompts: str) -> tuple[str, str]:
     return reason, target
 
 
-def input_gui(player: PPlayer) -> str:
+def input_file(player: PPlayer) -> str:
     file_path = pathlib.Path(f'io/{player.role.seat}.txt')
     while True:
         time.sleep(1)
@@ -120,8 +120,8 @@ def get(
                         f'{player.role.seat}[{player.role.role}]~> {candidate}: {reason}'
                     )
                     return candidate
-                case 'gui':
-                    candidate = input_gui(player)
+                case 'file':
+                    candidate = input_file(player)
                     if not condition(candidate):
                         raise ValueError('wrong value')
                     return candidate
