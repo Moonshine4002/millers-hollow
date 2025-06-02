@@ -332,6 +332,14 @@ class Game:
             f'seat {werewolves} are all of the {len(werewolves)} werewolves!',
         )
         self.boardcast(
+            self.audience_role('werewolf'),
+            f'Now you can talk with your teammates.',
+        )
+        for werewolf in werewolves:
+            player = self.players[werewolf]
+            speech = get_speech(player)
+            player.boardcast(werewolves, speech)
+        self.boardcast(
             self.audience(),
             (
                 f'Werewolves, you can choose one player to kill. Who are you going to kill tonight? '
@@ -447,7 +455,7 @@ class Game:
         # speech
         self.boardcast(
             self.audience(),
-            f'Now freely talk about the current situation based on your observation with a few sentences. E.g. decide whether to reveal your identity.',
+            f'Now freely talk about the current situation based on your observation with a few sentences.',
         )
         for seat in alived_old:
             player = self.players[seat]
