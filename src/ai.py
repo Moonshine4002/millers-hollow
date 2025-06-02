@@ -13,27 +13,6 @@ client = OpenAI(
 )
 
 
-def output(
-    players: Sequence[PPlayer],
-    clue: Clue,
-    boardcast: bool = False,
-    clear_text: str = '',
-) -> None:
-    if boardcast:
-        print(str(clue))
-    elif any(player.character.control == 'console' for player in players):
-        print(str(clue))
-    for player in players:
-        if player.character.control != 'file':
-            continue
-        file_path = pathlib.Path(f'io/{player.role.seat}.txt')
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        if clear_text:
-            file_path.write_text(clear_text, encoding='utf-8')
-        with file_path.open(mode='a', encoding='utf-8') as file:
-            file.write(f'{clue}\n')
-
-
 def input_console(prompt: str) -> str:
     return input(prompt)
 
@@ -117,7 +96,7 @@ def get(
                     if not condition(candidate):
                         raise ValueError('wrong value')
                     log(
-                        f'{player.role.seat}[{player.role.role}]~> {candidate}: {reason}'
+                        f'{player.role.seat}[{player.role.role}]~> {candidate}: {reason}\n'
                     )
                     return candidate
                 case 'file':
@@ -130,7 +109,7 @@ def get(
         except NotImplementedError as e:
             raise
         except Exception as e:
-            log(str(e))
+            log(f'{e!r}\n')
 
 
 def get_seat(player: PPlayer, candidates: Sequence[Seat]) -> Seat:

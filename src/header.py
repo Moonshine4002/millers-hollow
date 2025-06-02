@@ -23,15 +23,12 @@ class NamedEnum(Enum):
         return f'{self.name.lower()}'
 
 
-def log_clear() -> None:
-    with open(f'log_{user_data.model}.log', 'w', encoding='utf-8') as file:
-        pass
-
-
-def log(text: str, end: str = '\n') -> None:
-    with open(f'log_{user_data.model}.log', 'a', encoding='utf-8') as file:
-        file.write(text)
-        file.write(end)
+def log(content: str, clear_text: str = '') -> None:
+    log_path = pathlib.Path(f'log_{user_data.model}.log')
+    if clear_text:
+        log_path.write_text(clear_text, encoding='utf-8')
+    with log_path.open(mode='a', encoding='utf-8') as file:
+        file.write(content)
 
 
 @dataclass

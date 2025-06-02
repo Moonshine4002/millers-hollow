@@ -1,7 +1,8 @@
 from .header import *
 
-from .ai import output, get_seat, get_speech, get_word
+from .ai import get_seat, get_speech, get_word
 from . import user_data
+
 
 """
 Factions:
@@ -174,6 +175,44 @@ class Game:
         info_player = '\n\t'.join(str(player) for player in self.players)
         return f'[{self.time}]players: \n\t{info_player}'
 
+    def output(
+        self,
+        audiences: Sequence[Seat],
+        clue: Clue,
+        system: bool = False,
+        clear_text: str = '',
+    ) -> None:
+        log(f'{clue} > {audiences}\n', clear_text=clear_text)
+        if system or any(
+            self.players[seat].character.control == 'console'
+            for seat in audiences
+        ):
+            print(str(clue))
+        for seat in audiences:
+            player = self.players[seat]
+            if player.character.control != 'file':
+                continue
+            file_path = pathlib.Path(f'io/{player.role.seat}.txt')
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            if clear_text:
+                file_path.write_text(clear_text, encoding='utf-8')
+            with file_path.open(mode='a', encoding='utf-8') as file:
+                file.write(f'{clue}\n')
+
+    def boardcast(
+        self,
+        audiences: Sequence[Seat],
+        content: str,
+        source: str = 'Moderator',
+    ) -> None:
+        clue = Clue(copy(self.time), source, content)
+        for seat in audiences:
+            self.players[seat].clues.append(clue)
+        self.output(audiences, clue)
+
+    def unicast(self, seat: Seat, content: str) -> None:
+        self.boardcast([seat], content)
+
     def exec(self) -> None:
         self.marks.sort(key=lambda mark: mark.priority)
         while self.marks:
@@ -208,22 +247,6 @@ class Game:
             index for index, value in enumerate(ballot) if value == highest
         ]
         return targets, record
-
-    def boardcast(
-        self,
-        audiences: Sequence[Seat],
-        content: str,
-        source: str = 'Moderator',
-    ) -> None:
-        clue = Clue(copy(self.time), source, content)
-        for seat in audiences:
-            self.players[seat].clues.append(clue)
-        log(f'{clue} > {audiences}')
-        output(
-            [self.players[seat] for seat in audiences],
-            clue,
-            boardcast=audiences == self.audience(),
-        )
 
     def testament(self, audiences_died: Sequence[Seat]) -> None:
         for seat in audiences_died:
@@ -487,26 +510,16 @@ class Game:
 
 game = Game()
 start_message = f"players: \n\t{'\n\t'.join(f'{player.character.name}(seat {player.role.seat})' for player in game.players)}"
-log_clear()
-log(str(game))
-output(
-    game.players,
-    Clue(
-        game.time,
-        'Moderator',
-        f'{start_message}\n',
-    ),
-    boardcast=True,
+game.output(
+    game.audience(),
+    Clue(game.time, 'Moderator', f'{start_message}\n'),
+    system=True,
     clear_text=f'Input: \nThe upper line for input.\n',
 )
 for player in game.players:
-    output(
-        [player],
-        Clue(
-            game.time,
-            'Moderator',
-            f'You are seat {player.role.seat}, a {player.role.role}.',
-        ),
+    game.unicast(
+        player.role.seat,
+        f'You are seat {player.role.seat}, a {player.role.role}.',
     )
 
 # rule
@@ -525,5 +538,6 @@ end_message = f'{winner} win.\n' 'winners:\n\t' + '\n\t'.join(
     for player in game.players
     if winner.eq_faction(player.role.faction)
 ) + '\n' + str(game)
-log(end_message)
-output(game.players, Clue(game.time, 'Moderator', end_message), boardcast=True)
+game.output(
+    game.audience(), Clue(game.time, 'Moderator', end_message), system=True
+)
