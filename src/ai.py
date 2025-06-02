@@ -17,7 +17,7 @@ def input_console(prompt: str) -> str:
     return input(prompt)
 
 
-def input_ai(player: PPlayer, **prompts: str) -> tuple[str, str]:
+def input_ai(player: PPlayer, **prompts: str) -> list[str]:
     prompt = (
         "You are playing a game called The Werewolves of Miller's Hollow. "
         'Please be sure that you know the rules. '
@@ -59,14 +59,17 @@ def input_ai(player: PPlayer, **prompts: str) -> tuple[str, str]:
     output = chat_completion.choices[0].message.content
     if not output:
         raise ValueError('empty output')
-    if '---' not in output:
-        raise ValueError('wrong format')
-    output_split = output.split('---')
-    if len(output_split) != 2:
-        raise ValueError('wrong format')
-    reason = output_split[0].lstrip().rstrip()
-    target = output_split[-1].lstrip().rstrip()
-    return reason, target
+    if DEBUG:
+        if '---' not in output:
+            raise ValueError('wrong format')
+        output_split = output.split('---')
+        if len(output_split) != 2:
+            raise ValueError('wrong format')
+        reason = output_split[0].lstrip().rstrip()
+        target = output_split[-1].lstrip().rstrip()
+        return [reason, target]
+    else:
+        return [output.lstrip().rstrip()]
 
 
 def input_file(player: PPlayer) -> str:
@@ -97,12 +100,20 @@ def get(
                         raise ValueError('wrong value')
                     return candidate
                 case 'ai':
-                    reason, candidate = input_ai(player, **prompts)
+                    if DEBUG:
+                        reason, candidate = input_ai(player, **prompts)
+                    else:
+                        candidate = input_ai(player, **prompts)[0]
                     if not condition(candidate):
                         raise ValueError('wrong value')
-                    log(
-                        f'{player.role.seat}[{player.role.role}]~> {candidate}: {reason}\n'
-                    )
+                    if DEBUG:
+                        log(
+                            f'{player.role.seat}[{player.role.role}]~> {candidate}: {reason}\n'
+                        )
+                    else:
+                        log(
+                            f'{player.role.seat}[{player.role.role}]~> {candidate}\n'
+                        )
                     return candidate
                 case 'file':
                     candidate = input_file(player)
@@ -124,6 +135,8 @@ def get_seat(player: PPlayer, candidates: Sequence[Seat]) -> Seat:
         "(<number> is your chosen seat asked by the Moderator's question. You MUST only output the number.)\n"
         '(<reason> is a few sentences explaining your choice.)\n',
     }
+    if not DEBUG:
+        prompts['format'] = '<number>\n'
 
     def condition(output: str) -> bool:
         seat = Seat(output)
@@ -142,6 +155,8 @@ def get_word(player: PPlayer, candidates: Sequence[str]) -> str:
         "(<word> is your reply of the Moderator's question. You MUST only output a word within the choices given by the Moderator.)\n"
         '(<reason> is a few sentences explaining your choice.)\n',
     }
+    if not DEBUG:
+        prompts['format'] = '<word>\n'
 
     def condition(output: str) -> bool:
         if output not in candidates:
@@ -160,6 +175,11 @@ def get_speech(player: PPlayer) -> str:
         '  2. The speech to be broadcast.\n',
         'format': 'Reason: <a few sentences explaining your choice> --- <speech to everyone>\n',
     }
+    if not DEBUG:
+        prompts[
+            'instructions'
+        ] = "- Compose a response to the Moderator's question.\n"
+        prompts['format'] = '<speech to everyone>\n'
 
     def condition(output: str) -> bool:
         return True

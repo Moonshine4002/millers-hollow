@@ -13,9 +13,10 @@ import time
 from typing import Any, Literal, NamedTuple, Protocol, Self, TypeAlias
 import warnings
 
-DEBUG = True
 
 from . import user_data
+
+DEBUG = user_data.DEBUG
 
 
 class NamedEnum(Enum):
