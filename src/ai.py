@@ -21,13 +21,18 @@ def input_ai(player: PPlayer, **prompts: str) -> tuple[str, str]:
     prompt = (
         "You are playing a game called The Werewolves of Miller's Hollow. "
         'Please be sure that you know the rules. '
-        'You will be given a input describing the game scenario.\n'
+        'You will be given a input describing the game scenario.\n\n'
+        'Your identity:\n'
         f'You are seat {player.role.seat}, and your role is {player.role.role}.\n\n'
-        'Tasks:\n'
+        'Objectives:\n'
         '- Try your best to win the game.\n'
-        '- You also win if your teammates win in the end.\n\n'
+        '- You also win if your teammates win in the end.\n'
+        '- You must not harm yourself or your teammates unless you are more likely to win by doing that.\n\n'
         'Instructions:\n'
+        '- Identify the **last question** asked by the Moderator (a user).\n'
+        "- The Moderator (a user) won't lie. But anyone else may.\n"
         f"{prompts['instructions']}"
+        f'{user_data.prompt}'
         'Output format:\n'
         f"{prompts['format']}"
         '(Do not keep the words in <> as they are prompts.)\n'
@@ -114,9 +119,7 @@ def get(
 
 def get_seat(player: PPlayer, candidates: Sequence[Seat]) -> Seat:
     prompts = {
-        'instructions': "- Identify the **last question** asked by the Moderator (it will start with 'Moderator>') that asks you to choose a seat.\n"
-        "- Choose a seat. It can either benefit or harm the chosen player according to the Moderator's question.\n"
-        '- You must not harm yourself or your teammates unless you are more likely to win by doing that.\n\n',
+        'instructions': "- Choose a seat. It can either benefit or harm the chosen player according to the Moderator's question.\n",
         'format': 'Reason: <reason> --- <number>\n'
         "(<number> is your chosen seat asked by the Moderator's question. You MUST only output the number.)\n"
         '(<reason> is a few sentences explaining your choice.)\n',
@@ -134,9 +137,7 @@ def get_seat(player: PPlayer, candidates: Sequence[Seat]) -> Seat:
 
 def get_word(player: PPlayer, candidates: Sequence[str]) -> str:
     prompts = {
-        'instructions': "- Identify the **last question** asked by the Moderator (it will start with 'Moderator>') that asks you to reply a word.\n"
-        "- Answer the question. It can either benefit or harm the chosen player according to the Moderator's question.\n"
-        '- You must not harm yourself or your teammates unless you are more likely to win by doing that.\n\n',
+        'instructions': "- Answer a word. It can either benefit or harm the chosen player according to the Moderator's question.\n",
         'format': 'Reason: <reason> --- <word>\n'
         "(<word> is your reply of the Moderator's question. You MUST only output a word within the choices given by the Moderator.)\n"
         '(<reason> is a few sentences explaining your choice.)\n',
@@ -153,12 +154,10 @@ def get_word(player: PPlayer, candidates: Sequence[str]) -> str:
 
 def get_speech(player: PPlayer) -> str:
     prompts = {
-        'instructions': "- Identify the **last question** asked by the Moderator (it will start with 'Moderator>') where players are asked to speak.\n"
-        '- Compose a response to this question.\n'
+        'instructions': "- Compose a response to the Moderator's question.\n"
         '- Your second part of the response will be **broadcast to everyone**, so split your answer into two parts:\n'
         '  1. The reasoning behind your speech.\n'
-        '  2. The speech to be broadcast.\n'
-        '- You must not harm yourself or your teammates unless you are more likely to win by doing that.\n\n',
+        '  2. The speech to be broadcast.\n',
         'format': 'Reason: <a few sentences explaining your choice> --- <speech to everyone>\n',
     }
 
