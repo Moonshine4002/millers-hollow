@@ -18,6 +18,7 @@ class BPlayer:
         self.character = character
         self.role = role
         self.role.role = self.__class__.__name__.lower()
+        self.night_priority = 0
         self.clues: list[Clue] = []
         self.death_causes: list[str] = []
 
@@ -25,18 +26,20 @@ class BPlayer:
         life = '☥' if self.life else '†'
         return f'{life}{self.character.name}(seat {self.role.seat})[{self.role.role}]'
 
+    def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
+        game.boardcast(audiences, content, str(self.role.seat))
+
+    def receive(self, content: str) -> None:
+        game.unicast(self.role.seat, content)
+
+    def night(self) -> None:
+        ...
+
     def mark(self, target: Seat) -> Mark:
         raise NotImplementedError('mark not implemented')
 
     def choose(self, candidates: Sequence[Seat]) -> Seat:
         return get_seat(self, candidates)
-
-    def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
-        game.boardcast(audiences, content, str(self.role.seat))
-
-    def text_clues(self) -> str:
-        dialogues = '\n'.join(str(clue) for clue in self.clues)
-        return f'Dialogues:\n{dialogues}'
 
 
 class Villager(BPlayer):
@@ -45,8 +48,37 @@ class Villager(BPlayer):
 
 class Werewolf(BPlayer):
     def __init__(self, character: InfoCharacter, role: InfoRole) -> None:
-        role.faction.faction = 'werewolf'
         super().__init__(character, role)
+        role.faction.faction = 'werewolf'
+        self.night_priority = 3
+
+    def night(self) -> None:
+        if self.role.seat == game.actors[0]:
+            game.boardcast(
+                game.actors,
+                f'Werewolves, please open your eyes! I secretly tell you that seat {game.actors} are all of the {len(game.actors)} werewolves!',
+            )
+            game.boardcast(
+                game.actors,
+                f'Now you can talk with your teammates.',
+            )
+            for seat in game.actors:
+                werewolf = game.players[seat]
+                speech = get_speech(werewolf)
+                werewolf.boardcast(game.actors, speech)
+            game.boardcast(
+                game.actors,
+                (
+                    f'Werewolves, you can choose one player to kill. Who are you going to kill tonight? '
+                    f'Choose one from the following living options to kill please: seat {game.options}. '
+                    '(The player with the highest vote count will be selected. In case of a tie, the one with the smallest seat number will be chosen.)'
+                ),
+            )
+            targets, record = game.vote(game.options, game.actors)
+            target = targets[0]
+            mark = self.mark(target)
+            game.marks.append(mark)
+            game.data['target_for_witch'] = target
 
     def mark(self, target: Seat) -> Mark:
         def func(source: Seat, target: Seat) -> None:
@@ -58,18 +90,56 @@ class Werewolf(BPlayer):
 
 class Seer(BPlayer):
     def __init__(self, character: InfoCharacter, role: InfoRole) -> None:
-        role.faction.category = 'god'
         super().__init__(character, role)
+        role.faction.category = 'god'
+        self.night_priority = 1
+
+    def night(self) -> None:
+        self.receive('Seer, please open your eyes!')
+        self.receive(
+            f"Seer, you can check one player's identity. Who are you going to verify its identity tonight? Choose one from the following living options please: seat {game.options}.",
+        )
+        target = self.choose(game.options)
+        self.receive(
+            f'Seat {target} is {game.players[target].role.faction.faction}.'
+        )
 
 
 class Witch(BPlayer):
     def __init__(self, character: InfoCharacter, role: InfoRole) -> None:
-        role.faction.category = 'god'
         super().__init__(character, role)
+        role.faction.category = 'god'
+        self.night_priority = 2
 
         self.antidote = True
         self.poison = True
         self.potion_decision = 'pass'
+
+    def night(self) -> None:
+        self.receive('Witch, please open your eyes! ')
+        decision = 'pass'
+        if self.antidote:
+            self.receive(
+                f'Witch, I secretly tell you that tonight seat {game.data["target_for_witch"]} has been killed by the werewolves. You have a bottle of antidote, would you like to save him/her? If so, say "save", else, say "pass".',
+            )
+            decision = get_word(self, ['save', 'pass']).lower()
+            if decision == 'save':
+                self.potion_decision = 'antidote'
+                mark = self.mark(game.data['target_for_witch'])
+                game.marks.append(mark)
+        if decision == 'pass' and self.poison:
+            self.receive(
+                f'Witch you decided whether to use the antidote previously. Now you also have a bottle of poison, would you like to use it to kill one of the living players? If so, say "kill", else, say "pass".',
+            )
+            decision = get_word(self, ['kill', 'pass']).lower()
+        if decision == 'kill':
+            self.potion_decision = 'poison'
+            self.receive(
+                f'Choose one from the following living options: {game.options}.',
+            )
+            seat = get_seat(self, game.options)
+            mark = self.mark(seat)
+            game.marks.append(mark)
 
     def mark(self, target: Seat) -> Mark:
         def func(source: Seat, target: Seat) -> None:
@@ -100,8 +170,8 @@ class Witch(BPlayer):
 
 class Hunter(BPlayer):
     def __init__(self, character: InfoCharacter, role: InfoRole) -> None:
-        role.faction.category = 'god'
         super().__init__(character, role)
+        role.faction.category = 'god'
 
     def mark(self, target: Seat) -> Mark:
         def func(source: Seat, target: Seat) -> None:
@@ -171,6 +241,10 @@ class Game:
         for seat, role in enumerate(self.roles):
             self.players.append(role(characters[seat], InfoRole(seat)))
 
+        self.options: list[Seat] = []
+        self.actors: list[Seat] = []
+        self.data: dict[str, Seat] = {}
+
     def __str__(self) -> str:
         info_player = '\n\t'.join(str(player) for player in self.players)
         return f'[{self.time}]players: \n\t{info_player}'
@@ -227,6 +301,21 @@ class Game:
             mark.exec()
             if game.winner():
                 break
+
+    def night(self) -> None:
+        self.options = self.alived()
+        actions: dict[int, list[Seat]] = {}
+        for player in self.players:
+            if not player.life:
+                continue
+            actions.setdefault(player.night_priority, []).append(
+                player.role.seat
+            )
+        while actions:
+            game.time.inc_round()
+            self.actors = actions.pop(max(actions))
+            for seat in self.actors:
+                game.players[seat].night()
 
     def vote(
         self, candidates: Sequence[Seat] = [], voters: Sequence[Seat] = []
@@ -320,102 +409,8 @@ class Game:
             "It's dark, everyone close your eyes. I will talk with you/your team secretly at night.",
         )
 
-        # werewolf
-        self.time.inc_round()
-        werewolves = self.alived_role('werewolf')
-        self.boardcast(self.audience(), 'Werewolves, please open your eyes!')
-        self.boardcast(
-            self.audience(), 'Werewolves, I secretly tell you that ...'
-        )
-        self.boardcast(
-            self.audience_role('werewolf'),
-            f'seat {werewolves} are all of the {len(werewolves)} werewolves!',
-        )
-        self.boardcast(
-            self.audience_role('werewolf'),
-            f'Now you can talk with your teammates.',
-        )
-        for werewolf in werewolves:
-            player = self.players[werewolf]
-            speech = get_speech(player)
-            player.boardcast(werewolves, speech)
-        self.boardcast(
-            self.audience(),
-            (
-                f'Werewolves, you can choose one player to kill. Who are you going to kill tonight? '
-                f'Choose one from the following living options to kill please: seat {alived_old}. '
-                '(The player with the highest vote count will be selected. In case of a tie, the one with the smallest seat number will be chosen.)'
-            ),
-        )
-        targets, record = self.vote(alived_old, werewolves)
-        target = targets[0]
-        mark = self.players[werewolves[0]].mark(target)
-        self.marks.append(mark)
-        target_for_witch = target
-
-        # witch
-        self.time.inc_round()
-        witches = self.alived_role('witch')
-        self.boardcast(self.audience(), 'Witch, please open your eyes!')
-        self.boardcast(self.audience(), f'Witch, I secretly tell you that ...')
-        witch_decision = 'pass'
-        if witches:
-            witch = self.players[witches[0]]
-            if not isinstance(witch, Witch):
-                raise TypeError('player is not a witch')
-            if witch.antidote:
-                self.boardcast(
-                    witches,
-                    f'tonight seat {target_for_witch} has been killed by the werewolves. You have a bottle of antidote, would you like to save him/her? If so, say "save", else, say "pass".',
-                )
-                word = get_word(witch, ['save', 'pass']).lower()
-                match word:
-                    case 'save':
-                        witch_decision = 'antidote'
-                        witch.potion_decision = 'antidote'
-                        mark = witch.mark(target_for_witch)
-                        self.marks.append(mark)
-                    case 'pass':
-                        pass
-                    case _:
-                        raise ValueError('value outsides candidates')
-            if witch_decision == 'pass' and witch.poison:
-                self.boardcast(
-                    witches,
-                    f'Witch you decided whether to use the antidote previously. Now you also have a bottle of poison, would you like to use it to kill one of the living players? If so, say "kill", else, say "pass".',
-                )
-                word = get_word(witch, ['kill', 'pass']).lower()
-                match word:
-                    case 'kill':
-                        witch_decision = 'poison'
-                        witch.potion_decision = 'poison'
-                    case 'pass':
-                        pass
-                    case _:
-                        raise ValueError('value outsides candidates')
-            if witch_decision == 'poison':
-                self.boardcast(
-                    witches,
-                    f'Choose one from the following living options: {alived_old}.',
-                )
-                seat = get_seat(witch, alived_old)
-                mark = witch.mark(seat)
-                self.marks.append(mark)
-
-        # seer
-        self.time.inc_round()
-        seers = self.alived_role('seer')
-        self.boardcast(self.audience(), 'Seer, please open your eyes!')
-        self.boardcast(
-            self.audience(),
-            f"Seer, you can check one player's identity. Who are you going to verify its identity tonight? Choose one from the following living options please: seat {alived_old}.",
-        )
-        if seers:
-            target = self.players[seers[0]].choose(alived_old)
-            self.boardcast(
-                self.audience_role('seer'),
-                f'Seat {target} is {self.players[target].role.faction.faction}.',
-            )
+        # night
+        game.night()
 
         # exec
         self.exec()
@@ -455,7 +450,15 @@ class Game:
         # speech
         self.boardcast(
             self.audience(),
-            f'Now freely talk about the current situation based on your observation with a few sentences.',
+            f'Now freely talk about the current situation based on your observation with a few sentences (round 1/2).',
+        )
+        for seat in alived_old:
+            player = self.players[seat]
+            speech = get_speech(player)
+            player.boardcast(self.audience(), speech)
+        self.boardcast(
+            self.audience(),
+            f'Now freely talk about the current situation based on your observation with a few sentences (round 2/2).',
         )
         for seat in alived_old:
             player = self.players[seat]

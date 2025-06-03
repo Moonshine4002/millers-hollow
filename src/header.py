@@ -140,22 +140,23 @@ class PPlayer(Protocol):
     life: bool
     character: InfoCharacter
     role: InfoRole
+    night_priority: int
     clues: list[Clue]
     death_causes: list[str]
 
     def __init__(self, character: InfoCharacter, role: InfoRole) -> None:
         ...
 
+    def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
+        ...
+
+    def night(self) -> None:
+        ...
+
     def mark(self, target: Seat) -> Mark:
         ...
 
     def choose(self, candidates: Sequence[Seat]) -> Seat:
-        ...
-
-    def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
-        ...
-
-    def text_clues(self) -> str:
         ...
 
 
