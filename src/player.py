@@ -1,6 +1,6 @@
 from .header import *
 
-from .ai import get_seat, get_speech, get_word
+from .ai import get_speech, get_word
 from . import user_data
 
 
@@ -38,8 +38,29 @@ class BPlayer:
     def mark(self, target: Seat) -> Mark:
         raise NotImplementedError('mark not implemented')
 
-    def choose(self, candidates: Sequence[Seat]) -> Seat:
-        return get_seat(self, candidates)
+    @overload
+    def choose(
+        self, candidates: Sequence[Seat], abstain: Literal[True] = True
+    ) -> Seat | None:
+        ...
+
+    @overload
+    def choose(
+        self, candidates: Sequence[Seat], abstain: Literal[False]
+    ) -> Seat:
+        ...
+
+    def choose(
+        self, candidates: Sequence[Seat], abstain: bool = True
+    ) -> Seat | None:
+        candidates_str = [str(candidate) for candidate in candidates]
+        if abstain:
+            candidates_str.append('pass')
+        answer = get_word(self, candidates_str)
+        if answer is None:
+            return None
+        else:
+            return Seat(answer)
 
 
 class Villager(BPlayer):
@@ -99,7 +120,7 @@ class Seer(BPlayer):
         self.receive(
             f"Seer, you can check one player's identity. Who are you going to verify its identity tonight? Choose one from the following living options please: seat {game.options}.",
         )
-        target = self.choose(game.options)
+        target = self.choose(game.options, abstain=False)
         self.receive(
             f'Seat {target} is {game.players[target].role.faction.faction}.'
         )
@@ -137,7 +158,7 @@ class Witch(BPlayer):
             self.receive(
                 f'Choose one from the following living options: {game.options}.',
             )
-            seat = get_seat(self, game.options)
+            seat = self.choose(game.options, abstain=False)
             mark = self.mark(seat)
             game.marks.append(mark)
 
@@ -182,7 +203,9 @@ class Hunter(BPlayer):
                 [self.role.seat],
                 f'Please choose a living player to shoot: {game.alived()}.',
             )
-            seat = get_seat(self, game.alived())
+            seat = self.choose(game.alived())
+            if seat is None:
+                return
 
             game.players[seat].death_causes.append('hunter')
             game.players[seat].life = False
@@ -329,8 +352,9 @@ class Game:
         for seat in voters:
             player = self.players[seat]
             vote = player.choose(candidates)
-            ballot[vote] += 1
-            record.append((player.role.seat, vote))
+            if vote is not None:
+                ballot[vote] += 1
+                record.append((player.role.seat, vote))
         highest = max(ballot)
         targets = [
             index for index, value in enumerate(ballot) if value == highest

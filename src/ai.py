@@ -128,31 +128,11 @@ def get(
             log(f'{e!r}\n')
 
 
-def get_seat(player: PPlayer, candidates: Sequence[Seat]) -> Seat:
-    prompts = {
-        'instructions': "- Choose a seat. It can either benefit or harm the chosen player according to the Moderator's question.\n",
-        'format': 'Reason: <reason> --- <number>\n'
-        "(<number> is your chosen seat asked by the Moderator's question. You MUST only output the number.)\n"
-        '(<reason> is a few sentences explaining your choice.)\n',
-    }
-    if not DEBUG:
-        prompts['format'] = '<number>\n'
-
-    def condition(output: str) -> bool:
-        seat = Seat(output)
-        if seat not in candidates:
-            return False
-        return True
-
-    seat = get(player, condition, **prompts)
-    return Seat(seat)
-
-
 def get_word(player: PPlayer, candidates: Sequence[str]) -> str:
     prompts = {
         'instructions': "- Answer a word. It can either benefit or harm the chosen player according to the Moderator's question.\n",
         'format': 'Reason: <reason> --- <word>\n'
-        "(<word> is your reply of the Moderator's question. You MUST only output a word within the choices given by the Moderator.)\n"
+        f"(<word> is your reply of the Moderator's question. You MUST only output a word within {candidates}.)\n"
         '(<reason> is a few sentences explaining your choice.)\n',
     }
     if not DEBUG:

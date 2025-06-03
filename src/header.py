@@ -10,7 +10,15 @@ import pathlib
 import random
 import string
 import time
-from typing import Any, Literal, NamedTuple, Protocol, Self, TypeAlias
+from typing import (
+    Any,
+    Literal,
+    NamedTuple,
+    Protocol,
+    Self,
+    TypeAlias,
+    overload,
+)
 import warnings
 
 
@@ -156,7 +164,21 @@ class PPlayer(Protocol):
     def mark(self, target: Seat) -> Mark:
         ...
 
-    def choose(self, candidates: Sequence[Seat]) -> Seat:
+    @overload
+    def choose(
+        self, candidates: Sequence[Seat], abstain: Literal[True] = True
+    ) -> Seat | None:
+        ...
+
+    @overload
+    def choose(
+        self, candidates: Sequence[Seat], abstain: Literal[False]
+    ) -> Seat:
+        ...
+
+    def choose(
+        self, candidates: Sequence[Seat], abstain: bool = True
+    ) -> Seat | None:
         ...
 
 
