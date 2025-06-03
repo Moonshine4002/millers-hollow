@@ -57,7 +57,7 @@ class BPlayer:
         if abstain:
             candidates_str.append('pass')
         answer = get_word(self, candidates_str)
-        if answer is None:
+        if answer == 'pass':
             return None
         else:
             return Seat(answer)
@@ -96,7 +96,14 @@ class Werewolf(BPlayer):
                 ),
             )
             targets, record = game.vote(game.options, game.actors)
+            if targets is None:
+                game.data['target_for_witch'] = None
+                return
             target = targets[0]
+            game.boardcast(
+                game.actors,
+                (f'Werewolves kill seat {target} together.'),
+            )
             mark = self.mark(target)
             game.marks.append(mark)
             game.data['target_for_witch'] = target
@@ -140,14 +147,19 @@ class Witch(BPlayer):
         self.receive('Witch, please open your eyes! ')
         decision = 'pass'
         if self.antidote:
-            self.receive(
-                f'Witch, I secretly tell you that tonight seat {game.data["target_for_witch"]} has been killed by the werewolves. You have a bottle of antidote, would you like to save him/her? If so, say "save", else, say "pass".',
-            )
-            decision = get_word(self, ['save', 'pass']).lower()
-            if decision == 'save':
-                self.potion_decision = 'antidote'
-                mark = self.mark(game.data['target_for_witch'])
-                game.marks.append(mark)
+            if game.data['target_for_witch'] is None:
+                self.receive(
+                    f'Witch, I secretly tell you that tonight nobody has been killed by the werewolves.'
+                )
+            else:
+                self.receive(
+                    f'Witch, I secretly tell you that tonight seat {game.data["target_for_witch"]} has been killed by the werewolves. You have a bottle of antidote, would you like to save him/her? If so, say "save", else, say "pass".',
+                )
+                decision = get_word(self, ['save', 'pass']).lower()
+                if decision == 'save':
+                    self.potion_decision = 'antidote'
+                    mark = self.mark(game.data['target_for_witch'])
+                    game.marks.append(mark)
         if decision == 'pass' and self.poison:
             self.receive(
                 f'Witch you decided whether to use the antidote previously. Now you also have a bottle of poison, would you like to use it to kill one of the living players? If so, say "kill", else, say "pass".',
@@ -266,7 +278,7 @@ class Game:
 
         self.options: list[Seat] = []
         self.actors: list[Seat] = []
-        self.data: dict[str, Seat] = {}
+        self.data: dict[str, Seat | None] = {}
 
     def __str__(self) -> str:
         info_player = '\n\t'.join(str(player) for player in self.players)
@@ -342,19 +354,21 @@ class Game:
 
     def vote(
         self, candidates: Sequence[Seat] = [], voters: Sequence[Seat] = []
-    ) -> tuple[list[Seat], list[tuple[Seat, Seat]]]:
-        ballot = [0] * len(self.players)
-        if not candidates:
-            candidates = self.alived()
-        if not voters:
-            voters = self.alived()
-        record: list[tuple[Seat, Seat]] = []
+    ) -> tuple[list[Seat] | None, list[tuple[Seat, Seat | None]]]:
+        record: list[tuple[Seat, Seat | None]] = []
+        ballot = [0] * (len(self.players) + 1)
         for seat in voters:
             player = self.players[seat]
             vote = player.choose(candidates)
-            if vote is not None:
+            record.append((seat, vote))
+            if vote is None:
+                ballot[-1] += 1
+            else:
                 ballot[vote] += 1
-                record.append((player.role.seat, vote))
+        if all(vote is None for seat, vote in record):
+            return None, record
+        else:
+            ballot = ballot[:-1]
         highest = max(ballot)
         targets = [
             index for index, value in enumerate(ballot) if value == highest
@@ -474,12 +488,13 @@ class Game:
         # speech
         self.boardcast(
             self.audience(),
-            f'Now freely talk about the current situation based on your observation with a few sentences (round 1/2).',
+            f'Now freely talk about the current situation based on your observation with a few sentences.',  # (round 1/2).',
         )
         for seat in alived_old:
             player = self.players[seat]
             speech = get_speech(player)
             player.boardcast(self.audience(), speech)
+        """
         self.boardcast(
             self.audience(),
             f'Now freely talk about the current situation based on your observation with a few sentences (round 2/2).',
@@ -488,6 +503,7 @@ class Game:
             player = self.players[seat]
             speech = get_speech(player)
             player.boardcast(self.audience(), speech)
+        """
 
         # vote
         self.time.inc_round()
@@ -499,7 +515,11 @@ class Game:
         record_text = ', '.join(
             f'{source}->{target}' for source, target in record
         )
-        if len(targets) == 1:
+        if targets is None:
+            self.boardcast(
+                self.audience(), f'Everyone passed. Nobody was eliminated.'
+            )
+        elif len(targets) == 1:
             self.players[targets[0]].death_causes.append('vote')
             self.players[targets[0]].life = False
             self.boardcast(
@@ -515,7 +535,11 @@ class Game:
             record_text = ', '.join(
                 f'{source}->{target}' for source, target in record
             )
-            if len(targets) == 1:
+            if targets is None:
+                self.boardcast(
+                    self.audience(), f'Everyone passed. Nobody was eliminated.'
+                )
+            elif len(targets) == 1:
                 self.players[targets[0]].death_causes.append('vote')
                 self.players[targets[0]].life = False
                 self.boardcast(
