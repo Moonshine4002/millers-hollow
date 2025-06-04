@@ -39,18 +39,18 @@ class BPlayer:
         raise NotImplementedError('mark not implemented')
 
     @overload
-    def choose(
+    def choose_seat(
         self, candidates: Sequence[Seat], abstain: Literal[True] = True
     ) -> Seat | None:
         ...
 
     @overload
-    def choose(
+    def choose_seat(
         self, candidates: Sequence[Seat], abstain: Literal[False]
     ) -> Seat:
         ...
 
-    def choose(
+    def choose_seat(
         self, candidates: Sequence[Seat], abstain: bool = True
     ) -> Seat | None:
         candidates_str = [str(candidate) for candidate in candidates]
@@ -61,6 +61,9 @@ class BPlayer:
             return None
         else:
             return Seat(answer)
+
+    def choose_word(self, candidates: Sequence[str]) -> str:
+        return get_word(self, candidates)
 
 
 class Villager(BPlayer):
@@ -81,7 +84,7 @@ class Werewolf(BPlayer):
             )
             game.boardcast(
                 game.actors,
-                f'Now you can talk with your teammates.',
+                f'Now you can talk secretly with your teammates.',
             )
             for seat in game.actors:
                 werewolf = game.players[seat]
@@ -91,7 +94,7 @@ class Werewolf(BPlayer):
                 game.actors,
                 (
                     f'Werewolves, you can choose one player to kill. Who are you going to kill tonight? '
-                    f'Choose one from the following living options to kill please: seat {game.options}. '
+                    f'Choose one from the following living options to kill please: seat {game.options} or pass. '
                     '(The player with the highest vote count will be selected. In case of a tie, the one with the smallest seat number will be chosen.)'
                 ),
             )
@@ -127,7 +130,7 @@ class Seer(BPlayer):
         self.receive(
             f"Seer, you can check one player's identity. Who are you going to verify its identity tonight? Choose one from the following living options please: seat {game.options}.",
         )
-        target = self.choose(game.options, abstain=False)
+        target = self.choose_seat(game.options, abstain=False)
         self.receive(
             f'Seat {target} is {game.players[target].role.faction.faction}.'
         )
@@ -145,34 +148,42 @@ class Witch(BPlayer):
 
     def night(self) -> None:
         self.receive('Witch, please open your eyes! ')
-        decision = 'pass'
-        if self.antidote:
-            if game.data['target_for_witch'] is None:
-                self.receive(
-                    f'Witch, I secretly tell you that tonight nobody has been killed by the werewolves.'
-                )
-            else:
-                self.receive(
-                    f'Witch, I secretly tell you that tonight seat {game.data["target_for_witch"]} has been killed by the werewolves. You have a bottle of antidote, would you like to save him/her? If so, say "save", else, say "pass".',
-                )
-                decision = get_word(self, ['save', 'pass']).lower()
-                if decision == 'save':
-                    self.potion_decision = 'antidote'
-                    mark = self.mark(game.data['target_for_witch'])
-                    game.marks.append(mark)
-        if decision == 'pass' and self.poison:
-            self.receive(
-                f'Witch you decided whether to use the antidote previously. Now you also have a bottle of poison, would you like to use it to kill one of the living players? If so, say "kill", else, say "pass".',
+        target_for_witch = game.data['target_for_witch']
+        decisions = ['pass']
+        if self.antidote and target_for_witch is not None:
+            decisions.append('save')
+            target_for_witch_str = (
+                f'seat {target_for_witch}'
+                if target_for_witch is not None
+                else 'nobody'
             )
-            decision = get_word(self, ['kill', 'pass']).lower()
-        if decision == 'kill':
-            self.potion_decision = 'poison'
             self.receive(
-                f'Choose one from the following living options: {game.options}.',
+                f'Witch, I secretly tell you that tonight {target_for_witch_str} has been killed by the werewolves.'
             )
-            seat = self.choose(game.options, abstain=False)
-            mark = self.mark(seat)
-            game.marks.append(mark)
+        if self.poison:
+            decisions.extend(str(option) for option in game.options)
+        if decisions == ['pass']:
+            return
+        self.receive(
+            f'Witch, you have {int(self.antidote)} antidote and {int(self.poison)} poison. Your options are {decisions}. '
+            'Say "pass" to pass, say "save" to save, say a seat to kill a player of that seat.'
+        )
+        decision = self.choose_word(decisions).lower()
+        match decision:
+            case 'pass':
+                pass
+            case 'save':
+                self.potion_decision = 'antidote'
+                if target_for_witch is None:
+                    raise RuntimeError(
+                        "target_for_witch's type is not as expected"
+                    )
+                mark = self.mark(Seat(target_for_witch))
+                game.marks.append(mark)
+            case seat:
+                self.potion_decision = 'poison'
+                mark = self.mark(Seat(seat))
+                game.marks.append(mark)
 
     def mark(self, target: Seat) -> Mark:
         def func(source: Seat, target: Seat) -> None:
@@ -213,9 +224,9 @@ class Hunter(BPlayer):
             )
             game.boardcast(
                 [self.role.seat],
-                f'Please choose a living player to shoot: {game.alived()}.',
+                f'Please choose a living player ({game.alived()}) to shoot or pass.',
             )
-            seat = self.choose(game.alived())
+            seat = self.choose_seat(game.alived())
             if seat is None:
                 return
 
@@ -359,7 +370,7 @@ class Game:
         ballot = [0] * (len(self.players) + 1)
         for seat in voters:
             player = self.players[seat]
-            vote = player.choose(candidates)
+            vote = player.choose_seat(candidates)
             record.append((seat, vote))
             if vote is None:
                 ballot[-1] += 1
@@ -509,7 +520,7 @@ class Game:
         self.time.inc_round()
         self.boardcast(
             self.audience(),
-            f"It's time to vote. Choose one from the following living options please: seat {alived_old}.",
+            f"It's time to vote. Choose one from the following living options please: seat {alived_old} or pass.",
         )
         targets, record = self.vote(alived_old, alived_old)
         record_text = ', '.join(
@@ -529,7 +540,7 @@ class Game:
         else:
             self.boardcast(
                 self.audience(),
-                f"It's a tie. Vote result: {record_text}. Choose one from voters with highest votes please: seat {targets}.",
+                f"It's a tie. Vote result: {record_text}. Choose one from voters with highest votes please: seat {targets} or pass.",
             )
             targets, record = self.vote(targets, alived_old)
             record_text = ', '.join(

@@ -165,20 +165,23 @@ class PPlayer(Protocol):
         ...
 
     @overload
-    def choose(
+    def choose_seat(
         self, candidates: Sequence[Seat], abstain: Literal[True] = True
     ) -> Seat | None:
         ...
 
     @overload
-    def choose(
+    def choose_seat(
         self, candidates: Sequence[Seat], abstain: Literal[False]
     ) -> Seat:
         ...
 
-    def choose(
+    def choose_seat(
         self, candidates: Sequence[Seat], abstain: bool = True
     ) -> Seat | None:
+        ...
+
+    def choose_word(self, candidates: Sequence[str]) -> str:
         ...
 
 
