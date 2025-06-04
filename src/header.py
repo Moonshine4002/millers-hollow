@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from collections import UserDict, UserList
+from collections import Counter, UserDict, UserList
 from collections.abc import Callable, Sequence
 from copy import copy, deepcopy
 from dataclasses import dataclass, field
@@ -141,7 +141,7 @@ class Clue(NamedTuple):
     clue: str
 
     def __str__(self) -> str:
-        return f'[{self.time}]{self.source}> {self.clue}'
+        return f'{self.source}> {self.clue}'
 
 
 class PPlayer(Protocol):
@@ -159,9 +159,6 @@ class PPlayer(Protocol):
         ...
 
     def night(self) -> None:
-        ...
-
-    def mark(self, target: Seat) -> Mark:
         ...
 
     @overload

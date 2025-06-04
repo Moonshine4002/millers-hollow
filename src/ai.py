@@ -39,9 +39,7 @@ def input_ai(player: PPlayer, **prompts: str) -> list[str]:
         '(Do not output any newline character.)\n'
         f'(Output using "{user_data.language}".)\n\n'
     )
-    messages: list[ChatCompletionMessageParam] = [
-        {'role': 'system', 'content': prompt},
-    ]
+    messages: list[ChatCompletionMessageParam] = []
     for clue in player.clues:
         d: ChatCompletionMessageParam = {
             'role': 'user',
@@ -51,6 +49,7 @@ def input_ai(player: PPlayer, **prompts: str) -> list[str]:
         # if clue.source == 'Moderator':
         #    d['role'] = 'system'
         messages.append(d)
+    messages.append({'role': 'system', 'content': prompt})
 
     chat_completion = client.chat.completions.create(
         model=user_data.model,
@@ -131,7 +130,7 @@ def get(
 def get_word(player: PPlayer, candidates: Sequence[str]) -> str:
     prompts = {
         'instructions': "- Answer a word. It can either benefit or harm the chosen player according to the Moderator's question.\n",
-        'format': 'Reason: <reason> --- <word>\n'
+        'format': '<reason> --- <word>\n'
         f"(<word> is your reply of the Moderator's question. You MUST only output a word within {candidates}.)\n"
         '(<reason> is a few sentences explaining your choice.)\n',
     }
@@ -153,7 +152,7 @@ def get_speech(player: PPlayer) -> str:
         "- Your second part of the response will be broadcast (audiences depend on the Moderator's question), so split your answer into two parts:\n"
         '  1. The reasoning behind your speech.\n'
         '  2. The speech to be broadcast.\n',
-        'format': 'Reason: <a few sentences explaining your choice> --- <speech to be broadcast>\n',
+        'format': '<a few sentences explaining your choice> --- <speech to be broadcast>\n',
     }
     if not DEBUG:
         prompts['instructions'] = '- Compose a speech to be broadcast.\n'
