@@ -460,14 +460,17 @@ class Game:
                     raise NotImplementedError('unknown faction')
         if count_villagers + count_werewolfs + count_god == 0:
             return Role('nobody')
-        elif count_villagers + count_god == 0:   # count_villagers * count_god
-            return Role('werewolf')
-        elif count_werewolfs == 0:
+        if count_werewolfs == 0:
             return Role('villager')
-        # elif count_villagers + count_god < count_werewolfs:
+        if user_data.win_condition == 'all':
+            if count_villagers + count_god == 0:
+                return Role('werewolf')
+        elif user_data.win_condition == 'partial':
+            if count_villagers * count_god == 0:
+                return Role('werewolf')
+        # if count_villagers + count_god < count_werewolfs:
         #    return Role('werewolf')
-        else:
-            return Role('')
+        return Role('')
 
     def vote(
         self,

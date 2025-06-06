@@ -72,7 +72,7 @@ def input_control(
 
 def parse(pl: PPlayer, content: str) -> str:
     if not DEBUG:
-        content = content.strip(' []').replace('\n', '')
+        content = content.replace('\n', '').strip(' "[]')
         log(f'{pl.seat}[{pl.role.kind}]~> {content}\n')
         return content
     if '---' not in content:
@@ -80,8 +80,8 @@ def parse(pl: PPlayer, content: str) -> str:
     lcontent = content.split('---')
     if len(lcontent) != 2:
         raise ValueError('wrong format: more than one "---"')
-    reason = lcontent[0].strip(' []').replace('\n', '')
-    target = lcontent[1].strip(' []').replace('\n', '')
+    reason = lcontent[0].replace('\n', '').strip(' "[]')
+    target = lcontent[1].replace('\n', '').strip(' "[]')
     log(f'{pl.seat}[{pl.role.kind}]~> {target} --- {reason}\n')
     return target
 
