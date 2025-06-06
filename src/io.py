@@ -18,8 +18,10 @@ system_prompt = (
     'You will be given a input describing the game scenario. '
     'Try your best to win the game.\n\n'
     'Rules:\n'
-    '- The user named "Moderator" will never lie. But anyone else may.\n'
-    '- You also win if your teammates win in the end.\n\n'
+    '- The Moderator is always truthful.\n'
+    '- You win if your team wins.\n'
+    '- Output must be in one line without newlines.\n'
+    f'- Output using "{user_data.language}".\n\n'
 )
 
 
@@ -46,7 +48,7 @@ def input_file(pl: PPlayer) -> str:
             lines = file.readlines()
         if not lines:
             continue
-        output = lines[0].lstrip('Input:').lstrip().rstrip()
+        output = lines[0].lstrip('Input:').strip()
         lines[0] = 'Input: \n'
         with file_path.open('w', encoding='utf-8') as file:
             file.writelines(lines)
@@ -70,15 +72,16 @@ def input_control(
 
 def parse(pl: PPlayer, content: str) -> str:
     if not DEBUG:
+        content = content.strip(' []').replace('\n', '')
         log(f'{pl.seat}[{pl.role.kind}]~> {content}\n')
-        return content.lstrip().rstrip()
+        return content
     if '---' not in content:
         raise ValueError('wrong format: no "---"')
     lcontent = content.split('---')
     if len(lcontent) != 2:
         raise ValueError('wrong format: more than one "---"')
-    reason = lcontent[0].lstrip().rstrip()
-    target = lcontent[-1].lstrip().rstrip()
+    reason = lcontent[0].strip(' []').replace('\n', '')
+    target = lcontent[1].strip(' []').replace('\n', '')
     log(f'{pl.seat}[{pl.role.kind}]~> {target} --- {reason}\n')
     return target
 
@@ -117,12 +120,10 @@ def input_middle(
 def input_word(pl: PPlayer, candidates_iter: Iterable[str]) -> str:
     candidates = list(candidates_iter)
     prompt = (
-        f'Your identity: {pl.role.kind}. Your seat: {pl.seat}. '
-        f"Your task: {'your thought, followed by' if DEBUG else 'make'} a choice in {candidates}.\n"
+        f'Role: {pl.role.kind}. Seat: {pl.seat}. '
+        f"Task: {'your thought, followed by' if DEBUG else 'choose'} one option in {candidates}.\n"
         'Output format:\n'
-        + ('thought --- choice\n' if DEBUG else 'choice\n')
-        + '(Do not output any newline character.)\n'
-        f'(Output using "{user_data.language}".)\n\n'
+        f"{'[Your thought] --- 'if DEBUG else ''}[Selected option]\n"
         f'{user_data.prompt}'
     )
     return input_middle(pl, prompt, candidates)
@@ -130,12 +131,10 @@ def input_word(pl: PPlayer, candidates_iter: Iterable[str]) -> str:
 
 def input_speech(pl: PPlayer) -> str:
     prompt = (
-        f'Your identity: {pl.role.kind}. Your seat: {pl.seat}. '
-        f"Your task: {'your thought, followed by' if DEBUG else 'make'} a speech.\n"
+        f'Role: {pl.role.kind}. Seat: {pl.seat}. '
+        f"Task: {'your thought, followed by' if DEBUG else 'make'} a speech.\n"
         'Output format:\n'
-        + ('thought --- speech\n' if DEBUG else 'speech\n')
-        + '(Do not output any newline character.)\n'
-        f'(Output using "{user_data.language}".)\n\n'
+        f"{'[Your thought] --- 'if DEBUG else ''}[Speech content]\n"
         f'{user_data.prompt}'
     )
     return input_middle(pl, prompt)

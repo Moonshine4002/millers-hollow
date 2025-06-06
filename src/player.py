@@ -137,7 +137,6 @@ class Witch(BPlayer):
     def night(self) -> None:
         def func_a(game: PGame, source: PPlayer, target: PPlayer) -> None:
             assert isinstance(source, self.__class__)
-            source.antidote = False
             game.marks = [
                 mark
                 for mark in game.marks
@@ -146,7 +145,6 @@ class Witch(BPlayer):
 
         def func_p(game: PGame, source: PPlayer, target: PPlayer) -> None:
             assert isinstance(source, self.__class__)
-            source.poison = False
             target.life = False
             target.death_time = copy(game.time)
             target.death_causes.append(self.role.kind)
@@ -174,11 +172,13 @@ class Witch(BPlayer):
         if str_ == 'pass':
             pass
         elif str_ == 'save':
+            self.antidote = False
             assert isinstance(target, PPlayer)
             self.game.marks.append(
                 Mark('antidote', self.game, self, target, func_a, priority=1)
             )
         else:
+            self.poison = False
             pl = seat2pl(self.game, Seat(str_))
             self.game.marks.append(
                 Mark('poison', self.game, self, pl, func_p, priority=1)
@@ -250,7 +250,8 @@ class Guard(BPlayer):
         self.receive(
             'Guard, please open your eyes! Who will you protect tonight?'
         )
-        pl = self.pl_optional(self.game.options)
+        options = [pl for pl in self.game.options if pl != self.guard]
+        pl = self.pl_optional(options)
         self.guard = pl
         if pl:
             self.game.marks.append(
