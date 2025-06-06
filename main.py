@@ -1,5 +1,17 @@
 from src.player import *
 
-game = Game()
+chars = [Char(name, 'ai') for name in string.ascii_uppercase]
+roles = [
+    Villager,
+    Villager,
+    Villager,
+    Werewolf,
+    Werewolf,
+    Werewolf,
+    Seer,
+    Witch,
+    Hunter,
+]
+game = Game(chars, roles)
 
 game.loop()

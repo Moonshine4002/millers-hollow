@@ -64,7 +64,7 @@ class Werewolf(BPlayer):
         super().__init__(game, char, seat)
         self.role.faction = 'werewolf'
         self.role.category = 'werewolf'
-        self.night_priority = 3   # TODO
+        self.night_priority = 3
 
     def night(self) -> None:
         def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
@@ -169,7 +169,7 @@ class Witch(BPlayer):
             return
         self.receive(
             f'You have {int(self.antidote)} antidote and {int(self.poison)} poison. '
-            'Say "pass" to pass, say "save" to save, say a seat to kill a player of that seat.'
+            'Say "pass" to pass, say "save" to save, say a seat number to poison a player.'
         )
         str_ = self.str_optional(decisions)
         if str_ == 'pass':
@@ -200,20 +200,20 @@ class Hunter(BPlayer):
     def life(self, value: bool) -> None:
         def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
             game.boardcast(game.audience(), f'Seat {source.seat} is a hunter!')
+            source.receive('You can choose a player to shoot.')
             pl = self.pl_optional(game.options)
             if pl is None:
+                game.boardcast(game.audience(), f"Hunter didn't shoot anyone.")
                 return
             pl.life = False
             pl.death_time = copy(game.time)
             pl.death_causes.append(self.role.kind)
-            game.boardcast(
-                game.audience(), f'Seat {source.seat} shoot seat {pl.seat}.'
-            )
+            game.boardcast(game.audience(), f'Hunter shot seat {pl.seat}.')
 
         self.__life = value
         if self.__life:
             return
-        if 'witch' in self.death_causes:   # TODO
+        if 'witch' in self.death_causes:
             return
         self.game.post_marks.append(
             Mark(self.role.kind, self.game, self, self, func, priority=1)
@@ -221,23 +221,23 @@ class Hunter(BPlayer):
 
 
 class Game:
-    def __init__(self) -> None:
+    def __init__(
+        self, chars: Iterable[Char], roles: Iterable[type[PPlayer]]
+    ) -> None:
+        self.chars = list(chars)
+        self.roles = list(roles)
         self.time = Time()
-        self.chars = [Char(name, 'ai') for name in string.ascii_uppercase]
-        self.roles: list[type[PPlayer]] = [
-            Villager,
-            Villager,
-            Villager,
-            Werewolf,
-            Werewolf,
-            Werewolf,
-            Seer,
-            Witch,
-            Hunter,
-        ]
         self.players: list[PPlayer] = []
         self.marks: list[Mark] = []
         self.post_marks: list[Mark] = []
+        self.options: list[PPlayer] = []
+        self.actors: list[PPlayer] = []
+        self.data: dict[str, Any] = {}
+
+        roles = Counter(self.roles)
+        self.data['roles'] = ', '.join(
+            f'{num} {Pl.__name__.lower()}' for Pl, num in roles.items()
+        )
 
         users = len(user_data.user_names)
         ai = len(self.roles) - users
@@ -248,12 +248,8 @@ class Game:
             chars.append(Char(user_name, 'file'))
         random.shuffle(chars)
         random.shuffle(self.roles)
-        for seat, role in enumerate(self.roles):
-            self.players.append(role(self, chars[seat], Seat(seat)))
-
-        self.options: list[PPlayer] = []
-        self.actors: list[PPlayer] = []
-        self.data: dict[str, Any] = {}
+        for seat, Pl in enumerate(self.roles):
+            self.players.append(Pl(self, chars[seat], Seat(seat)))
 
     def __str__(self) -> str:
         info_player = '\n\t'.join(str(pl) for pl in self.players)
@@ -294,7 +290,7 @@ class Game:
         self.boardcast(
             self.audience(),
             "This game is called The Werewolves of Miller's Hollow. "
-            'The game setup is 3 villagers, 3 werewolves, 1 seer, 1 witch, and 1 hunter. '
+            f"The game setup is {self.data['roles']}. "
             f'Players list from seat 1 to {len(self.options)}.',
         )
 
@@ -338,7 +334,7 @@ class Game:
             self.audience(),
             f"It's daytime. Everyone woke up. {summary}Seat {pls2str(self.options)} are still alive.",
         )
-        if self.time.cycle == 1:
+        if self.time.cycle == 2:
             self.testament(died)
 
         # speech
@@ -352,7 +348,7 @@ class Game:
 
         # vote
         self.time.inc_round()
-        self.boardcast(self.audience(), f"It's time to vote.")
+        self.boardcast(self.audience(), "It's time to vote.")
         targets = self.vote(self.options, self.options)
         if targets is None:
             pass
@@ -361,6 +357,7 @@ class Game:
             self.testament((targets,))
         else:
             self.time.inc_round()
+            self.boardcast(self.audience(), 'Please vote again.')
             targets = self.vote(targets, self.options)
             if targets is None:
                 pass

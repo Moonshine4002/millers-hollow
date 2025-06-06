@@ -79,7 +79,7 @@ def parse(pl: PPlayer, content: str) -> str:
         raise ValueError('wrong format: more than one "---"')
     reason = lcontent[0].lstrip().rstrip()
     target = lcontent[-1].lstrip().rstrip()
-    log(f'{pl.seat}[{pl.role.kind}]~> {target}: {reason}\n')
+    log(f'{pl.seat}[{pl.role.kind}]~> {target} --- {reason}\n')
     return target
 
 
@@ -120,10 +120,8 @@ def input_word(pl: PPlayer, candidates_iter: Iterable[str]) -> str:
         f'Your identity: {pl.role.kind}. Your seat {pl.seat}. '
         f'Your task: answer a word in {candidates}.\n'
         'Output format:\n'
-        + ('<reason> --- <word>\n' if DEBUG else '<choice>\n')
-        + '(E.g. "I don\t know what to say --- pass".)\n'
-        '(Keep "---" as separator. Do not keep the words in <> as they are prompts.)\n'
-        '(Do not output any newline character.)\n'
+        + ('reason --- choice\n' if DEBUG else 'choice\n')
+        + '(Do not output any newline character.)\n'
         f'(Output using "{user_data.language}".)\n\n'
         f'{user_data.prompt}'
     )
@@ -135,9 +133,8 @@ def input_speech(pl: PPlayer) -> str:
         f'Your identity: {pl.role.kind}. Your seat {pl.seat}. '
         f'Your task: make a speech.\n'
         'Output format:\n'
-        + ('<reason> --- <speech>\n' if DEBUG else '<speech>\n')
-        + '(Keep "---" as separator. Do not keep the words in <> as they are prompts.)\n'
-        '(Do not output any newline character.)\n'
+        + ('reason --- speech\n' if DEBUG else 'speech\n')
+        + '(Do not output any newline character.)\n'
         f'(Output using "{user_data.language}".)\n\n'
         f'{user_data.prompt}'
     )

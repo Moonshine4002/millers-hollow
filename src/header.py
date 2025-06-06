@@ -1,3 +1,4 @@
+from collections import Counter
 from collections.abc import Callable, Generator, Iterable
 from copy import copy, deepcopy
 from dataclasses import dataclass
@@ -216,9 +217,9 @@ def output(
 
 
 class PGame(Protocol):
-    time: Time
     chars: list[Char]
     roles: list[type[PPlayer]]
+    time: Time
     players: list[PPlayer]
     marks: list[Mark]
     post_marks: list[Mark]
