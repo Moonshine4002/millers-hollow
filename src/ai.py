@@ -23,7 +23,7 @@ def input_ai(player: PPlayer, **prompts: str) -> list[str]:
         'Please be sure that you know the rules. '
         'You will be given a input describing the game scenario.\n\n'
         'Your identity:\n'
-        f'You are seat {player.role.seat}, and your role is {player.role.role}.\n\n'
+        f'You are seat {player.seat}, and your role is {player.role.kind}.\n\n'
         'Objectives:\n'
         '- Try your best to win the game.\n'
         '- You also win if your teammates win in the end.\n'
@@ -43,7 +43,7 @@ def input_ai(player: PPlayer, **prompts: str) -> list[str]:
     for clue in player.clues:
         d: ChatCompletionMessageParam = {
             'role': 'user',
-            'content': clue.clue,
+            'content': clue.content,
             'name': clue.source,
         }
         # if clue.source == 'Moderator':
@@ -72,7 +72,7 @@ def input_ai(player: PPlayer, **prompts: str) -> list[str]:
 
 
 def input_file(player: PPlayer) -> str:
-    file_path = pathlib.Path(f'io/{player.role.seat}.txt')
+    file_path = pathlib.Path(f'io/{player.seat}.txt')
     while True:
         time.sleep(1)
         with file_path.open('r', encoding='utf-8') as file:
@@ -92,9 +92,9 @@ def get(
 ) -> str:
     while True:
         try:
-            match player.character.control:
+            match player.char.control:
                 case 'console':
-                    candidate = input_console(f'{player.role.seat}> ')
+                    candidate = input_console(f'{player.seat}> ')
                     if not condition(candidate):
                         raise ValueError(f'wrong value: {candidate}')
                     return candidate
@@ -107,11 +107,11 @@ def get(
                         raise ValueError(f'wrong value: {candidate}')
                     if DEBUG:
                         log(
-                            f'{player.role.seat}[{player.role.role}]~> {candidate}: {reason}\n'
+                            f'{player.seat}[{player.role.kind}]~> {candidate}: {reason}\n'
                         )
                     else:
                         log(
-                            f'{player.role.seat}[{player.role.role}]~> {candidate}\n'
+                            f'{player.seat}[{player.role.kind}]~> {candidate}\n'
                         )
                     return candidate
                 case 'file':
@@ -127,7 +127,9 @@ def get(
             log(f'{e!r}\n')
 
 
-def get_word(player: PPlayer, candidates: Sequence[str]) -> str:
+def get_word(player: PPlayer, candidates_iter: Iterable[str]) -> str:
+    candidates = list(candidates_iter)
+    player.receive(f'Please choose in {candidates}')
     prompts = {
         'instructions': "- Answer a word. It can either benefit or harm the chosen player according to the Moderator's question.\n",
         'format': '<reason> --- <word>\n'

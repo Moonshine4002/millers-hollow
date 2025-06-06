@@ -1,25 +1,14 @@
-from abc import abstractmethod
-from collections import Counter, UserDict, UserList
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Iterable
 from copy import copy, deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
-import functools
 import itertools
 import pathlib
 import random
 import string
 import time
-from typing import (
-    Any,
-    Literal,
-    NamedTuple,
-    Protocol,
-    Self,
-    TypeAlias,
-    overload,
-)
-import warnings
+from typing import Any, NamedTuple, Protocol, Self, TypeAlias
+from typing import runtime_checkable
 
 
 from . import user_data
@@ -32,36 +21,37 @@ class NamedEnum(Enum):
         return f'{self.name.lower()}'
 
 
-def log(content: str, clear_text: str = '') -> None:
-    log_path = pathlib.Path(f'log_{user_data.model}.log')
-    if clear_text:
-        log_path.write_text(clear_text, encoding='utf-8')
-    with log_path.open(mode='a', encoding='utf-8') as file:
-        file.write(content)
-
-
 @dataclass
-class InfoCharacter:
+class Char:
     name: str
     control: str = 'console'
 
 
-Seat: TypeAlias = int
+class Seat(int):
+    def __str__(self) -> str:
+        return str(self + 1)
+
+    def __new__(cls, value: int | str) -> Self:
+        if isinstance(value, str):
+            value = int(value) - 1
+        return super().__new__(cls, value)
 
 
-class Faction:
-    __match_args__ = ('faction', 'category')
+class Role:
+    __match_args__ = ('faction', 'category', 'kind')
 
     def __init__(
-        self, faction: str = 'villager', category: str = 'standard'
+        self,
+        faction: str = 'villager',
+        category: str = 'villager',
+        kind: str = 'villager',
     ) -> None:
         self.faction = faction
         self.category = category
+        self.kind = kind
 
     def __str__(self) -> str:
-        return self.faction + (
-            '-' + self.category if self.category != 'standard' else ''
-        )
+        return f'{self.faction} - {self.category} - {self.kind}'
 
     def __bool__(self) -> bool:
         return bool(self.faction)
@@ -70,30 +60,23 @@ class Faction:
         return self.faction == value.faction
 
     def eq_category(self, value: Self) -> bool:
-        return self.category == value.category
+        return self.eq_faction(value) and self.category == value.category
+
+    def eq_kind(self, value: Self) -> bool:
+        return self.eq_category(value) and self.kind == value.kind
 
     def __eq__(self, value: Any) -> bool:
         if isinstance(value, self.__class__):
-            return self.eq_faction(value) and self.eq_category(value)
+            return self.eq_kind(value)
         return NotImplemented
 
 
-Role: TypeAlias = str
-
-
-@dataclass
-class InfoRole:
-    seat: Seat
-    faction: Faction = field(default_factory=Faction)
-    role: Role = 'blank'
-
-
 class Phase(NamedEnum):
-    NIGHT = auto()
     DAY = auto()
+    NIGHT = auto()
 
-    FIRST = NIGHT
-    LAST = DAY
+    FIRST = DAY
+    LAST = NIGHT
 
     def __next__(self) -> Self:
         match self:
@@ -107,12 +90,12 @@ class Phase(NamedEnum):
 
 @dataclass
 class Time:
-    cycle: int = 0
-    phase: Phase = Phase.LAST
+    cycle: int = 1
+    phase: Phase = Phase.DAY
     round: int = 0
 
     def __str__(self) -> str:
-        return f'cycle {self.cycle} - {self.phase} - round {self.round}'
+        return f'{self.phase} {self.cycle} - {self.round}'
 
     def inc_phase(self) -> None:
         self.round = 0
@@ -124,66 +107,187 @@ class Time:
         self.round += 1
 
 
-class Mark(NamedTuple):
-    name: str
-    source: Seat
-    target: Seat
-    func: Callable[[Seat, Seat], None]
-    priority: int = 0
-
-    def exec(self) -> None:
-        self.func(self.source, self.target)
-
-
 class Clue(NamedTuple):
     time: Time
     source: str
-    clue: str
+    content: str
 
     def __str__(self) -> str:
-        return f'{self.source}> {self.clue}'
+        return f'[{self.time}]{self.source}> {self.content}'
 
 
+@runtime_checkable
 class PPlayer(Protocol):
+    game: 'PGame'
+    char: Char
+    role: Role
     life: bool
-    character: InfoCharacter
-    role: InfoRole
+    seat: Seat
     night_priority: int
     clues: list[Clue]
+    death_time: Time
     death_causes: list[str]
 
-    def __init__(self, character: InfoCharacter, role: InfoRole) -> None:
+    def __init__(self, game: 'PGame', char: Char, seat: Seat) -> None:
         ...
 
-    def boardcast(self, audiences: Sequence[Seat], content: str) -> None:
+    def __str__(self) -> str:
+        ...
+
+    def boardcast(self, pls: Iterable['PPlayer'], content: str) -> None:
+        ...
+
+    def unicast(self, pl: 'PPlayer', content: str) -> None:
+        ...
+
+    def receive(self, content: str) -> None:
+        ...
+
+    def day(self) -> None:
         ...
 
     def night(self) -> None:
         ...
 
-    @overload
-    def choose_seat(
-        self, candidates: Sequence[Seat], abstain: Literal[True] = True
-    ) -> Seat | None:
+    def str_mandatory(self, options: Iterable[str]) -> str:
         ...
 
-    @overload
-    def choose_seat(
-        self, candidates: Sequence[Seat], abstain: Literal[False]
-    ) -> Seat:
+    def str_optional(self, options: Iterable[str]) -> str:
         ...
 
-    def choose_seat(
-        self, candidates: Sequence[Seat], abstain: bool = True
-    ) -> Seat | None:
+    def pl_mandatory(self, options: Iterable['PPlayer']) -> 'PPlayer':
         ...
 
-    def choose_word(self, candidates: Sequence[str]) -> str:
+    def pl_optional(self, options: Iterable['PPlayer']) -> 'PPlayer | None':
         ...
+
+
+class Mark(NamedTuple):
+    name: str
+    game: 'PGame'
+    source: PPlayer
+    target: PPlayer
+    func: Callable[['PGame', PPlayer, PPlayer], None]
+    priority: int = 0
+
+    def exec(self) -> None:
+        self.func(self.game, self.source, self.target)
+
+
+def pls2seat(pls: Iterable[PPlayer]) -> Generator[Seat]:
+    return (pl.seat for pl in pls)
+
+
+def pls2lstr(pls: Iterable[PPlayer]) -> Generator[str]:
+    return (str(seat) for seat in pls2seat(pls))
+
+
+def pls2str(pls: Iterable[PPlayer]) -> str:
+    return f"[{', '.join(pls2lstr(pls))}]"
+
+
+def log(content: str, clear_text: str = '') -> None:
+    log_path = pathlib.Path(f'log_{user_data.model}.log')
+    if clear_text:
+        log_path.write_text(clear_text, encoding='utf-8')
+    with log_path.open(mode='a', encoding='utf-8') as file:
+        file.write(content)
+
+
+def output(
+    pls_iter: Iterable[PPlayer],
+    clue: Clue,
+    system: bool = False,
+    clear_text: str = '',
+) -> None:
+    pls = list(pls_iter)
+    log(f'{clue} > {pls2str(pls)}\n', clear_text=clear_text)
+    if system or any(pl.char.control == 'console' for pl in pls):
+        print(str(clue))
+    for pl in pls:
+        if pl.char.control != 'file':
+            continue
+        file_path = pathlib.Path(f'io/{pl.seat}.txt')
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        if clear_text:
+            file_path.write_text(clear_text, encoding='utf-8')
+        with file_path.open(mode='a', encoding='utf-8') as file:
+            file.write(f'{clue}\n')
 
 
 class PGame(Protocol):
     time: Time
+    chars: list[Char]
+    roles: list[type[PPlayer]]
     players: list[PPlayer]
     marks: list[Mark]
     post_marks: list[Mark]
+
+    options: list[PPlayer]
+    actors: list[PPlayer]
+    data: dict[str, Any]
+
+    def __init__(self) -> None:
+        ...
+
+    def __str__(self) -> str:
+        ...
+
+    def boardcast(
+        self, pls: Iterable[PPlayer], content: str, source: str = 'Moderator'
+    ) -> None:
+        ...
+
+    def unicast(
+        self, pl: PPlayer, content: str, source: str = 'Moderator'
+    ) -> None:
+        ...
+
+    def loop(self) -> None:
+        ...
+
+    def day(self) -> None:
+        ...
+
+    def night(self) -> None:
+        ...
+
+    def exec(self) -> bool:
+        ...
+
+    def post_exec(self) -> bool:
+        ...
+
+    def winner(self) -> Role:
+        ...
+
+    def vote(
+        self,
+        candidates: Iterable[PPlayer],
+        voters: Iterable[PPlayer],
+        silent: bool = False,
+    ) -> None | PPlayer | list[PPlayer]:
+        ...
+
+    def testament(self, died: Iterable[PPlayer]) -> None:
+        ...
+
+    def audience(self) -> Generator[PPlayer]:
+        ...
+
+    def audience_role(self, role: str) -> Generator[PPlayer]:
+        ...
+
+    def alived(self) -> Generator[PPlayer]:
+        ...
+
+    def alived_role(self, role: str) -> Generator[PPlayer]:
+        ...
+
+
+def seat2pl(game: PGame, seat: Seat) -> PPlayer:
+    return game.players[seat]
+
+
+def seats2pl(game: PGame, seats: Iterable[Seat]) -> Generator[PPlayer]:
+    return (game.players[seat] for seat in seats)
