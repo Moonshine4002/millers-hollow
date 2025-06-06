@@ -10,7 +10,7 @@ roles = [
     Werewolf,
     Seer,
     Witch,
-    Hunter,
+    Guard,
 ]
 game = Game(chars, roles)
 

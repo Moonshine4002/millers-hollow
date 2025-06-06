@@ -88,13 +88,13 @@ class Werewolf(BPlayer):
             f'Werewolves, now you can choose one player to kill.',
         )
         targets = self.game.vote(self.game.options, self.game.actors)
-        if targets is None:
+        if not targets:
             self.game.data['target_for_witch'] = None
         elif isinstance(targets, PPlayer):
             self.game.marks.append(
                 Mark(self.role.kind, self.game, self, targets, func)
             )
-            self.game.data['target_for_witch'] = pl
+            self.game.data['target_for_witch'] = targets
             self.game.boardcast(
                 self.game.actors, f'Werewolves kill seat {targets.seat}.'
             )
@@ -154,15 +154,14 @@ class Witch(BPlayer):
         self.receive('Witch, please open your eyes!')
         target: PPlayer | None = self.game.data['target_for_witch']
         if self.antidote:
-            target_str = (
-                f'seat {target.seat}' if target is not None else 'nobody'
-            )
+            target_str = f'seat {target.seat}' if target else 'nobody'
             self.receive(
                 f'Tonight {target_str} has been killed by the werewolves.'
             )
         decisions = []
-        if self.antidote and target is not None:
-            decisions.append('save')
+        if self.antidote and target:
+            if target != self or self.game.time.cycle == 1:
+                decisions.append('save')
         if self.poison:
             decisions.extend(pls2lstr(self.game.options))
         if not decisions:
@@ -202,7 +201,7 @@ class Hunter(BPlayer):
             game.boardcast(game.audience(), f'Seat {source.seat} is a hunter!')
             source.receive('You can choose a player to shoot.')
             pl = self.pl_optional(game.options)
-            if pl is None:
+            if not pl:
                 game.boardcast(game.audience(), f"Hunter didn't shoot anyone.")
                 return
             pl.life = False
@@ -389,7 +388,7 @@ class Game:
         self.time.inc_round()
         self.boardcast(self.audience(), "It's time to vote.")
         targets = self.vote(self.options, self.options)
-        if targets is None:
+        if not targets:
             pass
         elif isinstance(targets, PPlayer):
             targets.life = False
@@ -398,7 +397,7 @@ class Game:
             self.time.inc_round()
             self.boardcast(self.audience(), 'Please vote again.')
             targets = self.vote(targets, self.options)
-            if targets is None:
+            if not targets:
                 pass
             elif isinstance(targets, PPlayer):
                 targets.life = False
@@ -482,7 +481,7 @@ class Game:
         vote_text = ''
         for pl in voters:
             vote = pl.pl_optional(candidates)
-            if vote is None:
+            if not vote:
                 abstain += 1
                 vote_text += f'{pl.seat}->pass, '
             else:

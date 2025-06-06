@@ -103,7 +103,7 @@ def input_middle(
             candidate = input_control(pl, messages)
             if pl.char.control == 'ai':
                 candidate = parse(pl, candidate)
-            if candidates is None:
+            if not candidates:
                 return candidate
             if candidate in candidates:
                 return candidate
@@ -117,10 +117,10 @@ def input_middle(
 def input_word(pl: PPlayer, candidates_iter: Iterable[str]) -> str:
     candidates = list(candidates_iter)
     prompt = (
-        f'Your identity: {pl.role.kind}. Your seat {pl.seat}. '
-        f'Your task: answer a word in {candidates}.\n'
+        f'Your identity: {pl.role.kind}. Your seat: {pl.seat}. '
+        f"Your task: {'your thought, followed by' if DEBUG else 'make'} a choice in {candidates}.\n"
         'Output format:\n'
-        + ('reason --- choice\n' if DEBUG else 'choice\n')
+        + ('thought --- choice\n' if DEBUG else 'choice\n')
         + '(Do not output any newline character.)\n'
         f'(Output using "{user_data.language}".)\n\n'
         f'{user_data.prompt}'
@@ -130,10 +130,10 @@ def input_word(pl: PPlayer, candidates_iter: Iterable[str]) -> str:
 
 def input_speech(pl: PPlayer) -> str:
     prompt = (
-        f'Your identity: {pl.role.kind}. Your seat {pl.seat}. '
-        f'Your task: make a speech.\n'
+        f'Your identity: {pl.role.kind}. Your seat: {pl.seat}. '
+        f"Your task: {'your thought, followed by' if DEBUG else 'make'} a speech.\n"
         'Output format:\n'
-        + ('reason --- speech\n' if DEBUG else 'speech\n')
+        + ('thought --- speech\n' if DEBUG else 'speech\n')
         + '(Do not output any newline character.)\n'
         f'(Output using "{user_data.language}".)\n\n'
         f'{user_data.prompt}'
