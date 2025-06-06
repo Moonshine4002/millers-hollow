@@ -1,6 +1,6 @@
 from .header import *
 
-from .ai import get_speech, get_word
+from .io import input_speech, input_word
 from . import user_data
 
 
@@ -37,10 +37,10 @@ class BPlayer:
         ...
 
     def str_mandatory(self, options: Iterable[str]) -> str:
-        return get_word(self, options)
+        return input_word(self, options)
 
     def str_optional(self, options: Iterable[str]) -> str:
-        return get_word(self, itertools.chain(options, ('pass',)))
+        return input_word(self, itertools.chain(options, ('pass',)))
 
     def pl_mandatory(self, options: Iterable[PPlayer]) -> PPlayer:
         lstr = pls2lstr(options)
@@ -81,7 +81,7 @@ class Werewolf(BPlayer):
             f'Now you can talk secretly with your teammates.',
         )
         for pl in self.game.actors:
-            speech = get_speech(pl)
+            speech = input_speech(pl)
             pl.boardcast(self.game.actors, speech)
         self.game.boardcast(
             self.game.actors,
@@ -256,7 +256,7 @@ class Game:
         self.data: dict[str, Any] = {}
 
     def __str__(self) -> str:
-        info_player = '\n\t'.join(str(player) for player in self.players)
+        info_player = '\n\t'.join(str(pl) for pl in self.players)
         return f'[{self.time}]players: \n\t{info_player}'
 
     def boardcast(
@@ -277,17 +277,17 @@ class Game:
         self.boardcast((pl,), content, source)
 
     def loop(self) -> None:
-        start_message = f"players: \n\t{'\n\t'.join(f'{player.char.name}(seat {player.seat})' for player in self.players)}"
+        start_message = f"players: \n\t{'\n\t'.join(f'{pl.char.name}(seat {pl.seat})' for pl in self.players)}"
         output(
             self.audience(),
             Clue(self.time, 'Moderator', f'{start_message}\n'),
             system=True,
             clear_text=f'Input: \nThe upper line for input.\n',
         )
-        for player in self.players:
+        for pl in self.players:
             self.unicast(
-                player,
-                f'You are seat {player.seat}, a {player.role.kind}.',
+                pl,
+                f'You are seat {pl.seat}, a {pl.role.kind}.',
             )
 
         self.options = list(self.alived())
@@ -314,9 +314,7 @@ class Game:
 
         winner = self.winner()
         end_message = f'{winner.faction} win.\n' 'winners:\n\t' + '\n\t'.join(
-            str(player)
-            for player in self.players
-            if winner.eq_faction(player.role)
+            str(pl) for pl in self.players if winner.eq_faction(pl.role)
         ) + '\n' + str(self)
         output(
             self.audience(),
@@ -349,7 +347,7 @@ class Game:
             f'Now freely talk about the current situation based on your observation with a few sentences.',
         )
         for pl in self.options:
-            speech = get_speech(pl)
+            speech = input_speech(pl)
             pl.boardcast(self.audience(), speech)
 
         # vote
@@ -479,10 +477,8 @@ class Game:
     def testament(self, died: Iterable[PPlayer]) -> None:
         self.time.inc_round()
         for pl in died:
-            # if 'witch' in pl.death_causes or 'hunter' in pl.death_causes:
-            #    continue
             pl.receive('You are dying, any last words?')
-            speech = get_speech(pl)
+            speech = input_speech(pl)
             pl.boardcast(self.audience(), speech)
 
     def audience(self) -> Generator[PPlayer]:
