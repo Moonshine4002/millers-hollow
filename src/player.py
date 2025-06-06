@@ -220,6 +220,45 @@ class Hunter(BPlayer):
         )
 
 
+class Guard(BPlayer):
+    def __init__(self, game: PGame, char: Char, seat: Seat) -> None:
+        super().__init__(game, char, seat)
+        self.role.faction = 'villager'
+        self.role.category = 'god'
+        self.night_priority = 4
+
+        self.guard: PPlayer | None = None
+
+    def night(self) -> None:
+        def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
+            assert isinstance(source, self.__class__)
+            if any(
+                mark.target == target and mark.name == 'antidote'
+                for mark in game.marks
+            ):
+                game.marks = [
+                    mark
+                    for mark in game.marks
+                    if not (mark.target == target and mark.name == 'antidote')
+                ]
+                return
+            game.marks = [
+                mark
+                for mark in game.marks
+                if not (mark.target == target and mark.name == 'werewolf')
+            ]
+
+        self.receive(
+            'Guard, please open your eyes! Who will you protect tonight?'
+        )
+        pl = self.pl_optional(self.game.options)
+        self.guard = pl
+        if pl:
+            self.game.marks.append(
+                Mark(self.role.kind, self.game, self, pl, func, priority=2)
+            )
+
+
 class Game:
     def __init__(
         self, chars: Iterable[Char], roles: Iterable[type[PPlayer]]
