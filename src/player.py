@@ -19,7 +19,7 @@ class BPlayer:
 
     def __str__(self) -> str:
         life = '☥' if self.life else '†'
-        return f'{life}{self.char.name}({self.seat})[{self.role.kind}]'
+        return f'{life}{self.char.name}({self.char.model})[{self.role.kind}]: seat {self.seat}'
 
     def boardcast(self, pls: Iterable[PPlayer], content: str) -> None:
         self.game.boardcast(pls, content, str(self.seat))
@@ -439,6 +439,9 @@ class Game:
         if ai < 0:
             raise ValueError('too many users')
         chars = random.sample(self.chars, ai)
+        random.shuffle(user_data.models)
+        for char in chars:
+            char.model = user_data.models.pop()
         for user_name in user_data.user_names:
             chars.append(Char(user_name, 'file'))
         random.shuffle(chars)

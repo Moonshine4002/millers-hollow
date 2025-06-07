@@ -28,9 +28,9 @@ def input_console(pl: PPlayer) -> str:
     return input(f'{pl.seat}> ')
 
 
-def input_ai(messages: list[ChatCompletionMessageParam]) -> str:
+def input_ai(pl: PPlayer, messages: list[ChatCompletionMessageParam]) -> str:
     chat_completion = client.chat.completions.create(
-        model=user_data.model,
+        model=pl.char.model,
         messages=messages,
     )
     content = chat_completion.choices[0].message.content
@@ -62,7 +62,7 @@ def input_control(
         case 'console':
             return input_console(pl)
         case 'ai':
-            return input_ai(prompt)
+            return input_ai(pl, prompt)
         case 'file':
             return input_file(pl)
         case _:

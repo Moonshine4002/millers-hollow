@@ -17,7 +17,7 @@ from . import user_data
 DEBUG: bool = user_data.DEBUG
 # api_key: str = user_data.api_key
 # base_url: str = user_data.base_url
-# model: str = user_data.model
+# models: list[str] = user_data.models
 # win_condition: Literal[
 #    'all', 'partial'
 # ] = user_data.win_condition   # type: ignore[assignment]
@@ -38,6 +38,7 @@ class NamedEnum(Enum):
 class Char:
     name: str
     control: str = 'console'
+    model: str = 'human'
 
 
 class Seat(int):
@@ -204,7 +205,7 @@ def pls2str(pls: Iterable[PPlayer]) -> str:
 
 
 def log(content: str, clear_text: str = '') -> None:
-    log_path = pathlib.Path(f'log_{user_data.model}.log')
+    log_path = pathlib.Path(f'{len(user_data.user_names)}pl.log')
     if clear_text:
         log_path.write_text(clear_text, encoding='utf-8')
     with log_path.open(mode='a', encoding='utf-8') as file:
