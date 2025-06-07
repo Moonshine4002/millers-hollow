@@ -37,6 +37,20 @@ class BPlayer:
     def night(self) -> None:
         ...
 
+    def exposure(self) -> None:
+        if self.role.faction == 'werewolf':
+            self.receive('Will you make a self-exposure?')
+            option = self.str_mandatory(('yes', 'no'))
+            if option == 'yes':
+                self.life = False
+                self.death_time = copy(self.game.time)
+                self.death_causes.append('self-exposed')
+                self.game.boardcast(
+                    self.game.audience(),
+                    f'Seat {self.seat} self-exposed.',
+                )
+                raise SelfExposureError()
+
     def str_mandatory(self, options: Iterable[str]) -> str:
         return input_word(self, options)
 
@@ -274,10 +288,10 @@ class Badge:
         quitters: list[PPlayer] = []
         self.game.boardcast(
             self.game.options,
-            f'Will you participate in the sheriff election (yes/pass)?',
+            f'Will you participate in the sheriff election (yes/no)?',
         )
         for pl in self.game.options:
-            option = pl.str_optional(('yes',))
+            option = pl.str_mandatory(('yes', 'no'))
             if option == 'yes':
                 candidates.append(pl)
         if not candidates:
@@ -291,9 +305,10 @@ class Badge:
             f'Sheriff candidates are seat {pls2str(candidates)}. Give a campaign speech for the sheriff election.',
         )
         for pl in candidates:
+            pl.exposure()
             pl.receive('Will you quit the election (yes/pass)?')
-            option = pl.str_optional(('yes',))
-            if option == 'yes':
+            option = pl.str_mandatory(('quit', 'no'))
+            if option == 'quit':
                 self.game.boardcast(
                     self.game.audience(),
                     f'Seat {pl.seat} quit the election.',
@@ -464,8 +479,11 @@ class Game:
                 break
             if self.post_exec():
                 break
-            self.time.inc_phase()
-            self.day()
+            try:
+                self.time.inc_phase()
+                self.day()
+            except SelfExposureError as e:
+                pass
             if self.exec():
                 break
             if self.post_exec():
@@ -512,6 +530,7 @@ class Game:
             f'Now freely talk about the current situation based on your observation with a few sentences.',
         )
         for pl in speakers:
+            pl.exposure()
             speech = input_speech(pl)
             pl.boardcast(self.audience(), speech)
 

@@ -151,6 +151,9 @@ class PPlayer(Protocol):
     def night(self) -> None:
         ...
 
+    def exposure(self) -> None:
+        ...
+
     def str_mandatory(self, options: Iterable[str]) -> str:
         ...
 
@@ -312,3 +315,11 @@ def seat2pl(game: PGame, seat: Seat) -> PPlayer:
 
 def seats2pl(game: PGame, seats: Iterable[Seat]) -> Generator[PPlayer]:
     return (game.players[seat] for seat in seats)
+
+
+class BaseGameError(Exception):
+    ...
+
+
+class SelfExposureError(Exception):
+    ...
