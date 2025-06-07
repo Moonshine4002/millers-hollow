@@ -8,13 +8,25 @@ import pathlib
 import random
 import string
 import time
-from typing import Any, NamedTuple, Protocol, Self, TypeAlias
+from typing import Any, Literal, NamedTuple, Protocol, Self, TypeAlias
 from typing import runtime_checkable
 
 
 from . import user_data
 
-DEBUG = user_data.DEBUG
+DEBUG: bool = user_data.DEBUG
+# api_key: str = user_data.api_key
+# base_url: str = user_data.base_url
+# model: str = user_data.model
+# win_condition: Literal[
+#    'all', 'partial'
+# ] = user_data.win_condition   # type: ignore[assignment]
+# allow_sheriff: bool = user_data.allow_sheriff
+# election_round: int = user_data.election_round
+# allow_exposure: bool = user_data.allow_exposure
+# user_names: list[str] = user_data.user_names
+# language: str = user_data.language
+# additional_prompt: str = user_data.additional_prompt
 
 
 class NamedEnum(Enum):

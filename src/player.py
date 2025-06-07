@@ -1,7 +1,6 @@
 from .header import *
 
 from .io import input_speech, input_word
-from . import user_data
 
 
 class BPlayer:
@@ -38,6 +37,8 @@ class BPlayer:
         ...
 
     def exposure(self) -> None:
+        if not user_data.allow_exposure:
+            return
         if self.role.faction == 'werewolf':
             self.receive('Will you make a self-exposure (yes/no)?')
             option = self.str_mandatory(('yes', 'no'))
@@ -282,7 +283,7 @@ class Badge:
         self.game = game
 
     def election(self) -> None:
-        if not user_data.sheriff:
+        if not user_data.allow_sheriff:
             return
         candidates: list[PPlayer] = []
         quitters: list[PPlayer] = []
@@ -319,7 +320,12 @@ class Badge:
             pl.boardcast(self.game.audience(), speech)
         voters = [pl for pl in self.game.options if pl not in candidates]
         candidates = [pl for pl in candidates if pl not in quitters]
-
+        if not candidates:
+            self.game.boardcast(
+                self.game.audience(),
+                'Nobody participate in the sheriff election.',
+            )
+            return
         self.game.boardcast(
             self.game.audience(),
             f'Sheriff candidates are seat {pls2str(candidates)}. Now, please vote to elect the sheriff.',
@@ -353,7 +359,7 @@ class Badge:
                 pass
 
     def badge(self) -> None:
-        if not user_data.sheriff:
+        if not user_data.allow_sheriff:
             return
         if not self.owner:
             return
@@ -377,7 +383,7 @@ class Badge:
 
     def speakers(self) -> list[PPlayer]:
         self.badge()
-        if not user_data.sheriff:
+        if not user_data.allow_sheriff:
             return self.game.options
         if not self.owner:
             return self.game.options

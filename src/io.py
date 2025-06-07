@@ -4,7 +4,6 @@ from openai.types.chat.chat_completion_message_param import (
 )
 
 from .header import *
-from . import user_data
 
 
 client = OpenAI(
@@ -124,7 +123,7 @@ def input_word(pl: PPlayer, candidates_iter: Iterable[str]) -> str:
         f"Task: {'your thought, followed by' if DEBUG else 'choose'} one option in {candidates}.\n"
         'Output format:\n'
         f"{'[Your thought] --- 'if DEBUG else ''}[Selected option]\n"
-        f'{user_data.prompt}'
+        f'{user_data.additional_prompt}'
     )
     return input_middle(pl, prompt, candidates)
 
@@ -135,6 +134,6 @@ def input_speech(pl: PPlayer) -> str:
         f"Task: {'your thought, followed by' if DEBUG else 'make'} a speech.\n"
         'Output format:\n'
         f"{'[Your thought] --- 'if DEBUG else ''}[Speech content]\n"
-        f'{user_data.prompt}'
+        f'{user_data.additional_prompt}'
     )
     return input_middle(pl, prompt)
