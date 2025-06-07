@@ -88,7 +88,9 @@ class Werewolf(BPlayer):
             self.game.actors,
             f'Werewolves, now you can choose one player to kill.',
         )
-        targets = self.game.vote(self.game.options, self.game.actors)
+        targets = self.game.vote(
+            self.game.options, self.game.actors, silent=True
+        )
         if not targets:
             self.game.data['target_for_witch'] = None
         elif isinstance(targets, PPlayer):
