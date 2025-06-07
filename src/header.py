@@ -124,6 +124,7 @@ class PPlayer(Protocol):
     role: Role
     life: bool
     seat: Seat
+    vote: float
     night_priority: int
     clues: list[Clue]
     death_time: Time
@@ -216,6 +217,20 @@ def output(
             file.write(f'{clue}\n')
 
 
+class PBadge(Protocol):
+    owner: PPlayer | None
+    game: 'PGame'
+
+    def __init__(self, game: 'PGame') -> None:
+        ...
+
+    def election(self) -> None:
+        ...
+
+    def badge(self) -> list[PPlayer]:
+        ...
+
+
 class PGame(Protocol):
     chars: list[Char]
     roles: list[type[PPlayer]]
@@ -223,9 +238,11 @@ class PGame(Protocol):
     players: list[PPlayer]
     marks: list[Mark]
     post_marks: list[Mark]
+    badge: PBadge
 
     options: list[PPlayer]
     actors: list[PPlayer]
+    died: list[PPlayer]
     data: dict[str, Any]
 
     def __init__(self) -> None:

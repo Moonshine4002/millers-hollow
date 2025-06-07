@@ -12,6 +12,7 @@ class BPlayer:
         self.role = Role(role, role, role)
         self.life = True
         self.seat = seat
+        self.vote = 1.0
         self.night_priority = 0
         self.clues: list[Clue] = []
         self.death_time: Time = Time()
@@ -259,6 +260,107 @@ class Guard(BPlayer):
             )
 
 
+class Badge:
+    def __init__(self, game: PGame) -> None:
+        self.owner: PPlayer | None = None
+        self.game = game
+
+    def election(self) -> None:
+        if not user_data.sheriff:
+            return
+        candidates: list[PPlayer] = []
+        self.game.boardcast(
+            self.game.audience(),
+            f'Will you participate in the sheriff election?',
+        )
+        for pl in self.game.options:
+            option = pl.str_optional(('campaign',))
+            if option == 'campaign':
+                candidates.append(pl)
+        if not candidates:
+            self.game.boardcast(
+                self.game.audience(),
+                f'Nobody participate in the sheriff election.',
+            )
+            return
+        self.game.boardcast(
+            self.game.audience(),
+            f'Give a campaign speech for the sheriff election.',
+        )
+        for pl in candidates:
+            speech = input_speech(pl)
+            pl.boardcast(self.game.audience(), speech)
+
+        self.game.boardcast(
+            self.game.audience(),
+            f'Now, please vote to elect the sheriff.',
+        )
+        targets = self.game.vote(candidates, self.game.options)
+        if not targets:
+            pass
+        elif isinstance(targets, PPlayer):
+            self.owner = targets
+            targets.vote = 1.5
+        else:
+            self.game.time.inc_round()
+            self.game.boardcast(self.game.audience(), 'Please vote again.')
+            targets = self.game.vote(targets, self.game.options)
+            if not targets:
+                pass
+            elif isinstance(targets, PPlayer):
+                self.owner = targets
+                targets.vote = 1.5
+            else:
+                pass
+
+    def badge(self) -> list[PPlayer]:
+        if not user_data.sheriff:
+            return self.game.options
+        if not self.owner:
+            return self.game.options
+
+        if self.owner.life == False:
+            self.owner.receive(
+                "Please transfer the sheriff's badge. If passed, then destroy the badge."
+            )
+            target = self.owner.pl_optional(self.game.options)
+            if not target:
+                self.owner = None
+                self.game.boardcast(
+                    self.game.audience(), 'The badge was destroyed.'
+                )
+                return self.game.options
+            self.owner = target
+            self.game.boardcast(
+                self.game.audience(),
+                f'The badge was passed to seat {target.seat}.',
+            )
+
+        speakers = copy(self.game.options)
+        if len(self.game.died) == 1:
+            reference = self.game.died[0]
+            self.owner.receive(
+                'Choose the left/right side of the deceased as the first speaker.'
+            )
+        else:
+            reference = self.owner
+            self.owner.receive(
+                'Choose your left/right side as the first speaker.'
+            )
+        option = self.owner.str_mandatory(('left', 'right'))
+        if option == 'left':
+            speakers.reverse()
+            if speakers[-1].seat < reference.seat:
+                while speakers[0].seat >= reference.seat:
+                    speakers.append(speakers.pop(0))
+        elif option == 'right':
+            if speakers[-1].seat > reference.seat:
+                while speakers[0].seat <= reference.seat:
+                    speakers.append(speakers.pop(0))
+
+        return speakers
+
+
 class Game:
     def __init__(
         self, chars: Iterable[Char], roles: Iterable[type[PPlayer]]
@@ -269,8 +371,10 @@ class Game:
         self.players: list[PPlayer] = []
         self.marks: list[Mark] = []
         self.post_marks: list[Mark] = []
+        self.badge: PBadge = Badge(self)
         self.options: list[PPlayer] = []
         self.actors: list[PPlayer] = []
+        self.died: list[PPlayer] = []
         self.data: dict[str, Any] = {}
 
         roles = Counter(self.roles)
@@ -358,30 +462,36 @@ class Game:
         )
 
     def day(self) -> None:
-        died = [
+        self.died = [
             pl
             for pl in self.audience()
             if pl.death_time.cycle == self.time.cycle - 1
             and pl.death_time.phase == Phase.NIGHT
         ]
         summary = (
-            f'Seat {pls2str(died)} are killed last night. '
-            if died
+            f'Seat {pls2str(self.died)} are killed last night. '
+            if self.died
             else 'Nobody died last night. '
         )
         self.boardcast(
             self.audience(),
             f"It's daytime. Everyone woke up. {summary}Seat {pls2str(self.options)} are still alive.",
         )
+
+        # day 2
         if self.time.cycle == 2:
-            self.testament(died)
+            self.testament(self.died)
+            self.badge.election()
+
+        # sheriff
+        speakers = self.badge.badge()
 
         # speech
         self.boardcast(
             self.audience(),
             f'Now freely talk about the current situation based on your observation with a few sentences.',
         )
-        for pl in self.options:
+        for pl in speakers:
             speech = input_speech(pl)
             pl.boardcast(self.audience(), speech)
 
@@ -480,7 +590,7 @@ class Game:
     ) -> None | PPlayer | list[PPlayer]:
         candidates = list(candidates_iter)
         voters = list(voters_iter)
-        ballot = {pl: 0 for pl in candidates}
+        ballot = {pl: 0.0 for pl in candidates}
         abstain = 0
         vote_text = ''
         for pl in voters:
@@ -489,7 +599,7 @@ class Game:
                 abstain += 1
                 vote_text += f'{pl.seat}->pass, '
             else:
-                ballot[vote] += 1
+                ballot[vote] += pl.vote
                 vote_text += f'{pl.seat}->{vote.seat}, '
         if abstain == len(voters):
             if not silent:
