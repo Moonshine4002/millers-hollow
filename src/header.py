@@ -227,7 +227,10 @@ class PBadge(Protocol):
     def election(self) -> None:
         ...
 
-    def badge(self) -> list[PPlayer]:
+    def badge(self) -> None:
+        ...
+
+    def speakers(self) -> list[PPlayer]:
         ...
 
 

@@ -274,8 +274,8 @@ class Badge:
             f'Will you participate in the sheriff election?',
         )
         for pl in self.game.options:
-            option = pl.str_optional(('campaign',))
-            if option == 'campaign':
+            option = pl.str_optional(('yes',))
+            if option == 'yes':
                 candidates.append(pl)
         if not candidates:
             self.game.boardcast(
@@ -285,7 +285,7 @@ class Badge:
             return
         self.game.boardcast(
             self.game.audience(),
-            f'Give a campaign speech for the sheriff election.',
+            f'Sheriff candidates are seat {pls2str(candidates)}. Give a campaign speech for the sheriff election.',
         )
         for pl in candidates:
             speech = input_speech(pl)
@@ -313,12 +313,11 @@ class Badge:
             else:
                 pass
 
-    def badge(self) -> list[PPlayer]:
+    def badge(self) -> None:
         if not user_data.sheriff:
-            return self.game.options
+            return
         if not self.owner:
-            return self.game.options
-
+            return
         if self.owner.life == False:
             self.owner.receive(
                 "Please transfer the sheriff's badge. If passed, then destroy the badge."
@@ -329,12 +328,20 @@ class Badge:
                 self.game.boardcast(
                     self.game.audience(), 'The badge was destroyed.'
                 )
-                return self.game.options
+                return
             self.owner = target
+            target.vote = 1.5
             self.game.boardcast(
                 self.game.audience(),
                 f'The badge was passed to seat {target.seat}.',
             )
+
+    def speakers(self) -> list[PPlayer]:
+        self.badge()
+        if not user_data.sheriff:
+            return self.game.options
+        if not self.owner:
+            return self.game.options
 
         speakers = copy(self.game.options)
         if len(self.game.died) == 1:
@@ -484,7 +491,7 @@ class Game:
             self.badge.election()
 
         # sheriff
-        speakers = self.badge.badge()
+        speakers = self.badge.speakers()
 
         # speech
         self.boardcast(
@@ -503,6 +510,7 @@ class Game:
             pass
         elif isinstance(targets, PPlayer):
             targets.life = False
+            self.badge.badge()
             self.testament((targets,))
         else:
             self.time.inc_round()
@@ -512,6 +520,7 @@ class Game:
                 pass
             elif isinstance(targets, PPlayer):
                 targets.life = False
+                self.badge.badge()
                 self.testament((targets,))
             else:
                 pass
