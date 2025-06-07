@@ -269,9 +269,10 @@ class Badge:
         if not user_data.sheriff:
             return
         candidates: list[PPlayer] = []
+        quitters: list[PPlayer] = []
         self.game.boardcast(
-            self.game.audience(),
-            f'Will you participate in the sheriff election?',
+            self.game.options,
+            f'Will you participate in the sheriff election (yes/pass)?',
         )
         for pl in self.game.options:
             option = pl.str_optional(('yes',))
@@ -288,12 +289,22 @@ class Badge:
             f'Sheriff candidates are seat {pls2str(candidates)}. Give a campaign speech for the sheriff election.',
         )
         for pl in candidates:
+            pl.receive('Will you quit the election (yes/pass)?')
+            option = pl.str_optional(('yes',))
+            if option == 'yes':
+                self.game.boardcast(
+                    self.game.audience(),
+                    f'Seat {pl.seat} quit the election.',
+                )
+                quitters.append(pl)
+                continue
             speech = input_speech(pl)
             pl.boardcast(self.game.audience(), speech)
+        candidates = [pl for pl in candidates if pl not in quitters]
 
         self.game.boardcast(
             self.game.audience(),
-            f'Now, please vote to elect the sheriff.',
+            f'Sheriff candidates are seat {pls2str(candidates)}. Now, please vote to elect the sheriff.',
         )
         targets = self.game.vote(candidates, self.game.options)
         if not targets:
@@ -612,7 +623,7 @@ class Game:
                 vote_text += f'{pl.seat}->{vote.seat}, '
         if abstain == len(voters):
             if not silent:
-                self.boardcast(voters, 'Everyone passed.')
+                self.boardcast(self.audience(), 'Everyone passed.')
             return None
         highest = max(ballot.values())
         targets = [pl for pl, value in ballot.items() if value == highest]
@@ -620,14 +631,14 @@ class Game:
             target = targets[0]
             if not silent:
                 self.boardcast(
-                    voters,
+                    self.audience(),
                     f'Seat {target.seat} got the highest votes. Vote result: {vote_text[:-2]}.',
                 )
             return target
         else:
             if not silent:
                 self.boardcast(
-                    voters,
+                    self.audience(),
                     f"It's a tie. Vote result: {vote_text[:-2]}.",
                 )
             return targets
