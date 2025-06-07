@@ -329,6 +329,7 @@ class Badge:
         elif isinstance(targets, PPlayer):
             self.owner = targets
             targets.vote = 1.5
+            user_data.election_round = 0
         else:
             self.game.time.inc_round()
             self.game.boardcast(self.game.audience(), 'Please vote again.')
@@ -338,6 +339,7 @@ class Badge:
             elif isinstance(targets, PPlayer):
                 self.owner = targets
                 targets.vote = 1.5
+                user_data.election_round = 0
             else:
                 pass
 
@@ -517,7 +519,8 @@ class Game:
         )
 
         # day 2
-        if self.time.cycle == 2:
+        if user_data.election_round:
+            user_data.election_round -= 1
             self.testament(self.died)
             self.badge.election()
 
