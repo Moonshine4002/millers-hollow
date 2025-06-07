@@ -317,13 +317,14 @@ class Badge:
                 continue
             speech = input_speech(pl)
             pl.boardcast(self.game.audience(), speech)
+        voters = [pl for pl in self.game.options if pl not in candidates]
         candidates = [pl for pl in candidates if pl not in quitters]
 
         self.game.boardcast(
             self.game.audience(),
             f'Sheriff candidates are seat {pls2str(candidates)}. Now, please vote to elect the sheriff.',
         )
-        targets = self.game.vote(candidates, self.game.options)
+        targets = self.game.vote(candidates, voters)
         if not targets:
             pass
         elif isinstance(targets, PPlayer):
@@ -332,6 +333,13 @@ class Badge:
             user_data.election_round = 0
         else:
             self.game.time.inc_round()
+            self.game.boardcast(
+                candidates, 'Give the additional campaign speech.'
+            )
+            candidates.reverse()
+            for pl in candidates:
+                speech = input_speech(pl)
+                pl.boardcast(self.game.audience(), speech)
             self.game.boardcast(self.game.audience(), 'Please vote again.')
             targets = self.game.vote(targets, self.game.options)
             if not targets:
@@ -549,6 +557,11 @@ class Game:
             self.testament((targets,))
         else:
             self.time.inc_round()
+            self.boardcast(targets, 'Give the additional speech.')
+            targets.reverse()
+            for pl in targets:
+                speech = input_speech(pl)
+                pl.boardcast(self.audience(), speech)
             self.boardcast(self.audience(), 'Please vote again.')
             targets = self.vote(targets, self.options)
             if not targets:
