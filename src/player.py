@@ -39,7 +39,7 @@ class BPlayer:
 
     def exposure(self) -> None:
         if self.role.faction == 'werewolf':
-            self.receive('Will you make a self-exposure?')
+            self.receive('Will you make a self-exposure (yes/no)?')
             option = self.str_mandatory(('yes', 'no'))
             if option == 'yes':
                 self.life = False
@@ -288,7 +288,7 @@ class Badge:
         quitters: list[PPlayer] = []
         self.game.boardcast(
             self.game.options,
-            f'Will you participate in the sheriff election (yes/no)?',
+            'Will you participate in the sheriff election (yes/no)?',
         )
         for pl in self.game.options:
             option = pl.str_mandatory(('yes', 'no'))
@@ -297,7 +297,7 @@ class Badge:
         if not candidates:
             self.game.boardcast(
                 self.game.audience(),
-                f'Nobody participate in the sheriff election.',
+                'Nobody participate in the sheriff election.',
             )
             return
         self.game.boardcast(
@@ -306,7 +306,7 @@ class Badge:
         )
         for pl in candidates:
             pl.exposure()
-            pl.receive('Will you quit the election (yes/pass)?')
+            pl.receive('Will you quit the election (quit/no)?')
             option = pl.str_mandatory(('quit', 'no'))
             if option == 'quit':
                 self.game.boardcast(
@@ -338,6 +338,7 @@ class Badge:
             )
             candidates.reverse()
             for pl in candidates:
+                pl.exposure()
                 speech = input_speech(pl)
                 pl.boardcast(self.game.audience(), speech)
             self.game.boardcast(self.game.audience(), 'Please vote again.')
@@ -385,12 +386,12 @@ class Badge:
         if len(self.game.died) == 1:
             reference = self.game.died[0]
             self.owner.receive(
-                'Choose the left/right side of the deceased as the first speaker.'
+                'Choose the left/right side of the deceased as the first speaker (left/right).'
             )
         else:
             reference = self.owner
             self.owner.receive(
-                'Choose your left/right side as the first speaker.'
+                'Choose your left/right side as the first speaker (left/right).'
             )
         option = self.owner.str_mandatory(('left', 'right'))
         if option == 'left':
@@ -560,6 +561,7 @@ class Game:
             self.boardcast(targets, 'Give the additional speech.')
             targets.reverse()
             for pl in targets:
+                pl.exposure()
                 speech = input_speech(pl)
                 pl.boardcast(self.audience(), speech)
             self.boardcast(self.audience(), 'Please vote again.')
