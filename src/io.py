@@ -84,22 +84,6 @@ def input_ai(pl: PPlayer, messages: list[ChatCompletionMessageParam]) -> str:
     return content
 
 
-def input_file(pl: PPlayer) -> str:
-    file_path = pathlib.Path(f'io/{pl.seat}.txt')
-    while True:
-        time.sleep(1)
-        with file_path.open('r', encoding='utf-8') as file:
-            lines = file.readlines()
-        if not lines:
-            continue
-        output = lines[0].lstrip('Input:').strip()
-        lines[0] = 'Input: \n'
-        with file_path.open('w', encoding='utf-8') as file:
-            file.writelines(lines)
-        if output:
-            return output
-
-
 def get_console_inputs(pl: PPlayer, inputs: Iterable[Input]) -> list[Output]:
     outputs: list[Output] = []
     for i in inputs:
@@ -125,20 +109,30 @@ def get_ai_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> str:
     return input_ai(pl, messages)
 
 
-def get_file_inputs(pl: PPlayer) -> str:
+def get_file_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
+    inputs = list(inputs_iter)
     file_path = pathlib.Path(f'io/{pl.seat}.txt')
+    prompt = ' --- '.join(str(i) for i in inputs)
+    with file_path.open('r', encoding='utf-8') as file:
+        lines = file.readlines()
+    if not lines:
+        raise ValueError('empty file')
+    lines[0] = f'{prompt}\n'
+    with file_path.open('w', encoding='utf-8') as file:
+        file.writelines(lines)
     while True:
         time.sleep(1)
         with file_path.open('r', encoding='utf-8') as file:
             lines = file.readlines()
         if not lines:
+            raise ValueError('empty file')
+        if lines[0].strip() == prompt:
             continue
-        output = lines[0].lstrip('Input:').strip()
-        lines[0] = 'Input: \n'
+        output = parse(pl, inputs, lines[0])
+        lines[0] = f'Please wait...\n'
         with file_path.open('w', encoding='utf-8') as file:
             file.writelines(lines)
-        if output:
-            return output
+        return output
 
 
 def parse(
@@ -171,8 +165,7 @@ def get_inputs(pl: PPlayer, inputs: Iterable[Input]) -> list[Output]:
                     content = get_ai_inputs(pl, inputs)
                     outputs = parse(pl, inputs, content)
                 case 'file':
-                    content = input_file(pl)
-                    outputs = parse(pl, inputs, content)
+                    outputs = get_file_inputs(pl, inputs)
                 case _:
                     raise NotImplementedError('unknown control')
             break

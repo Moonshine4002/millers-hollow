@@ -358,10 +358,10 @@ class Badge:
         else:
             self.game.time.inc_round()
             self.game.boardcast(
-                candidates, 'Give the additional campaign speech.'
+                targets, 'Give the additional campaign speech.'
             )
-            candidates.reverse()
-            for pl in candidates:
+            targets.reverse()
+            for pl in targets:
                 speech = pl.speech_expose()
                 pl.boardcast(self.game.audience(), speech)
             self.game.boardcast(self.game.audience(), 'Please vote again.')
@@ -489,7 +489,7 @@ class Game:
             self.audience(),
             Clue(self.time, 'Moderator', f'{start_message}\n'),
             system=True,
-            clear_text=f'Input: \nThe upper line for input.\n',
+            clear_text=f'Please wait...\nThe upper line for input.\n',
         )
         for pl in self.players:
             self.unicast(
