@@ -1,6 +1,6 @@
 from .header import *
 
-from .io import input_speech, input_word
+from .io import output, input_speech, input_word
 
 
 class BPlayer:

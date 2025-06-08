@@ -211,27 +211,6 @@ def log(content: str, clear_text: str = '') -> None:
         file.write(content)
 
 
-def output(
-    pls_iter: Iterable[PPlayer],
-    clue: Clue,
-    system: bool = False,
-    clear_text: str = '',
-) -> None:
-    pls = list(pls_iter)
-    log(f'{clue} > {pls2str(pls)}\n', clear_text=clear_text)
-    if system or any(pl.char.control == 'console' for pl in pls):
-        print(str(clue))
-    for pl in pls:
-        if pl.char.control != 'file':
-            continue
-        file_path = pathlib.Path(f'io/{pl.seat}.txt')
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        if clear_text:
-            file_path.write_text(clear_text, encoding='utf-8')
-        with file_path.open(mode='a', encoding='utf-8') as file:
-            file.write(f'{clue}\n')
-
-
 class PBadge(Protocol):
     owner: PPlayer | None
     game: 'PGame'

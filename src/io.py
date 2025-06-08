@@ -35,11 +35,42 @@ system_prompt = (
     "- Avoid repeating others' statements.\n"
     '- You can reveal your true role or impersonate another role (regardless of your faction).\n'
     '- When impersonating, fully develop your thought process and reasoning.\n\n'
+    f'{user_data.additional_prompt}'
 )
 
 
-def input_console(pl: PPlayer) -> str:
-    return input(f'{pl.seat}> ')
+class Input(NamedTuple):
+    prompt: str
+    options: list[str] = []
+
+    def __str__(self) -> str:
+        options = f' in one of {self.options}' if self.options else ''
+        return f'[{self.prompt}]{options}'
+
+
+class Output(NamedTuple):
+    output: str
+
+
+def output(
+    pls_iter: Iterable[PPlayer],
+    clue: Clue,
+    system: bool = False,
+    clear_text: str = '',
+) -> None:
+    pls = list(pls_iter)
+    log(f'{clue} > {pls2str(pls)}\n', clear_text=clear_text)
+    if system or any(pl.char.control == 'console' for pl in pls):
+        print(str(clue))
+    for pl in pls:
+        if pl.char.control != 'file':
+            continue
+        file_path = pathlib.Path(f'io/{pl.seat}.txt')
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        if clear_text:
+            file_path.write_text(clear_text, encoding='utf-8')
+        with file_path.open(mode='a', encoding='utf-8') as file:
+            file.write(f'{clue}\n')
 
 
 def input_ai(pl: PPlayer, messages: list[ChatCompletionMessageParam]) -> str:
@@ -69,39 +100,15 @@ def input_file(pl: PPlayer) -> str:
             return output
 
 
-def input_control(
-    pl: PPlayer, prompt: list[ChatCompletionMessageParam]
-) -> str:
-    match pl.char.control:
-        case 'console':
-            return input_console(pl)
-        case 'ai':
-            return input_ai(pl, prompt)
-        case 'file':
-            return input_file(pl)
-        case _:
-            raise NotImplementedError('unknown control')
+def get_console_inputs(pl: PPlayer, inputs: Iterable[Input]) -> list[Output]:
+    outputs: list[Output] = []
+    for i in inputs:
+        outputs.append(Output(input(f'{i.prompt}: ')))
+    return outputs
 
 
-def parse(pl: PPlayer, content: str) -> str:
-    if not DEBUG:
-        content = content.replace('\n', '').strip(' "[]')
-        log(f'{pl.seat}[{pl.role.kind}]~> {content}\n')
-        return content
-    if '---' not in content:
-        raise ValueError('wrong format: no "---"')
-    lcontent = content.split('---')
-    if len(lcontent) != 2:
-        raise ValueError('wrong format: more than one "---"')
-    reason = lcontent[0].replace('\n', '').strip(' "[]')
-    target = lcontent[1].replace('\n', '').strip(' "[]')
-    log(f'{pl.seat}[{pl.role.kind}]~> {target} --- {reason}\n')
-    return target
-
-
-def input_middle(
-    pl: PPlayer, prompt: str, candidates: list[str] | None = None
-) -> str:
+def get_ai_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> str:
+    inputs = list(inputs_iter)
     messages: list[ChatCompletionMessageParam] = [
         {'role': 'system', 'content': system_prompt}
     ]
@@ -112,42 +119,84 @@ def input_middle(
             'name': clue.source,
         }
         messages.append(message)
+    prompt = f'You are seat {pl.seat}, a {pl.role.kind}.\n' 'Output format: '
+    prompt += ' --- '.join(str(i) for i in inputs)
     messages.append({'role': 'system', 'content': prompt})
+    return input_ai(pl, messages)
 
+
+def get_file_inputs(pl: PPlayer) -> str:
+    file_path = pathlib.Path(f'io/{pl.seat}.txt')
+    while True:
+        time.sleep(1)
+        with file_path.open('r', encoding='utf-8') as file:
+            lines = file.readlines()
+        if not lines:
+            continue
+        output = lines[0].lstrip('Input:').strip()
+        lines[0] = 'Input: \n'
+        with file_path.open('w', encoding='utf-8') as file:
+            file.writelines(lines)
+        if output:
+            return output
+
+
+def parse(
+    pl: PPlayer, inputs_iter: Iterable[Input], content: str
+) -> list[Output]:
+    inputs = list(inputs_iter)
+    content = content.replace('\n', ' ')
+    if len(inputs) == 1:
+        lcontent = [content]
+    else:
+        if '---' not in content:
+            raise ValueError(f'wrong format: 0 "---"')
+        lcontent = content.split('---')
+        if len(lcontent) != len(inputs):
+            raise ValueError(f'wrong format: {len(lcontent) - 1} "---"')
+    outputs = [Output(content.strip(' "[]')) for content in lcontent]
+    for i, o in zip(inputs, outputs):
+        if i.options and o.output not in i.options:
+            raise ValueError(f'wrong value: {o.output}')
+    return outputs
+
+
+def get_inputs(pl: PPlayer, inputs: Iterable[Input]) -> list[Output]:
     while True:
         try:
-            candidate = input_control(pl, messages)
-            if pl.char.control == 'ai':
-                candidate = parse(pl, candidate)
-            if not candidates:
-                return candidate
-            if candidate in candidates:
-                return candidate
-            raise ValueError(f'wrong value: {candidate}')
+            match pl.char.control:
+                case 'console':
+                    outputs = get_console_inputs(pl, inputs)
+                case 'ai':
+                    content = get_ai_inputs(pl, inputs)
+                    outputs = parse(pl, inputs, content)
+                case 'file':
+                    content = input_file(pl)
+                    outputs = parse(pl, inputs, content)
+                case _:
+                    raise NotImplementedError('unknown control')
+            break
         except NotImplementedError as e:
             raise
         except Exception as e:
             log(f'{e!r}\n')
+    output_str = ' --- '.join(
+        f'{i.prompt}: {o.output}' for i, o in zip(inputs, outputs)
+    )
+    log(f'{pl.seat}[{pl.role.kind}]~> {output_str}\n')
+    return outputs
 
 
 def input_word(pl: PPlayer, candidates_iter: Iterable[str]) -> str:
-    candidates = list(candidates_iter)
-    prompt = (
-        f'Role: {pl.role.kind}. Seat: {pl.seat}. '
-        f"Task: {'your thought, followed by' if DEBUG else 'choose'} one option in {candidates}.\n"
-        'Output format:\n'
-        f"{'[Your thought] --- 'if DEBUG else ''}[Selected option]\n"
-        f'{user_data.additional_prompt}'
+    thought, choice = get_inputs(
+        pl,
+        (Input('your thought'), Input('your choice', list(candidates_iter))),
     )
-    return input_middle(pl, prompt, candidates)
+    return choice.output
 
 
 def input_speech(pl: PPlayer) -> str:
-    prompt = (
-        f'Role: {pl.role.kind}. Seat: {pl.seat}. '
-        f"Task: {'your thought, followed by' if DEBUG else 'make'} a speech.\n"
-        'Output format:\n'
-        f"{'[Your thought] --- 'if DEBUG else ''}[Speech content]\n"
-        f'{user_data.additional_prompt}'
+    thought, speech = get_inputs(
+        pl, (Input('your thought'), Input('your speech'))
     )
-    return input_middle(pl, prompt)
+    return speech.output
