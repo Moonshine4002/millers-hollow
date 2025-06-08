@@ -316,10 +316,17 @@ class Badge:
             option = pl.str_mandatory(('yes', 'no'))
             if option == 'yes':
                 candidates.append(pl)
+        voters = [pl for pl in self.game.options if pl not in candidates]
         if not candidates:
             self.game.boardcast(
                 self.game.audience(),
-                'Nobody participate in the sheriff election.',
+                'No one is running for sheriff.',
+            )
+            return
+        if not voters:
+            self.game.boardcast(
+                self.game.audience(),
+                'Everyone is running for sheriff.',
             )
             return
         self.game.boardcast(
@@ -336,12 +343,11 @@ class Badge:
                 quitters.append(pl)
                 continue
             pl.boardcast(self.game.audience(), speech)
-        voters = [pl for pl in self.game.options if pl not in candidates]
         candidates = [pl for pl in candidates if pl not in quitters]
         if not candidates:
             self.game.boardcast(
                 self.game.audience(),
-                'Nobody participate in the sheriff election.',
+                'No one is running for sheriff.',
             )
             return
         self.game.boardcast(
@@ -365,7 +371,7 @@ class Badge:
                 speech = pl.speech_expose()
                 pl.boardcast(self.game.audience(), speech)
             self.game.boardcast(self.game.audience(), 'Please vote again.')
-            targets = self.game.vote(targets, self.game.options)
+            targets = self.game.vote(targets, voters)
             if not targets:
                 pass
             elif isinstance(targets, PPlayer):
