@@ -1,6 +1,13 @@
 from .header import *
 
-from .io import output, input_speech, input_word
+from .io import (
+    output,
+    input_word,
+    input_speech,
+    input_speech_withdraw,
+    input_speech_expose,
+    input_speech_withdraw_expose,
+)
 
 
 class BPlayer:
@@ -36,13 +43,10 @@ class BPlayer:
     def night(self) -> None:
         ...
 
-    def exposure(self) -> None:
-        if not user_data.allow_exposure:
-            return
-        if self.role.faction == 'werewolf':
-            self.receive('Will you make a self-exposure (yes/no)?')
-            option = self.str_mandatory(('yes', 'no'))
-            if option == 'yes':
+    def speech_expose(self) -> str:
+        if user_data.allow_exposure and self.role.faction == 'werewolf':
+            speech, expose = input_speech_expose(self)
+            if expose == 'expose':
                 self.life = False
                 self.death_time = copy(self.game.time)
                 self.death_causes.append('self-exposed')
@@ -51,6 +55,25 @@ class BPlayer:
                     f'Seat {self.seat} self-exposed.',
                 )
                 raise SelfExposureError()
+        else:
+            speech = input_speech(self)
+        return speech
+
+    def speech_withdraw_expose(self) -> tuple[str, str]:
+        if user_data.allow_exposure and self.role.faction == 'werewolf':
+            speech, withdraw, expose = input_speech_withdraw_expose(self)
+            if expose == 'expose':
+                self.life = False
+                self.death_time = copy(self.game.time)
+                self.death_causes.append('self-exposed')
+                self.game.boardcast(
+                    self.game.audience(),
+                    f'Seat {self.seat} self-exposed.',
+                )
+                raise SelfExposureError()
+        else:
+            speech, withdraw = input_speech_withdraw(self)
+        return speech, withdraw
 
     def str_mandatory(self, options: Iterable[str]) -> str:
         return input_word(self, options)
@@ -304,17 +327,14 @@ class Badge:
             f'Sheriff candidates are seat {pls2str(candidates)}. Give a campaign speech for the sheriff election.',
         )
         for pl in candidates:
-            pl.exposure()
-            pl.receive('Will you quit the election (quit/no)?')
-            option = pl.str_mandatory(('quit', 'no'))
-            if option == 'quit':
+            speech, withdraw = pl.speech_withdraw_expose()
+            if withdraw == 'withdraw':
                 self.game.boardcast(
                     self.game.audience(),
                     f'Seat {pl.seat} quit the election.',
                 )
                 quitters.append(pl)
                 continue
-            speech = input_speech(pl)
             pl.boardcast(self.game.audience(), speech)
         voters = [pl for pl in self.game.options if pl not in candidates]
         candidates = [pl for pl in candidates if pl not in quitters]
@@ -342,8 +362,7 @@ class Badge:
             )
             candidates.reverse()
             for pl in candidates:
-                pl.exposure()
-                speech = input_speech(pl)
+                speech = pl.speech_expose()
                 pl.boardcast(self.game.audience(), speech)
             self.game.boardcast(self.game.audience(), 'Please vote again.')
             targets = self.game.vote(targets, self.game.options)
@@ -546,8 +565,7 @@ class Game:
             f'Now freely talk about the current situation based on your observation with a few sentences.',
         )
         for pl in speakers:
-            pl.exposure()
-            speech = input_speech(pl)
+            speech = pl.speech_expose()
             pl.boardcast(self.audience(), speech)
 
         # vote
@@ -565,8 +583,7 @@ class Game:
             self.boardcast(targets, 'Give the additional speech.')
             targets.reverse()
             for pl in targets:
-                pl.exposure()
-                speech = input_speech(pl)
+                speech = pl.speech_expose()
                 pl.boardcast(self.audience(), speech)
             self.boardcast(self.audience(), 'Please vote again.')
             targets = self.vote(targets, self.options)

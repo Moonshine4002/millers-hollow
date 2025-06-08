@@ -163,7 +163,10 @@ class PPlayer(Protocol):
     def night(self) -> None:
         ...
 
-    def exposure(self) -> None:
+    def speech_expose(self) -> str:
+        ...
+
+    def speech_withdraw_expose(self) -> tuple[str, str]:
         ...
 
     def str_mandatory(self, options: Iterable[str]) -> str:

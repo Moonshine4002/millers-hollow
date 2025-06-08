@@ -200,3 +200,40 @@ def input_speech(pl: PPlayer) -> str:
         pl, (Input('your thought'), Input('your speech'))
     )
     return speech.output
+
+
+def input_speech_withdraw(pl: PPlayer) -> tuple[str, str]:
+    thought, speech, withdraw = get_inputs(
+        pl,
+        (
+            Input('your thought'),
+            Input('your speech'),
+            Input('Will you quit the election?', ['quit', 'no']),
+        ),
+    )
+    return speech.output, withdraw.output
+
+
+def input_speech_expose(pl: PPlayer) -> tuple[str, str]:
+    thought, speech, expose = get_inputs(
+        pl,
+        (
+            Input('your thought'),
+            Input('your speech'),
+            Input('Will you make a self-exposure?', ['expose', 'no']),
+        ),
+    )
+    return speech.output, expose.output
+
+
+def input_speech_withdraw_expose(pl: PPlayer) -> tuple[str, str, str]:
+    thought, speech, withdraw, expose = get_inputs(
+        pl,
+        (
+            Input('your thought'),
+            Input('your speech'),
+            Input('Will you quit the election?', ['quit', 'no']),
+            Input('Will you make a self-exposure?', ['expose', 'no']),
+        ),
+    )
+    return speech.output, withdraw.output, expose.output
