@@ -21,6 +21,20 @@ system_prompt = (
     '- You win if your team wins.\n'
     '- Output must be in one line without newlines.\n'
     f'- Output using "{user_data.language}".\n\n'
+    'Game rules:\n'
+    f'- Werewolves win by eliminating {user_data.win_condition} villagers.\n'
+    f"- Werewolves {'can' if user_data.allow_exposure else 'can not'} expose themselves."
+    f'- The sheriff election continues for {user_data.election_round} rounds.\n'
+    '- Players killed on the first night or eliminated by vote have a dying speech.\n'
+    "- The seer's verification only reveals whether the target belongs to the good faction, not their specific role.\n"
+    '- The witch cannot use the antidote to save herself after the first night.\n'
+    '- The player cannot use any skills after poisoned by the witch.\n'
+    '- The guard cannot protect the same player for two consecutive nights.\n'
+    '- Simultaneous protection by the witch and guard on the same target has no effect.\n\n'
+    'Tips:\n'
+    "- Avoid repeating others' statements.\n"
+    '- You can reveal your true role or impersonate another role (regardless of your faction).\n'
+    '- When impersonating, fully develop your thought process and reasoning.\n\n'
 )
 
 

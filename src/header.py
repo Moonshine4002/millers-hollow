@@ -21,9 +21,8 @@ DEBUG: bool = user_data.DEBUG
 # win_condition: Literal[
 #    'all', 'partial'
 # ] = user_data.win_condition   # type: ignore[assignment]
-# allow_sheriff: bool = user_data.allow_sheriff
-# election_round: int = user_data.election_round
 # allow_exposure: bool = user_data.allow_exposure
+# election_round: int = user_data.election_round
 # user_names: list[str] = user_data.user_names
 # language: str = user_data.language
 # additional_prompt: str = user_data.additional_prompt

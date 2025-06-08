@@ -283,8 +283,6 @@ class Badge:
         self.game = game
 
     def election(self) -> None:
-        if not user_data.allow_sheriff:
-            return
         candidates: list[PPlayer] = []
         quitters: list[PPlayer] = []
         self.game.boardcast(
@@ -359,8 +357,6 @@ class Badge:
                 pass
 
     def badge(self) -> None:
-        if not user_data.allow_sheriff:
-            return
         if not self.owner:
             return
         if self.owner.life == False:
@@ -383,8 +379,6 @@ class Badge:
 
     def speakers(self) -> list[PPlayer]:
         self.badge()
-        if not user_data.allow_sheriff:
-            return self.game.options
         if not self.owner:
             return self.game.options
 
@@ -537,12 +531,13 @@ class Game:
         )
 
         # day 2
-        if user_data.election_round:
-            user_data.election_round -= 1
+        if self.time.cycle == 2:
             self.testament(self.died)
-            self.badge.election()
 
         # sheriff
+        if user_data.election_round:
+            user_data.election_round -= 1
+            self.badge.election()
         speakers = self.badge.speakers()
 
         # speech
