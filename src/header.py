@@ -151,7 +151,7 @@ class PPlayer(Protocol):
     def speech_expose(self) -> str:
         ...
 
-    def speech_withdraw_expose(self) -> tuple[str, str]:
+    def speech_quit_expose(self) -> tuple[str, str]:
         ...
 
     def str_mandatory(self, options: Iterable[str]) -> str:
@@ -192,7 +192,7 @@ def pls2str(pls: Iterable[PPlayer]) -> str:
 
 
 def log(content: str, clear_text: str = '') -> None:
-    log_path = pathlib.Path(f'{time.strftime("%y-%m-%d-%H-%M")}.log')
+    log_path = pathlib.Path(f'{time.strftime("%y-%m-%d-%H")}.log')
     if clear_text:
         log_path.write_text(clear_text, encoding='utf-8')
     with log_path.open(mode='a', encoding='utf-8') as file:

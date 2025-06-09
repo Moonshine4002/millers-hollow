@@ -4,9 +4,9 @@ from .io import (
     output,
     input_word,
     input_speech,
-    input_speech_withdraw,
+    input_speech_quit,
     input_speech_expose,
-    input_speech_withdraw_expose,
+    input_speech_quit_expose,
 )
 
 
@@ -59,9 +59,9 @@ class BPlayer:
             speech = input_speech(self)
         return speech
 
-    def speech_withdraw_expose(self) -> tuple[str, str]:
+    def speech_quit_expose(self) -> tuple[str, str]:
         if user_data.allow_exposure and self.role.faction == 'werewolf':
-            speech, withdraw, expose = input_speech_withdraw_expose(self)
+            speech, quit, expose = input_speech_quit_expose(self)
             if expose == 'expose':
                 self.death_time = copy(self.game.time)
                 self.death_causes.append('self-exposed')
@@ -72,8 +72,8 @@ class BPlayer:
                 )
                 raise SelfExposureError()
         else:
-            speech, withdraw = input_speech_withdraw(self)
-        return speech, withdraw
+            speech, quit = input_speech_quit(self)
+        return speech, quit
 
     def str_mandatory(self, options: Iterable[str]) -> str:
         return input_word(self, options)
@@ -346,7 +346,7 @@ class Badge:
         quitters: list[PPlayer] = []
         self.game.boardcast(
             self.game.options,
-            'Will you participate in the sheriff election (yes/no)?',
+            'Will you participate in the sheriff election?',
         )
         for pl in self.game.options:
             option = pl.str_mandatory(('yes', 'no'))
@@ -370,8 +370,8 @@ class Badge:
             f'Sheriff candidates are seat {pls2str(candidates)}. Give a campaign speech for the sheriff election.',
         )
         for pl in candidates:
-            speech, withdraw = pl.speech_withdraw_expose()
-            if withdraw == 'withdraw':
+            speech, quit = pl.speech_quit_expose()
+            if quit == 'quit':
                 self.game.boardcast(
                     self.game.audience(),
                     f'Seat {pl.seat} quit the election.',
@@ -447,12 +447,12 @@ class Badge:
         if len(self.game.died) == 1:
             reference = self.game.died[0]
             self.owner.receive(
-                'Choose the left/right side of the deceased as the first speaker (left/right).'
+                'Choose the left/right side of the deceased as the first speaker.'
             )
         else:
             reference = self.owner
             self.owner.receive(
-                'Choose your left/right side as the first speaker (left/right).'
+                'Choose your left/right side as the first speaker.'
             )
         option = self.owner.str_mandatory(('left', 'right'))
         if option == 'left':
