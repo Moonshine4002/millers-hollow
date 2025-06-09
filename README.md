@@ -20,7 +20,6 @@ The game includes:
 
 Add a file called `user_data.py` inside `src/`.
 ```python
-from .header import Char
 DEBUG: bool = user_data.DEBUG
 api_key: str = user_data.api_key
 base_url: str = user_data.base_url
@@ -31,6 +30,14 @@ allow_exposure: bool = user_data.allow_exposure
 election_round: int = user_data.election_round
 language: str = user_data.language
 additional_prompt: str = user_data.additional_prompt
-chars: list[Char] = user_data.chars
 ```
 Replace user_data.* with your data.
+
+Add a file called `user_mod.py` inside `src/`.
+```python
+from .header import Char, PPlayer
+from .player import Villager, Werewolf, Seer, Witch, Hunter, Guard, Fool
+chars: list[Char] = user_mod.chars
+roles: list[type[PPlayer]] = user_mod.roles
+```
+Replace user_mod.* with your mod.

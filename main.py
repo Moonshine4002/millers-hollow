@@ -1,17 +1,10 @@
 from src.player import *
 
-chars: list[Char] = user_data.chars
-roles = [
-    Villager,
-    Villager,
-    Villager,
-    Werewolf,
-    Werewolf,
-    Werewolf,
-    Seer,
-    Witch,
-    Fool,
-]
+from src import user_mod
+
+chars: list[Char] = user_mod.chars
+roles: list[type[PPlayer]] = user_mod.roles
+
 game = Game(chars, roles)
 
 game.loop()
