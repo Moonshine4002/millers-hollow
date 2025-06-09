@@ -1,6 +1,6 @@
 from src.player import *
 
-chars = [Char(name, 'ai') for name in string.ascii_uppercase]
+chars: list[Char] = user_data.chars
 roles = [
     Villager,
     Villager,

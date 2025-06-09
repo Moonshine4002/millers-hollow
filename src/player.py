@@ -489,20 +489,10 @@ class Game:
             f'{num} {Pl.__name__.lower()}' for Pl, num in roles.items()
         )
 
-        users = len(user_data.user_names)
-        ai = len(self.roles) - users
-        if ai < 0:
-            raise ValueError('too many users')
-        chars = random.sample(self.chars, ai)
-        random.shuffle(user_data.models)
-        for char in chars:
-            char.model = user_data.models.pop()
-        for user_name in user_data.user_names:
-            chars.append(Char(user_name, 'file'))
-        random.shuffle(chars)
+        random.shuffle(self.chars)
         random.shuffle(self.roles)
-        for seat, Pl in enumerate(self.roles):
-            self.players.append(Pl(self, chars[seat], Seat(seat)))
+        for seat, (char, Pl) in enumerate(zip(self.chars, self.roles)):
+            self.players.append(Pl(self, char, Seat(seat)))
 
     def __str__(self) -> str:
         info_player = '\n\t'.join(str(pl) for pl in self.players)
@@ -534,10 +524,7 @@ class Game:
             clear_text=f'Please wait...\nThe upper line for input.\n',
         )
         for pl in self.players:
-            self.unicast(
-                pl,
-                f'You are seat {pl.seat}, a {pl.role.kind}.',
-            )
+            self.unicast(pl, f'You are a {pl.role.kind}.')
 
         self.options = list(self.alived())
         self.boardcast(

@@ -15,3 +15,22 @@ The game includes:
 - ✅ **Victory Conditions**: The game ends when one faction achieves its winning condition.
 - 📉 **Game State Tracking**: Logs keep track of every information: time, dialogues, and game statistics.
 - 📜 **Structured Logs**: Improved output formatting for debugging and game analysis.
+
+## Deploy
+
+Add a file called `user_data.py` inside `src/`.
+```python
+from .header import Char
+DEBUG: bool = user_data.DEBUG
+api_key: str = user_data.api_key
+base_url: str = user_data.base_url
+win_condition: Literal[
+   'all', 'partial'
+] = user_data.win_condition   # type: ignore[assignment]
+allow_exposure: bool = user_data.allow_exposure
+election_round: int = user_data.election_round
+language: str = user_data.language
+additional_prompt: str = user_data.additional_prompt
+chars: list[Char] = user_data.chars
+```
+Replace user_data.* with your data.

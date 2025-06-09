@@ -12,22 +12,6 @@ from typing import Any, Literal, NamedTuple, Protocol, Self, TypeAlias
 from typing import runtime_checkable
 
 
-from . import user_data
-
-DEBUG: bool = user_data.DEBUG
-# api_key: str = user_data.api_key
-# base_url: str = user_data.base_url
-# models: list[str] = user_data.models
-# win_condition: Literal[
-#    'all', 'partial'
-# ] = user_data.win_condition   # type: ignore[assignment]
-# allow_exposure: bool = user_data.allow_exposure
-# election_round: int = user_data.election_round
-# user_names: list[str] = user_data.user_names
-# language: str = user_data.language
-# additional_prompt: str = user_data.additional_prompt
-
-
 class NamedEnum(Enum):
     def __str__(self) -> str:
         return f'{self.name.lower()}'
@@ -38,6 +22,7 @@ class Char:
     name: str
     control: str = 'console'
     model: str = 'human'
+    description: str = ''
 
 
 class Seat(int):
@@ -207,7 +192,7 @@ def pls2str(pls: Iterable[PPlayer]) -> str:
 
 
 def log(content: str, clear_text: str = '') -> None:
-    log_path = pathlib.Path(f'{len(user_data.user_names)}pl.log')
+    log_path = pathlib.Path(f'{time.strftime("%y-%m-%d-%H-%M")}.log')
     if clear_text:
         log_path.write_text(clear_text, encoding='utf-8')
     with log_path.open(mode='a', encoding='utf-8') as file:
@@ -317,3 +302,6 @@ class BaseGameError(Exception):
 
 class SelfExposureError(Exception):
     ...
+
+
+from . import user_data

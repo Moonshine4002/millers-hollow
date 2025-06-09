@@ -103,8 +103,11 @@ def get_ai_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> str:
             'name': clue.source,
         }
         messages.append(message)
-    prompt = f'You are seat {pl.seat}, a {pl.role.kind}.\n' 'Output format: '
-    prompt += ' --- '.join(str(i) for i in inputs)
+    prompt = (
+        f'You are seat {pl.seat}, a {pl.role.kind}.\n'
+        f'Your personality: {pl.char.description}\n'
+        f'Output format: {" --- ".join(str(i) for i in inputs)}'
+    )
     messages.append({'role': 'system', 'content': prompt})
     return input_ai(pl, messages)
 
