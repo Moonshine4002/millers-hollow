@@ -26,7 +26,7 @@ class BPlayer:
 
     def __str__(self) -> str:
         life = '☥' if self.life else '†'
-        return f'{life}{self.char.name}({self.char.model})[{self.role.kind}]: seat {self.seat}'
+        return f'{self.seat}{life} {self.role.kind} {self.char.name}({self.char.model}): {self.char.description}'
 
     def boardcast(self, pls: Iterable[PPlayer], content: str) -> None:
         self.game.boardcast(pls, content, str(self.seat))
@@ -439,7 +439,6 @@ class Badge:
             )
 
     def speakers(self) -> list[PPlayer]:
-        self.badge()
         if not self.owner:
             return self.game.options
 
@@ -541,8 +540,9 @@ class Game:
                 break
             if self.post_exec():
                 break
+            self.badge.badge()
+            self.time.inc_phase()
             try:
-                self.time.inc_phase()
                 self.day()
             except SelfExposureError as e:
                 pass
@@ -550,6 +550,7 @@ class Game:
                 break
             if self.post_exec():
                 break
+            self.badge.badge()
 
         winner = self.winner()
         end_message = f'{winner.faction} win.\n' 'winners:\n\t' + '\n\t'.join(
@@ -607,7 +608,6 @@ class Game:
             targets.death_time = copy(self.time)
             targets.death_causes.append('vote')
             targets.life = False
-            self.badge.badge()
             self.testament((targets,))
         else:
             self.time.inc_round()
@@ -624,7 +624,6 @@ class Game:
                 targets.death_time = copy(self.time)
                 targets.death_causes.append('vote')
                 targets.life = False
-                self.badge.badge()
                 self.testament((targets,))
             else:
                 pass
