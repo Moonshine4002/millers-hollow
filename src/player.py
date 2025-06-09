@@ -47,9 +47,9 @@ class BPlayer:
         if user_data.allow_exposure and self.role.faction == 'werewolf':
             speech, expose = input_speech_expose(self)
             if expose == 'expose':
-                self.life = False
                 self.death_time = copy(self.game.time)
                 self.death_causes.append('self-exposed')
+                self.life = False
                 self.game.boardcast(
                     self.game.audience(),
                     f'Seat {self.seat} self-exposed.',
@@ -63,9 +63,9 @@ class BPlayer:
         if user_data.allow_exposure and self.role.faction == 'werewolf':
             speech, withdraw, expose = input_speech_withdraw_expose(self)
             if expose == 'expose':
-                self.life = False
                 self.death_time = copy(self.game.time)
                 self.death_causes.append('self-exposed')
+                self.life = False
                 self.game.boardcast(
                     self.game.audience(),
                     f'Seat {self.seat} self-exposed.',
@@ -107,9 +107,9 @@ class Werewolf(BPlayer):
 
     def night(self) -> None:
         def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
-            target.life = False
             target.death_time = copy(game.time)
             target.death_causes.append(self.role.kind)
+            target.life = False
 
         if self != self.game.actors[0]:
             return
@@ -186,9 +186,9 @@ class Witch(BPlayer):
 
         def func_p(game: PGame, source: PPlayer, target: PPlayer) -> None:
             assert isinstance(source, self.__class__)
-            target.life = False
             target.death_time = copy(game.time)
             target.death_causes.append(self.role.kind)
+            target.life = False
 
         self.receive('Witch, please open your eyes!')
         target: PPlayer | None = self.game.data['target_for_witch']
@@ -245,9 +245,9 @@ class Hunter(BPlayer):
             if not pl:
                 game.boardcast(game.audience(), f"Hunter didn't shoot anyone.")
                 return
-            pl.life = False
             pl.death_time = copy(game.time)
             pl.death_causes.append(self.role.kind)
+            pl.life = False
             game.boardcast(game.audience(), f'Hunter shot seat {pl.seat}.')
 
         self.__life = value
@@ -256,7 +256,7 @@ class Hunter(BPlayer):
         if 'witch' in self.death_causes:
             return
         self.game.post_marks.append(
-            Mark(self.role.kind, self.game, self, self, func, priority=1)
+            Mark(self.role.kind, self.game, self, self, func)
         )
 
 
@@ -298,6 +298,42 @@ class Guard(BPlayer):
             self.game.marks.append(
                 Mark(self.role.kind, self.game, self, pl, func, priority=2)
             )
+
+
+class Fool(BPlayer):
+    def __init__(self, game: PGame, char: Char, seat: Seat) -> None:
+        super().__init__(game, char, seat)
+        self.role.faction = 'villager'
+        self.role.category = 'god'
+
+        self.exposed = False
+
+    @property
+    def life(self) -> bool:
+        return self.__life
+
+    @life.setter
+    def life(self, value: bool) -> None:
+        def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
+            game.boardcast(game.audience(), f'Seat {source.seat} is a fool!')
+
+        self.__life = value
+        if self.__life:
+            return
+        if 'witch' in self.death_causes:
+            return
+        if 'vote' not in self.death_causes:
+            return
+        if self.exposed:
+            return
+        self.exposed = True
+        self.life = True
+        self.vote = 0.0
+        self.death_time = Time()
+        self.death_causes.clear()
+        self.game.post_marks.append(
+            Mark(self.role.kind, self.game, self, self, func)
+        )
 
 
 class Badge:
@@ -581,6 +617,8 @@ class Game:
         if not targets:
             pass
         elif isinstance(targets, PPlayer):
+            targets.death_time = copy(self.time)
+            targets.death_causes.append('vote')
             targets.life = False
             self.badge.badge()
             self.testament((targets,))
@@ -596,6 +634,8 @@ class Game:
             if not targets:
                 pass
             elif isinstance(targets, PPlayer):
+                targets.death_time = copy(self.time)
+                targets.death_causes.append('vote')
                 targets.life = False
                 self.badge.badge()
                 self.testament((targets,))
@@ -681,12 +721,17 @@ class Game:
         vote_text = ''
         for pl in voters:
             vote = pl.pl_optional(candidates)
+            sign = ''
+            if pl.vote == 1.5:
+                sign = '*'
+            elif pl.vote == 0.0:
+                sign = '†'
             if not vote:
                 abstain += 1
-                vote_text += f'{pl.seat}->pass, '
+                vote_text += f'{pl.seat}{sign}->pass, '
             else:
                 ballot[vote] += pl.vote
-                vote_text += f'{pl.seat}->{vote.seat}, '
+                vote_text += f'{pl.seat}{sign}->{vote.seat}, '
         if abstain == len(voters):
             if not silent:
                 self.boardcast(self.audience(), 'Everyone passed.')

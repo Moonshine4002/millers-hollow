@@ -148,7 +148,7 @@ def parse(
         lcontent = content.split('---')
         if len(lcontent) != len(inputs):
             raise ValueError(f'wrong format: {len(lcontent) - 1} "---"')
-    outputs = [Output(content.strip(' "[]')) for content in lcontent]
+    outputs = [Output(content.strip(' \'"[]')) for content in lcontent]
     for i, o in zip(inputs, outputs):
         if i.options and o.output not in i.options:
             raise ValueError(f'wrong value: {o.output}')
