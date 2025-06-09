@@ -1,6 +1,7 @@
 # cache
 __pycache__/
 *.log
+requirements.txt
 
 # user data
 user*.py
