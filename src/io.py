@@ -52,14 +52,28 @@ class Output(NamedTuple):
     output: str
 
 
+log_time = Time()
+
+
 def output(
     pls_iter: Iterable[PPlayer],
     clue: Clue,
     system: bool = False,
     clear_text: str = '',
 ) -> None:
+    global log_time
     pls = list(pls_iter)
-    log(f'{clue} > {pls2str(pls)}\n', clear_text=clear_text)
+    if log_time == clue.time:
+        log(
+            f'\t{clue.source}> {clue.content} > {pls2str(pls)}\n',
+            clear_text=clear_text,
+        )
+    else:
+        log_time = clue.time
+        log(
+            f'[{clue.time}]\n\t{clue.source}> {clue.content} > {pls2str(pls)}\n',
+            clear_text=clear_text,
+        )
     if system or any(pl.char.control == 'console' for pl in pls):
         print(str(clue))
     for pl in pls:
@@ -89,6 +103,9 @@ def get_console_inputs(pl: PPlayer, inputs: Iterable[Input]) -> list[Output]:
     print(f'Task: {pl.task}')
     for i in inputs:
         outputs.append(Output(input(f'{i.prompt}: ')))
+    for i, o in zip(inputs, outputs):
+        if i.options and o.output not in i.options:
+            raise ValueError(f'wrong value: {o.output}')
     return outputs
 
 
@@ -154,7 +171,7 @@ def parse(
         lcontent = content.split('---')
         if len(lcontent) != len(inputs):
             raise ValueError(f'wrong format: {len(lcontent) - 1} "---"')
-    outputs = [Output(content.strip(' \'"[]')) for content in lcontent]
+    outputs = [Output(content.strip(' \'"[]').lower()) for content in lcontent]
     for i, o in zip(inputs, outputs):
         if i.options and o.output not in i.options:
             raise ValueError(f'wrong value: {o.output}')
@@ -191,12 +208,12 @@ def get_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
         except NotImplementedError as e:
             raise
         except Exception as e:
-            log(f'{e!r}\n')
+            log(f'\t{e!r}\n')
         else:
             output_str = ' --- '.join(
                 f'{i.prompt}: {o.output}' for i, o in zip(inputs, outputs)
             )
-            log(f'{pl.seat}[{pl.role.kind}]~> {output_str}\n')
+            log(f'\t{pl.seat}[{pl.role.kind}]~> {output_str}\n')
             (info, state, id_, task, strategy, reasoning, *outputs) = outputs
             pl.task = ''
             return outputs
