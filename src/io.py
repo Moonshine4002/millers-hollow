@@ -86,6 +86,7 @@ def input_ai(pl: PPlayer, messages: list[ChatCompletionMessageParam]) -> str:
 
 def get_console_inputs(pl: PPlayer, inputs: Iterable[Input]) -> list[Output]:
     outputs: list[Output] = []
+    print(f'Task: {pl.task}')
     for i in inputs:
         outputs.append(Output(input(f'{i.prompt}: ')))
     return outputs
@@ -119,9 +120,10 @@ def get_file_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
     prompt = ' --- '.join(str(i) for i in inputs)
     with file_path.open('r', encoding='utf-8') as file:
         lines = file.readlines()
-    if not lines:
+    if not lines or len(lines) < 2:
         raise ValueError('empty file')
     lines[0] = f'{prompt}\n'
+    lines[1] = f'Task: {pl.task}\n'
     with file_path.open('w', encoding='utf-8') as file:
         file.writelines(lines)
     while True:
@@ -195,7 +197,7 @@ def get_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
                 f'{i.prompt}: {o.output}' for i, o in zip(inputs, outputs)
             )
             log(f'{pl.seat}[{pl.role.kind}]~> {output_str}\n')
-            info, summary, assumption, task, strategy, reasoning, *outputs = outputs
+            (info, state, id_, task, strategy, reasoning, *outputs) = outputs
             pl.task = ''
             return outputs
 
