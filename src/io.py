@@ -45,7 +45,7 @@ class Input(NamedTuple):
 
     def __str__(self) -> str:
         options = f' in one of {self.options}' if self.options else ''
-        return f'[{self.prompt}]{options}'
+        return f'["{self.prompt}"{options}]'
 
 
 class Output(NamedTuple):
@@ -158,7 +158,16 @@ def parse(
     return outputs
 
 
-def get_inputs(pl: PPlayer, inputs: Iterable[Input]) -> list[Output]:
+def get_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
+    inputs_iter = itertools.chain(
+        (
+            Input('your task?'),
+            Input("assumption of other players' identities"),
+            Input('your true thought and reasoning'),
+        ),
+        inputs_iter,
+    )
+    inputs = list(inputs_iter)
     while True:
         try:
             match pl.char.control:
@@ -171,38 +180,38 @@ def get_inputs(pl: PPlayer, inputs: Iterable[Input]) -> list[Output]:
                     outputs = get_file_inputs(pl, inputs)
                 case _:
                     raise NotImplementedError('unknown control')
-            break
         except NotImplementedError as e:
             raise
         except Exception as e:
             log(f'{e!r}\n')
-    output_str = ' --- '.join(
-        f'{i.prompt}: {o.output}' for i, o in zip(inputs, outputs)
-    )
-    log(f'{pl.seat}[{pl.role.kind}]~> {output_str}\n')
+        else:
+            output_str = ' --- '.join(
+                f'{i.prompt}: {o.output}' for i, o in zip(inputs, outputs)
+            )
+            log(f'{pl.seat}[{pl.role.kind}]~> {output_str}\n')
+            task, assumption, reasoning, *outputs = outputs
+            break
+
     return outputs
 
 
 def input_word(pl: PPlayer, candidates_iter: Iterable[str]) -> str:
-    thought, choice = get_inputs(
+    (choice,) = get_inputs(
         pl,
-        (Input('your thought'), Input('your choice', list(candidates_iter))),
+        (Input('your choice', list(candidates_iter)),),
     )
     return choice.output
 
 
 def input_speech(pl: PPlayer) -> str:
-    thought, speech = get_inputs(
-        pl, (Input('your thought'), Input('your speech'))
-    )
+    (speech,) = get_inputs(pl, (Input('your speech'),))
     return speech.output
 
 
 def input_speech_quit(pl: PPlayer) -> tuple[str, str]:
-    thought, speech, quit = get_inputs(
+    speech, quit = get_inputs(
         pl,
         (
-            Input('your thought'),
             Input('your speech'),
             Input('Will you quit the election?', ['quit', 'no']),
         ),
@@ -211,10 +220,9 @@ def input_speech_quit(pl: PPlayer) -> tuple[str, str]:
 
 
 def input_speech_expose(pl: PPlayer) -> tuple[str, str]:
-    thought, speech, expose = get_inputs(
+    speech, expose = get_inputs(
         pl,
         (
-            Input('your thought'),
             Input('your speech'),
             Input('Will you make a self-exposure?', ['expose', 'no']),
         ),
@@ -223,10 +231,9 @@ def input_speech_expose(pl: PPlayer) -> tuple[str, str]:
 
 
 def input_speech_quit_expose(pl: PPlayer) -> tuple[str, str, str]:
-    thought, speech, quit, expose = get_inputs(
+    speech, quit, expose = get_inputs(
         pl,
         (
-            Input('your thought'),
             Input('your speech'),
             Input('Will you quit the election?', ['quit', 'no']),
             Input('Will you make a self-exposure?', ['expose', 'no']),
