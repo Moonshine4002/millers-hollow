@@ -162,8 +162,11 @@ def parse(
 def get_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
     inputs_iter = itertools.chain(
         (
-            Input('your task?'),
-            Input("assumption of other players' identities"),
+            Input('your seat and ability'),
+            Input('summary of the game state'),
+            Input("assumption of all other players' identities"),
+            Input('your immediate task'),
+            Input('your strategy'),
             Input('your true thought and reasoning'),
         ),
         inputs_iter,
@@ -192,7 +195,7 @@ def get_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
                 f'{i.prompt}: {o.output}' for i, o in zip(inputs, outputs)
             )
             log(f'{pl.seat}[{pl.role.kind}]~> {output_str}\n')
-            task, assumption, reasoning, *outputs = outputs
+            info, summary, assumption, task, strategy, reasoning, *outputs = outputs
             pl.task = ''
             return outputs
 
