@@ -123,6 +123,7 @@ class PPlayer(Protocol):
     seat: Seat
     vote: float
     night_priority: int
+    task: str
     clues: list[Clue]
     death_time: Time
     death_causes: list[str]
@@ -268,6 +269,7 @@ class PGame(Protocol):
         self,
         candidates: Iterable[PPlayer],
         voters: Iterable[PPlayer],
+        task: str,
         silent: bool = False,
     ) -> None | PPlayer | list[PPlayer]:
         ...

@@ -106,6 +106,7 @@ def get_ai_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> str:
     prompt = (
         f'You are seat {pl.seat}, a {pl.role.kind}.\n'
         f'Your personality: {pl.char.description}\n'
+        f'Your task: {pl.task}\n'
         f'Output format: {" --- ".join(str(i) for i in inputs)}'
     )
     messages.append({'role': 'system', 'content': prompt})
@@ -168,6 +169,8 @@ def get_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
         inputs_iter,
     )
     inputs = list(inputs_iter)
+    if not pl.task:
+        raise ValueError('empty task')
     while True:
         try:
             match pl.char.control:
@@ -190,9 +193,8 @@ def get_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
             )
             log(f'{pl.seat}[{pl.role.kind}]~> {output_str}\n')
             task, assumption, reasoning, *outputs = outputs
-            break
-
-    return outputs
+            pl.task = ''
+            return outputs
 
 
 def input_word(pl: PPlayer, candidates_iter: Iterable[str]) -> str:
