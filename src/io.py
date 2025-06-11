@@ -285,6 +285,19 @@ async def async_input_ai(
     return content
 
 
+async def async_get_console_inputs(
+    pl: PPlayer, inputs: Iterable[Input]
+) -> list[Output]:
+    outputs: list[Output] = []
+    print(f'Task: {pl.task}')
+    for i in inputs:
+        outputs.append(Output(input(f'{i.prompt}: ')))
+    for i, o in zip(inputs, outputs):
+        if i.options and o.output not in i.options:
+            raise ValueError(f'wrong value: {o.output}')
+    return outputs
+
+
 async def async_get_ai_inputs(
     pl: PPlayer, inputs_iter: Iterable[Input]
 ) -> str:
@@ -309,6 +322,35 @@ async def async_get_ai_inputs(
     return await async_input_ai(pl, messages)
 
 
+async def async_get_file_inputs(
+    pl: PPlayer, inputs_iter: Iterable[Input]
+) -> list[Output]:
+    inputs = list(inputs_iter)
+    file_path = pathlib.Path(f'io/{pl.seat}.txt')
+    prompt = ' --- '.join(str(i) for i in inputs)
+    with file_path.open('r', encoding='utf-8') as file:
+        lines = file.readlines()
+    if not lines or len(lines) < 2:
+        raise ValueError('empty file')
+    lines[0] = f'{prompt}\n'
+    lines[1] = f'Task: {pl.task}\n'
+    with file_path.open('w', encoding='utf-8') as file:
+        file.writelines(lines)
+    while True:
+        time.sleep(1)
+        with file_path.open('r', encoding='utf-8') as file:
+            lines = file.readlines()
+        if not lines:
+            raise ValueError('empty file')
+        if lines[0].strip() == prompt:
+            continue
+        output = parse(pl, inputs, lines[0])
+        lines[0] = f'Please wait...\n'
+        with file_path.open('w', encoding='utf-8') as file:
+            file.writelines(lines)
+        return output
+
+
 async def async_get_inputs(
     pl: PPlayer, inputs_iter: Iterable[Input]
 ) -> list[Output]:
@@ -330,12 +372,12 @@ async def async_get_inputs(
         try:
             match pl.char.control:
                 case 'console':
-                    outputs = get_console_inputs(pl, inputs)
+                    outputs = await async_get_console_inputs(pl, inputs)
                 case 'ai':
                     content = await async_get_ai_inputs(pl, inputs)
                     outputs = parse(pl, inputs, content)
                 case 'file':
-                    outputs = get_file_inputs(pl, inputs)
+                    outputs = await async_get_file_inputs(pl, inputs)
                 case _:
                     raise NotImplementedError('unknown control')
         except NotImplementedError as e:
