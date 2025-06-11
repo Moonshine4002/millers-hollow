@@ -116,17 +116,18 @@ class Werewolf(BPlayer):
         if self != self.game.actors[0]:
             return
 
+        self.game.boardcast(
+            self.game.actors,
+            f'Werewolves {pls2str(self.game.actors)}, please open your eyes!',
+        )
         for pl in self.game.actors:
-            pl.task = (
-                f'Werewolves {pls2str(self.game.actors)}, please open your eyes! '
-                f'Now you can talk secretly with your teammates.'
-            )
+            pl.task = 'talk with your teammates'
             speech = input_speech(pl)
             pl.boardcast(self.game.actors, speech)
         targets = self.game.vote(
             self.game.options,
             self.game.actors,
-            f'Werewolves, now you can choose one player to kill.',
+            f'choose one player to kill',
             silent=True,
         )
         if not targets:
@@ -158,9 +159,8 @@ class Seer(BPlayer):
         self.night_priority = 1
 
     def night(self) -> None:
-        self.task = (
-            "Seer, please open your eyes! You can check one player's identity."
-        )
+        self.game.boardcast(self.game.actors, 'Seer, please open your eyes!')
+        self.task = "check one player's identity"
         pl = self.pl_mandatory(self.game.options)
         self.receive(f'Seat {pl.seat} is {pl.role.faction}.')
 
@@ -205,10 +205,11 @@ class Witch(BPlayer):
             decisions.extend(pls2lstr(self.game.options))
         if not decisions:
             return
-        self.task = (
-            f'You have {int(self.antidote)} antidote and {int(self.poison)} poison. '
-            'Say "pass" to pass, say "save" to save, say a seat number to poison a player.'
+        self.game.boardcast(
+            self.game.actors,
+            f'You have {int(self.antidote)} antidote and {int(self.poison)} poison.',
         )
+        self.task = 'Say "pass" to pass, say "save" to save, say a seat number to poison a player.'
         str_ = self.str_optional(decisions)
         if str_ == 'pass':
             pass
@@ -240,7 +241,7 @@ class Hunter(BPlayer):
     def life(self, value: bool) -> None:
         def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
             game.boardcast(game.audience(), f'Seat {source.seat} is a hunter!')
-            source.task = 'You can choose a player to shoot.'
+            source.task = 'choose a player to shoot or pass'
             pl = self.pl_optional(game.options)
             if not pl:
                 game.boardcast(game.audience(), f"Hunter didn't shoot anyone.")
@@ -289,9 +290,8 @@ class Guard(BPlayer):
             ]
 
         options = [pl for pl in self.game.options if pl != self.guard]
-        self.task = (
-            'Guard, please open your eyes! Who will you protect tonight?'
-        )
+        self.game.boardcast(self.game.actors, 'Guard, please open your eyes!')
+        self.task = 'who will you protect tonight?'
         pl = self.pl_optional(options)
         self.guard = pl
         if pl:
@@ -366,7 +366,11 @@ class Badge:
             )
             return
         for pl in candidates:
-            pl.task = f'Sheriff candidates are seat {pls2str(candidates)}. Give a campaign speech for the sheriff election.'
+            self.game.boardcast(
+                self.game.actors,
+                f'Sheriff candidates are seat {pls2str(candidates)}.',
+            )
+            pl.task = 'Give a campaign speech for the sheriff election.'
             speech, quit = pl.speech_quit_expose()
             if quit == 'quit':
                 self.game.boardcast(
@@ -383,10 +387,15 @@ class Badge:
                 'No one is running for sheriff.',
             )
             return
+
+        self.game.boardcast(
+            self.game.audience(),
+            f'Sheriff candidates are seat {pls2str(candidates)}.',
+        )
         targets = self.game.vote(
             candidates,
             voters,
-            f'Sheriff candidates are seat {pls2str(candidates)}. Now, please vote to elect the sheriff.',
+            'your vote to elect the sheriff',
         )
         if not targets:
             pass
@@ -401,7 +410,7 @@ class Badge:
                 pl.task = 'Give the additional campaign speech.'
                 speech = pl.speech_expose()
                 pl.boardcast(self.game.audience(), speech)
-            targets = self.game.vote(targets, voters, 'Please vote again.')
+            targets = self.game.vote(targets, voters, 'vote again')
             if not targets:
                 pass
             elif isinstance(targets, PPlayer):
@@ -415,7 +424,7 @@ class Badge:
         if not self.owner:
             return
         if self.owner.life == False:
-            self.owner.task = "Please transfer the sheriff's badge. If passed, then destroy the badge."
+            self.owner.task = 'Say "pass" to destroy the badge or say a seat number to transfer the badge'
             target = self.owner.pl_optional(self.game.options)
             if not target:
                 self.owner = None
@@ -437,7 +446,7 @@ class Badge:
         speakers = copy(self.game.options)
         if len(self.game.died) == 1:
             reference = self.game.died[0]
-            self.owner.task = 'Choose the left/right side of the deceased as the first speaker.'
+            self.owner.task = f'Choose the left/right side of seat {reference.seat} as the first speaker.'
         else:
             reference = self.owner
             self.owner.task = (
@@ -581,13 +590,13 @@ class Game:
 
         # speech
         for pl in speakers:
-            pl.task = f'Now freely talk about the current situation based on your observation with a few sentences.'
+            pl.task = f'talk with everyone'
             speech = pl.speech_expose()
             pl.boardcast(self.audience(), speech)
 
         # vote
         self.time.inc_round()
-        targets = self.vote(self.options, self.options, "It's time to vote.")
+        targets = self.vote(self.options, self.options, 'your vote')
         if not targets:
             pass
         elif isinstance(targets, PPlayer):
@@ -599,10 +608,10 @@ class Game:
             self.time.inc_round()
             targets.reverse()
             for pl in targets:
-                pl.task = 'Give the additional speech.'
+                pl.task = 'give the additional speech'
                 speech = pl.speech_expose()
                 pl.boardcast(self.audience(), speech)
-            targets = self.vote(targets, self.options, 'Please vote again.')
+            targets = self.vote(targets, self.options, 'vote again')
             if not targets:
                 pass
             elif isinstance(targets, PPlayer):

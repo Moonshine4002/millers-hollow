@@ -19,16 +19,16 @@ system_prompt = (
     'Rules:\n'
     '- The Moderator is always truthful.\n'
     '- You win if your team wins.\n'
-    '- Output must be in one line without newlines.\n'
+    '- Output must use "---" as separation.\n'
     f'- Output using "{user_data.language}".\n\n'
     'Game rules:\n'
     f'- Werewolves win by eliminating {user_data.win_condition} villagers.\n'
-    f"- Werewolves {'can' if user_data.allow_exposure else 'can not'} expose themselves."
+    f"- Werewolves can {'not' if not user_data.allow_exposure else ''} expose themselves."
     f'- The sheriff election continues for {user_data.election_round} rounds.\n'
     '- Players killed on the first night or eliminated by vote have a dying speech.\n'
     "- The seer's verification only reveals whether the target belongs to the good faction, not their specific role.\n"
-    '- The witch cannot use the antidote to save herself after the first night.\n'
-    '- The player cannot use any skills after poisoned by the witch.\n'
+    '- The witch cannot use the antidote to save herself except for the first night.\n'
+    '- The hunter cannot shoot after poisoned by the witch.\n'
     '- The guard cannot protect the same player for two consecutive nights.\n'
     '- Simultaneous protection by the witch and guard on the same target has no effect.\n\n'
     'Tips:\n'
@@ -44,7 +44,7 @@ class Input(NamedTuple):
     options: list[str] = []
 
     def __str__(self) -> str:
-        options = f' in one of {self.options}' if self.options else ''
+        options = f' in {self.options}' if self.options else ''
         return f'["{self.prompt}"{options}]'
 
 
@@ -181,12 +181,9 @@ def parse(
 def get_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
     inputs_iter = itertools.chain(
         (
-            Input('your seat and ability'),
-            Input('summary of the game state'),
-            Input("assumption of all other players' identities"),
-            Input('your immediate task'),
-            Input('your strategy'),
-            Input('your true thought and reasoning'),
+            Input('your seat, ability, task'),
+            Input("summary of the game state and known players' identities"),
+            Input('your immediate action and long term strategy'),
         ),
         inputs_iter,
     )
@@ -214,7 +211,7 @@ def get_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
                 f'{i.prompt}: {o.output}' for i, o in zip(inputs, outputs)
             )
             log(f'\t{pl.seat}[{pl.role.kind}]~> {output_str}\n')
-            (info, state, id_, task, strategy, reasoning, *outputs) = outputs
+            (info, summary, strategy, *outputs) = outputs
             pl.task = ''
             return outputs
 
@@ -222,13 +219,13 @@ def get_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
 def input_word(pl: PPlayer, candidates_iter: Iterable[str]) -> str:
     (choice,) = get_inputs(
         pl,
-        (Input('your choice', list(candidates_iter)),),
+        (Input(pl.task, list(candidates_iter)),),
     )
     return choice.output
 
 
 def input_speech(pl: PPlayer) -> str:
-    (speech,) = get_inputs(pl, (Input('your speech'),))
+    (speech,) = get_inputs(pl, (Input(pl.task),))
     return speech.output
 
 
@@ -236,7 +233,7 @@ def input_speech_quit(pl: PPlayer) -> tuple[str, str]:
     speech, quit = get_inputs(
         pl,
         (
-            Input('your speech'),
+            Input(pl.task),
             Input('Will you quit the election?', ['quit', 'no']),
         ),
     )
@@ -247,7 +244,7 @@ def input_speech_expose(pl: PPlayer) -> tuple[str, str]:
     speech, expose = get_inputs(
         pl,
         (
-            Input('your speech'),
+            Input(pl.task),
             Input('Will you make a self-exposure?', ['expose', 'no']),
         ),
     )
@@ -258,7 +255,7 @@ def input_speech_quit_expose(pl: PPlayer) -> tuple[str, str, str]:
     speech, quit, expose = get_inputs(
         pl,
         (
-            Input('your speech'),
+            Input(pl.task),
             Input('Will you quit the election?', ['quit', 'no']),
             Input('Will you make a self-exposure?', ['expose', 'no']),
         ),
@@ -356,12 +353,9 @@ async def async_get_inputs(
 ) -> list[Output]:
     inputs_iter = itertools.chain(
         (
-            Input('your seat and ability'),
-            Input('summary of the game state'),
-            Input("assumption of all other players' identities"),
-            Input('your immediate task'),
-            Input('your strategy'),
-            Input('your true thought and reasoning'),
+            Input('your seat, ability, task'),
+            Input("summary of the game state and known players' identities"),
+            Input('your immediate action and long term strategy'),
         ),
         inputs_iter,
     )
@@ -389,7 +383,7 @@ async def async_get_inputs(
                 f'{i.prompt}: {o.output}' for i, o in zip(inputs, outputs)
             )
             log(f'\t{pl.seat}[{pl.role.kind}]~> {output_str}\n')
-            (info, state, id_, task, strategy, reasoning, *outputs) = outputs
+            (info, summary, strategy, *outputs) = outputs
             pl.task = ''
             return outputs
 
@@ -399,10 +393,7 @@ async def async_input_words(
 ) -> Iterable[str]:
     candidates = list(candidates_iter)
     results = await asyncio.gather(
-        *(
-            async_get_inputs(pl, (Input('your choice', candidates),))
-            for pl in pls
-        )
+        *(async_get_inputs(pl, (Input(pl.task, candidates),)) for pl in pls)
     )
     choices = itertools.chain.from_iterable(results)
     return (choice.output for choice in choices)
