@@ -1,3 +1,4 @@
+import asyncio
 from collections import Counter
 from collections.abc import Callable, Generator, Iterable
 from copy import copy, deepcopy
@@ -180,12 +181,12 @@ class Mark(NamedTuple):
         self.func(self.game, self.source, self.target)
 
 
-def pls2seat(pls: Iterable[PPlayer]) -> Generator[Seat]:
+def pls2seats(pls: Iterable[PPlayer]) -> Generator[Seat]:
     return (pl.seat for pl in pls)
 
 
 def pls2lstr(pls: Iterable[PPlayer]) -> Generator[str]:
-    return (str(seat) for seat in pls2seat(pls))
+    return (str(seat) for seat in pls2seats(pls))
 
 
 def pls2str(pls: Iterable[PPlayer]) -> str:
@@ -294,8 +295,16 @@ def seat2pl(game: PGame, seat: Seat) -> PPlayer:
     return game.players[seat]
 
 
-def seats2pl(game: PGame, seats: Iterable[Seat]) -> Generator[PPlayer]:
+def str2pl(game: PGame, seat: str) -> PPlayer:
+    return game.players[Seat(seat)]
+
+
+def seats2pls(game: PGame, seats: Iterable[Seat]) -> Generator[PPlayer]:
     return (game.players[seat] for seat in seats)
+
+
+def lstr2pls(game: PGame, seats: Iterable[str]) -> Generator[PPlayer]:
+    return (game.players[Seat(seat)] for seat in seats)
 
 
 class BaseGameError(Exception):

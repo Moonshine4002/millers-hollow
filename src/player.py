@@ -7,6 +7,7 @@ from .io import (
     input_speech_quit,
     input_speech_expose,
     input_speech_quit_expose,
+    async_input_words,
 )
 
 
@@ -345,8 +346,11 @@ class Badge:
         quitters: list[PPlayer] = []
         for pl in self.game.options:
             pl.task = 'Will you participate in the sheriff election?'
-            option = pl.str_mandatory(('yes', 'no'))
-            if option == 'yes':
+        choices = asyncio.run(
+            async_input_words(self.game.options, ('yes', 'no'))
+        )
+        for pl, choice in zip(self.game.options, choices):
+            if choice == 'yes':
                 candidates.append(pl)
         voters = [pl for pl in self.game.options if pl not in candidates]
         if not candidates:
@@ -689,18 +693,23 @@ class Game:
         vote_text = ''
         for pl in voters:
             pl.task = task
-            vote = pl.pl_optional(candidates)
+        votes = asyncio.run(
+            async_input_words(
+                voters, itertools.chain(pls2lstr(candidates), ('pass',))
+            )
+        )
+        for pl, vote in zip(voters, votes):
             sign = ''
             if pl.vote == 1.5:
                 sign = '*'
             elif pl.vote == 0.0:
                 sign = '†'
-            if not vote:
+            if vote == 'pass':
                 abstain += 1
                 vote_text += f'{pl.seat}{sign}->pass, '
             else:
-                ballot[vote] += pl.vote
-                vote_text += f'{pl.seat}{sign}->{vote.seat}, '
+                ballot[str2pl(self, vote)] += pl.vote
+                vote_text += f'{pl.seat}{sign}->{str2pl(self, vote).seat}, '
         if abstain == len(voters):
             if not silent:
                 self.boardcast(self.audience(), 'Everyone passed.')

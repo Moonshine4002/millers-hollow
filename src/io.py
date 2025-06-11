@@ -1,4 +1,4 @@
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 from openai.types.chat.chat_completion_message_param import (
     ChatCompletionMessageParam,
 )
@@ -264,3 +264,103 @@ def input_speech_quit_expose(pl: PPlayer) -> tuple[str, str, str]:
         ),
     )
     return speech.output, quit.output, expose.output
+
+
+async_client = AsyncOpenAI(
+    api_key=user_data.api_key,
+    base_url=user_data.base_url,
+)
+
+
+async def async_input_ai(
+    pl: PPlayer, messages: list[ChatCompletionMessageParam]
+) -> str:
+    chat_completion = await async_client.chat.completions.create(
+        model=pl.char.model,
+        messages=messages,
+    )
+    content = chat_completion.choices[0].message.content
+    if not content:
+        raise ValueError('empty output')
+    return content
+
+
+async def async_get_ai_inputs(
+    pl: PPlayer, inputs_iter: Iterable[Input]
+) -> str:
+    inputs = list(inputs_iter)
+    messages: list[ChatCompletionMessageParam] = [
+        {'role': 'system', 'content': system_prompt}
+    ]
+    for clue in pl.clues:
+        message: ChatCompletionMessageParam = {
+            'role': 'user',
+            'content': clue.content,
+            'name': clue.source,
+        }
+        messages.append(message)
+    prompt = (
+        f'You are seat {pl.seat}, a {pl.role.kind}.\n'
+        f'Your personality: {pl.char.description}\n'
+        f'Your task: {pl.task}\n'
+        f'Output format: {" --- ".join(str(i) for i in inputs)}'
+    )
+    messages.append({'role': 'system', 'content': prompt})
+    return await async_input_ai(pl, messages)
+
+
+async def async_get_inputs(
+    pl: PPlayer, inputs_iter: Iterable[Input]
+) -> list[Output]:
+    inputs_iter = itertools.chain(
+        (
+            Input('your seat and ability'),
+            Input('summary of the game state'),
+            Input("assumption of all other players' identities"),
+            Input('your immediate task'),
+            Input('your strategy'),
+            Input('your true thought and reasoning'),
+        ),
+        inputs_iter,
+    )
+    inputs = list(inputs_iter)
+    if not pl.task:
+        raise ValueError('empty task')
+    while True:
+        try:
+            match pl.char.control:
+                case 'console':
+                    outputs = get_console_inputs(pl, inputs)
+                case 'ai':
+                    content = await async_get_ai_inputs(pl, inputs)
+                    outputs = parse(pl, inputs, content)
+                case 'file':
+                    outputs = get_file_inputs(pl, inputs)
+                case _:
+                    raise NotImplementedError('unknown control')
+        except NotImplementedError as e:
+            raise
+        except Exception as e:
+            log(f'\t{e!r}\n')
+        else:
+            output_str = ' --- '.join(
+                f'{i.prompt}: {o.output}' for i, o in zip(inputs, outputs)
+            )
+            log(f'\t{pl.seat}[{pl.role.kind}]~> {output_str}\n')
+            (info, state, id_, task, strategy, reasoning, *outputs) = outputs
+            pl.task = ''
+            return outputs
+
+
+async def async_input_words(
+    pls: Iterable[PPlayer], candidates_iter: Iterable[str]
+) -> Iterable[str]:
+    candidates = list(candidates_iter)
+    results = await asyncio.gather(
+        *(
+            async_get_inputs(pl, (Input('your choice', candidates),))
+            for pl in pls
+        )
+    )
+    choices = itertools.chain.from_iterable(results)
+    return (choice.output for choice in choices)
