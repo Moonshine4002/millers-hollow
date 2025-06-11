@@ -44,7 +44,7 @@ class Input(NamedTuple):
     options: list[str] = []
 
     def __str__(self) -> str:
-        options = f' in {self.options}' if self.options else ''
+        options = f' replaced by one of {self.options}' if self.options else ''
         return f'["{self.prompt}"{options}]'
 
 
@@ -186,6 +186,7 @@ def get_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
             Input('your immediate action and long term strategy'),
         ),
         inputs_iter,
+        (Input('your remarks'),),
     )
     inputs = list(inputs_iter)
     if not pl.task:
@@ -211,7 +212,7 @@ def get_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
                 f'{i.prompt}: {o.output}' for i, o in zip(inputs, outputs)
             )
             log(f'\t{pl.seat}[{pl.role.kind}]~> {output_str}\n')
-            (info, summary, strategy, *outputs) = outputs
+            (info, summary, strategy, *outputs, remarks) = outputs
             pl.task = ''
             return outputs
 
@@ -358,6 +359,7 @@ async def async_get_inputs(
             Input('your immediate action and long term strategy'),
         ),
         inputs_iter,
+        (Input('your remarks'),),
     )
     inputs = list(inputs_iter)
     if not pl.task:
@@ -383,7 +385,7 @@ async def async_get_inputs(
                 f'{i.prompt}: {o.output}' for i, o in zip(inputs, outputs)
             )
             log(f'\t{pl.seat}[{pl.role.kind}]~> {output_str}\n')
-            (info, summary, strategy, *outputs) = outputs
+            (info, summary, strategy, *outputs, remarks) = outputs
             pl.task = ''
             return outputs
 

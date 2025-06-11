@@ -159,13 +159,17 @@ class PPlayer(Protocol):
     def str_mandatory(self, options: Iterable[str]) -> str:
         ...
 
-    def str_optional(self, options: Iterable[str]) -> str:
+    def str_optional(
+        self, options: Iterable[str], optional: str = 'pass'
+    ) -> str:
         ...
 
     def pl_mandatory(self, options: Iterable['PPlayer']) -> 'PPlayer':
         ...
 
-    def pl_optional(self, options: Iterable['PPlayer']) -> 'PPlayer | None':
+    def pl_optional(
+        self, options: Iterable['PPlayer'], optional: str = 'pass'
+    ) -> 'PPlayer | None':
         ...
 
 
