@@ -197,14 +197,6 @@ def pls2str(pls: Iterable[PPlayer]) -> str:
     return f"[{', '.join(pls2lstr(pls))}]"
 
 
-def log(content: str, clear_text: str = '') -> None:
-    log_path = pathlib.Path(f'{time.strftime("%y-%m-%d-%H")}.log')
-    if clear_text:
-        log_path.write_text(clear_text, encoding='utf-8')
-    with log_path.open(mode='a', encoding='utf-8') as file:
-        file.write(content)
-
-
 class PBadge(Protocol):
     owner: PPlayer | None
     game: 'PGame'

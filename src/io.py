@@ -53,6 +53,15 @@ class Output(NamedTuple):
 
 
 log_time = Time()
+log_time_str = time.strftime('%y-%m-%d-%H-%M-%S')
+
+
+def log(content: str, clear_text: str = '') -> None:
+    log_path = pathlib.Path(f'{log_time_str}.log')
+    if clear_text:
+        log_path.write_text(clear_text, encoding='utf-8')
+    with log_path.open(mode='a', encoding='utf-8') as file:
+        file.write(content)
 
 
 def output(
