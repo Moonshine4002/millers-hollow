@@ -31,10 +31,10 @@ class BPlayer:
         return f'{self.seat}{life} {self.role.kind} {self.char.name}({self.char.model}): {self.char.description}'
 
     def boardcast(self, pls: Iterable[PPlayer], content: str) -> None:
-        self.game.boardcast(pls, content, str(self.seat))
+        self.game.boardcast(pls, content, f'seat {self.seat}')
 
     def unicast(self, pl: PPlayer, content: str) -> None:
-        self.game.unicast(pl, content, str(self.seat))
+        self.game.unicast(pl, content, f'seat {self.seat}')
 
     def receive(self, content: str) -> None:
         self.game.unicast(self, content)
@@ -376,11 +376,11 @@ class Badge:
                 'Everyone is running for sheriff.',
             )
             return
+        self.game.boardcast(
+            self.game.actors,
+            f'Sheriff candidates are seat {pls2str(candidates)}.',
+        )
         for pl in candidates:
-            self.game.boardcast(
-                self.game.actors,
-                f'Sheriff candidates are seat {pls2str(candidates)}.',
-            )
             pl.task = 'Give a campaign speech for the sheriff election.'
             speech, quit = pl.speech_quit_expose()
             if quit == 'quit':
@@ -754,7 +754,7 @@ class Game:
             if not silent:
                 self.boardcast(
                     self.audience(),
-                    f"It's a tie. Vote result: {vote_text[:-2]}.",
+                    f'Seat {targets} ended in a tie. Vote result: {vote_text[:-2]}.',
                 )
             return targets
 
