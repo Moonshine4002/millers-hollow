@@ -754,7 +754,7 @@ class Game:
             if not silent:
                 self.boardcast(
                     self.audience(),
-                    f'Seat {targets} ended in a tie. Vote result: {vote_text[:-2]}.',
+                    f'Seat {pls2str(targets)} ended in a tie. Vote result: {vote_text[:-2]}.',
                 )
             return targets
 

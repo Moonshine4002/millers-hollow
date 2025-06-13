@@ -30,7 +30,8 @@ system_prompt = (
     '- The witch cannot use the antidote to save herself except for the first night.\n'
     '- The hunter cannot shoot after poisoned by the witch.\n'
     '- The guard cannot protect the same player for two consecutive nights.\n'
-    '- Simultaneous protection by the witch and guard on the same target has no effect.\n\n'
+    '- Simultaneous protection by the witch and guard on the same target has no effect.\n'
+    '- The fool is still alived after being voted out, the werewolves may need to chase and eliminate them.\n\n'
     'Tips:\n'
     "- Avoid repeating others' statements.\n"
     '- You can reveal your true role or impersonate another role (regardless of your faction).\n'
