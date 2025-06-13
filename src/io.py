@@ -344,7 +344,7 @@ async def async_get_file_inputs(
     with file_path.open('w', encoding='utf-8') as file:
         file.writelines(lines)
     while True:
-        time.sleep(1)
+        await asyncio.sleep(1)
         with file_path.open('r', encoding='utf-8') as file:
             lines = file.readlines()
         if not lines:

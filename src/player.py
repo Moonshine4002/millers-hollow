@@ -377,7 +377,7 @@ class Badge:
             )
             return
         self.game.boardcast(
-            self.game.actors,
+            self.game.audience(),
             f'Sheriff candidates are seat {pls2str(candidates)}.',
         )
         for pl in candidates:
