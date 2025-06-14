@@ -437,6 +437,10 @@ class Badge:
         if not self.owner:
             return
         if self.owner.life == False:
+            self.game.boardcast(
+                self.game.audience(),
+                'The former sheriff is passing the badge.',
+            )
             self.owner.task = 'Say "destroy" to destroy the badge or say a seat number to transfer the badge.'
             target = self.owner.pl_optional(self.game.options, 'destroy')
             if not target:
