@@ -40,53 +40,30 @@ system_prompt = (
 )
 
 
-class Input(NamedTuple):
-    prompt: str
-    options: list[str] = []
-
-    def __str__(self) -> str:
-        options = f' replaced by one of {self.options}' if self.options else ''
-        return f'["{self.prompt}"{options}]'
-
-
-class Output(NamedTuple):
-    output: str
-
-
 log_time = Time()
-log_time_str = time.strftime('%y-%m-%d-%H-%M-%S')
+log_name = time.strftime('%y-%m-%d-%H-%M-%S')
 
 
 def log(content: str, clear_text: str = '') -> None:
-    log_path = pathlib.Path(f'{log_time_str}.log')
+    log_path = pathlib.Path(f'io/{log_name}.log')
     if clear_text:
         log_path.write_text(clear_text, encoding='utf-8')
     with log_path.open(mode='a', encoding='utf-8') as file:
         file.write(content)
 
 
-def output(
-    pls_iter: Iterable[PPlayer],
-    clue: Clue,
-    system: bool = False,
+def output_info(
+    info: Info,
+    console: bool = False,
     clear_text: str = '',
 ) -> None:
     global log_time
-    pls = list(pls_iter)
-    if log_time == clue.time:
-        log(
-            f'\t{clue.source}> {clue.content} > {pls2str(pls)}\n',
-            clear_text=clear_text,
-        )
-    else:
-        log_time = clue.time
-        log(
-            f'[{clue.time}]\n\t{clue.source}> {clue.content} > {pls2str(pls)}\n',
-            clear_text=clear_text,
-        )
-    if system or any(pl.char.control == 'console' for pl in pls):
-        print(str(clue))
-    for pl in pls:
+    text = info.log(log_time)
+    log_time = info.time
+    log(f'{text} > {pls2str(info.target)}\n', clear_text)
+    if console or any(pl.char.control == 'console' for pl in info.target):
+        print(info)
+    for pl in info.target:
         if pl.char.control != 'file':
             continue
         file_path = pathlib.Path(f'io/{pl.seat}.txt')
@@ -94,7 +71,33 @@ def output(
         if clear_text:
             file_path.write_text(clear_text, encoding='utf-8')
         with file_path.open(mode='a', encoding='utf-8') as file:
-            file.write(f'{clue}\n')
+            file.write(f'{text}\n')
+
+
+def get_console_inputs(pl: PPlayer) -> None:
+    pl.results.clear()
+    print(f'Major task: {pl.tasks[3].prompt}')
+    for i in pl.tasks:
+        while True:
+            o = input(f'{i.prompt}: ')
+            if i.options and o not in i.options:
+                continue
+            pl.results.append(Output(o))
+
+
+def parse(pl: PPlayer, content: str) -> None:
+    content = content.replace('\n', ' ')
+    if '---' not in content:
+        raise ValueError(f'wrong format: 0 "---"')
+    lcontent = content.split('---')
+    if len(lcontent) != len(pl.tasks):
+        raise ValueError(f'wrong format: {len(lcontent) - 1} "---"')
+    pl.results = [
+        Output(content.strip(' \'"[]').lower()) for content in lcontent
+    ]
+    for i, o in zip(pl.tasks, pl.results):
+        if i.options and o.output not in i.options:
+            raise ValueError(f'wrong value: {o.output}')
 
 
 def input_ai(pl: PPlayer, messages: list[ChatCompletionMessageParam]) -> str:
@@ -108,49 +111,39 @@ def input_ai(pl: PPlayer, messages: list[ChatCompletionMessageParam]) -> str:
     return content
 
 
-def get_console_inputs(pl: PPlayer, inputs: Iterable[Input]) -> list[Output]:
-    outputs: list[Output] = []
-    print(f'Task: {pl.task}')
-    for i in inputs:
-        outputs.append(Output(input(f'{i.prompt}: ')))
-    for i, o in zip(inputs, outputs):
-        if i.options and o.output not in i.options:
-            raise ValueError(f'wrong value: {o.output}')
-    return outputs
-
-
-def get_ai_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> str:
-    inputs = list(inputs_iter)
+def get_ai_inputs(pl: PPlayer) -> None:
     messages: list[ChatCompletionMessageParam] = [
         {'role': 'system', 'content': system_prompt}
     ]
-    for clue in pl.clues:
+    for info in pl.game.info:
+        if pl not in info.target:
+            continue
         message: ChatCompletionMessageParam = {
             'role': 'user',
-            'content': clue.content,
-            'name': clue.source,
+            'content': info.content,
+            'name': pls2str(info.source),
         }
         messages.append(message)
     prompt = (
         f'You are seat {pl.seat}, a {pl.role.kind}.\n'
         f'Your personality: {pl.char.description}\n'
-        f'Your task: {pl.task}\n'
-        f'Output format: {" --- ".join(str(i) for i in inputs)}'
+        f'Your major task: {pl.tasks[3].prompt}\n'
+        f'Output format: {" --- ".join(str(task) for task in pl.tasks)}'
     )
     messages.append({'role': 'system', 'content': prompt})
-    return input_ai(pl, messages)
+    content = input_ai(pl, messages)
+    parse(pl, content)
 
 
-def get_file_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
-    inputs = list(inputs_iter)
+def get_file_inputs(pl: PPlayer) -> None:
     file_path = pathlib.Path(f'io/{pl.seat}.txt')
-    prompt = ' --- '.join(str(i) for i in inputs)
+    prompt = ' --- '.join(str(task) for task in pl.tasks)
     with file_path.open('r', encoding='utf-8') as file:
         lines = file.readlines()
     if not lines or len(lines) < 2:
         raise ValueError('empty file')
     lines[0] = f'{prompt}\n'
-    lines[1] = f'Task: {pl.task}\n'
+    lines[1] = f'Major task: {pl.tasks[3].prompt}\n'
     with file_path.open('w', encoding='utf-8') as file:
         file.writelines(lines)
     while True:
@@ -161,123 +154,69 @@ def get_file_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
             raise ValueError('empty file')
         if lines[0].strip() == prompt:
             continue
-        output = parse(pl, inputs, lines[0])
+        parse(pl, lines[0])
         lines[0] = f'Please wait...\n'
         with file_path.open('w', encoding='utf-8') as file:
             file.writelines(lines)
-        return output
 
 
-def parse(
-    pl: PPlayer, inputs_iter: Iterable[Input], content: str
-) -> list[Output]:
-    inputs = list(inputs_iter)
-    content = content.replace('\n', ' ')
-    if len(inputs) == 1:
-        lcontent = [content]
-    else:
-        if '---' not in content:
-            raise ValueError(f'wrong format: 0 "---"')
-        lcontent = content.split('---')
-        if len(lcontent) != len(inputs):
-            raise ValueError(f'wrong format: {len(lcontent) - 1} "---"')
-    outputs = [Output(content.strip(' \'"[]').lower()) for content in lcontent]
-    for i, o in zip(inputs, outputs):
-        if i.options and o.output not in i.options:
-            raise ValueError(f'wrong value: {o.output}')
-    return outputs
-
-
-def get_inputs(pl: PPlayer, inputs_iter: Iterable[Input]) -> list[Output]:
-    inputs_iter = itertools.chain(
-        (
-            Input('your seat, ability, task'),
-            Input("summary of the game state and known players' identities"),
-            Input('your immediate action and long term strategy'),
-        ),
-        inputs_iter,
-        (Input('your remarks'),),
-    )
-    inputs = list(inputs_iter)
-    if not pl.task:
+def get_inputs(pl: PPlayer) -> None:
+    if not pl.tasks:
         raise ValueError('empty task')
+    pl.tasks[:0] = [
+        Input('your seat, ability, task'),
+        Input("summary of the game state and known players' identities"),
+        Input('your immediate action and long term strategy'),
+    ]
+    pl.tasks.append(Input('your remarks'))
     while True:
         try:
             match pl.char.control:
                 case 'console':
-                    outputs = get_console_inputs(pl, inputs)
+                    get_console_inputs(pl)
                 case 'ai':
-                    content = get_ai_inputs(pl, inputs)
-                    outputs = parse(pl, inputs, content)
+                    get_ai_inputs(pl)
                 case 'file':
-                    outputs = get_file_inputs(pl, inputs)
+                    get_file_inputs(pl)
                 case _:
                     raise NotImplementedError('unknown control')
         except NotImplementedError as e:
             raise
         except Exception as e:
-            log(f'\t{e!r}\n')
+            output_info(Info(copy(pl.game.time), (pl,), (), repr(e)))
         else:
             output_str = ' --- '.join(
-                f'{i.prompt}: {o.output}' for i, o in zip(inputs, outputs)
+                f'{i.prompt}: {o.output}' for i, o in zip(pl.tasks, pl.results)
             )
-            log(f'\t{pl.seat}[{pl.role.kind}]~> {output_str}\n')
-            (info, summary, strategy, *outputs, remarks) = outputs
-            pl.task = ''
-            return outputs
-
-
-def input_word(pl: PPlayer, candidates_iter: Iterable[str]) -> str:
-    (choice,) = get_inputs(
-        pl,
-        (Input(pl.task, list(candidates_iter)),),
-    )
-    return choice.output
-
-
-def input_speech(pl: PPlayer) -> str:
-    (speech,) = get_inputs(pl, (Input(pl.task),))
-    return speech.output
-
-
-def input_speech_quit(pl: PPlayer) -> tuple[str, str]:
-    speech, quit = get_inputs(
-        pl,
-        (
-            Input(pl.task),
-            Input('Will you quit the election?', ['quit', 'no']),
-        ),
-    )
-    return speech.output, quit.output
-
-
-def input_speech_expose(pl: PPlayer) -> tuple[str, str]:
-    speech, expose = get_inputs(
-        pl,
-        (
-            Input(pl.task),
-            Input('Will you make a self-exposure?', ['expose', 'no']),
-        ),
-    )
-    return speech.output, expose.output
-
-
-def input_speech_quit_expose(pl: PPlayer) -> tuple[str, str, str]:
-    speech, quit, expose = get_inputs(
-        pl,
-        (
-            Input(pl.task),
-            Input('Will you quit the election?', ['quit', 'no']),
-            Input('Will you make a self-exposure?', ['expose', 'no']),
-        ),
-    )
-    return speech.output, quit.output, expose.output
+            output_info(
+                Info(
+                    copy(pl.game.time),
+                    (pl,),
+                    (),
+                    f'[{pl.role.kind}] ~> {output_str}',
+                )
+            )
+            (info, summary, strategy, *results, remarks) = pl.results
+            pl.tasks.clear()
+            pl.results = results
+            break
 
 
 async_client = AsyncOpenAI(
     api_key=user_data.api_key,
     base_url=user_data.base_url,
 )
+
+
+async def async_get_console_inputs(pl: PPlayer) -> None:
+    pl.results.clear()
+    print(f'Major task: {pl.tasks[3].prompt}')
+    for i in pl.tasks:
+        while True:
+            o = await asyncio.to_thread(input, f'{i.prompt}: ')
+            if i.options and o not in i.options:
+                continue
+            pl.results.append(Output(o))
 
 
 async def async_input_ai(
@@ -293,55 +232,39 @@ async def async_input_ai(
     return content
 
 
-async def async_get_console_inputs(
-    pl: PPlayer, inputs: Iterable[Input]
-) -> list[Output]:
-    outputs: list[Output] = []
-    print(f'Task: {pl.task}')
-    for i in inputs:
-        outputs.append(Output(input(f'{i.prompt}: ')))
-    for i, o in zip(inputs, outputs):
-        if i.options and o.output not in i.options:
-            raise ValueError(f'wrong value: {o.output}')
-    return outputs
-
-
-async def async_get_ai_inputs(
-    pl: PPlayer, inputs_iter: Iterable[Input]
-) -> str:
-    inputs = list(inputs_iter)
+async def async_get_ai_inputs(pl: PPlayer) -> None:
     messages: list[ChatCompletionMessageParam] = [
         {'role': 'system', 'content': system_prompt}
     ]
-    for clue in pl.clues:
+    for info in pl.game.info:
+        if pl not in info.target:
+            continue
         message: ChatCompletionMessageParam = {
             'role': 'user',
-            'content': clue.content,
-            'name': clue.source,
+            'content': info.content,
+            'name': pls2str(info.source),
         }
         messages.append(message)
     prompt = (
         f'You are seat {pl.seat}, a {pl.role.kind}.\n'
         f'Your personality: {pl.char.description}\n'
-        f'Your task: {pl.task}\n'
-        f'Output format: {" --- ".join(str(i) for i in inputs)}'
+        f'Your major task: {pl.tasks[3].prompt}\n'
+        f'Output format: {" --- ".join(str(task) for task in pl.tasks)}'
     )
     messages.append({'role': 'system', 'content': prompt})
-    return await async_input_ai(pl, messages)
+    content = await async_input_ai(pl, messages)
+    parse(pl, content)
 
 
-async def async_get_file_inputs(
-    pl: PPlayer, inputs_iter: Iterable[Input]
-) -> list[Output]:
-    inputs = list(inputs_iter)
+async def async_get_file_inputs(pl: PPlayer) -> None:
     file_path = pathlib.Path(f'io/{pl.seat}.txt')
-    prompt = ' --- '.join(str(i) for i in inputs)
+    prompt = ' --- '.join(str(task) for task in pl.tasks)
     with file_path.open('r', encoding='utf-8') as file:
         lines = file.readlines()
     if not lines or len(lines) < 2:
         raise ValueError('empty file')
     lines[0] = f'{prompt}\n'
-    lines[1] = f'Task: {pl.task}\n'
+    lines[1] = f'Major task: {pl.tasks[3].prompt}\n'
     with file_path.open('w', encoding='utf-8') as file:
         file.writelines(lines)
     while True:
@@ -352,60 +275,49 @@ async def async_get_file_inputs(
             raise ValueError('empty file')
         if lines[0].strip() == prompt:
             continue
-        output = parse(pl, inputs, lines[0])
+        parse(pl, lines[0])
         lines[0] = f'Please wait...\n'
         with file_path.open('w', encoding='utf-8') as file:
             file.writelines(lines)
-        return output
 
 
-async def async_get_inputs(
-    pl: PPlayer, inputs_iter: Iterable[Input]
-) -> list[Output]:
-    inputs_iter = itertools.chain(
-        (
-            Input('your seat, ability, task'),
-            Input("summary of the game state and known players' identities"),
-            Input('your immediate action and long term strategy'),
-        ),
-        inputs_iter,
-        (Input('your remarks'),),
-    )
-    inputs = list(inputs_iter)
-    if not pl.task:
+async def async_get_inputs(pl: PPlayer) -> None:
+    if not pl.tasks:
         raise ValueError('empty task')
+    pl.tasks[:0] = [
+        Input('your seat, ability, task'),
+        Input("summary of the game state and known players' identities"),
+        Input('your immediate action and long term strategy'),
+    ]
+    pl.tasks.append(Input('your remarks'))
     while True:
         try:
             match pl.char.control:
                 case 'console':
-                    outputs = await async_get_console_inputs(pl, inputs)
+                    await async_get_console_inputs(pl)
                 case 'ai':
-                    content = await async_get_ai_inputs(pl, inputs)
-                    outputs = parse(pl, inputs, content)
+                    await async_get_ai_inputs(pl)
                 case 'file':
-                    outputs = await async_get_file_inputs(pl, inputs)
+                    await async_get_file_inputs(pl)
                 case _:
                     raise NotImplementedError('unknown control')
         except NotImplementedError as e:
             raise
         except Exception as e:
-            log(f'\t{e!r}\n')
+            output_info(Info(copy(pl.game.time), (pl,), (), repr(e)))
         else:
             output_str = ' --- '.join(
-                f'{i.prompt}: {o.output}' for i, o in zip(inputs, outputs)
+                f'{i.prompt}: {o.output}' for i, o in zip(pl.tasks, pl.results)
             )
-            log(f'\t{pl.seat}[{pl.role.kind}]~> {output_str}\n')
-            (info, summary, strategy, *outputs, remarks) = outputs
-            pl.task = ''
-            return outputs
-
-
-async def async_input_words(
-    pls: Iterable[PPlayer], candidates_iter: Iterable[str]
-) -> Iterable[str]:
-    candidates = list(candidates_iter)
-    results = await asyncio.gather(
-        *(async_get_inputs(pl, (Input(pl.task, candidates),)) for pl in pls)
-    )
-    choices = itertools.chain.from_iterable(results)
-    return (choice.output for choice in choices)
+            output_info(
+                Info(
+                    copy(pl.game.time),
+                    (pl,),
+                    (),
+                    f'[{pl.role.kind}] ~> {output_str}',
+                )
+            )
+            (info, summary, strategy, *results, remarks) = pl.results
+            pl.tasks.clear()
+            pl.results = results
+            break

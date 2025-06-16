@@ -1,5 +1,5 @@
 import asyncio
-from collections import Counter
+from collections import Counter, UserList
 from collections.abc import Callable, Generator, Iterable
 from copy import copy, deepcopy
 from dataclasses import dataclass
@@ -24,16 +24,6 @@ class Char:
     control: str = 'console'
     model: str = 'human'
     description: str = ''
-
-
-class Seat(int):
-    def __str__(self) -> str:
-        return str(self + 1)
-
-    def __new__(cls, value: int | str) -> Self:
-        if isinstance(value, str):
-            value = int(value) - 1
-        return super().__new__(cls, value)
 
 
 class Role:
@@ -70,6 +60,50 @@ class Role:
         return NotImplemented
 
 
+class Seat(int):
+    def __str__(self) -> str:
+        return str(self + 1)
+
+    def __new__(cls, value: int | str) -> Self:
+        if isinstance(value, str):
+            value = int(value) - 1
+        return super().__new__(cls, value)
+
+
+class LSeat(UserList[Seat]):
+    def __init__(self, value: Iterable[Seat | int | str] = []):
+        initlist: list[Seat | int | str] = []
+        for elem in value:
+            if isinstance(elem, str):
+                initlist.extend(elem.split('/'))
+            else:
+                initlist.append(elem)
+        super().__init__(map(Seat, initlist))
+
+    def __str__(self) -> str:
+        if not self:
+            return 'moderator'
+        return '/'.join(str(seat) for seat in self)
+
+
+class LStr(UserList[str]):
+    def __init__(self, value: Iterable[LSeat | Seat | int | str] = []):
+        initlist: list[Seat | int | str] = []
+        for elem in value:
+            if isinstance(elem, LSeat):
+                initlist.extend(elem)
+            elif isinstance(elem, str):
+                initlist.extend(elem.split('/'))
+            else:
+                initlist.append(elem)
+        super().__init__(map(str, initlist))
+
+    def __str__(self) -> str:
+        if not self:
+            return 'moderator'
+        return '/'.join(str(elem) for elem in self)
+
+
 class Phase(NamedEnum):
     DAY = auto()
     NIGHT = auto()
@@ -91,28 +125,74 @@ class Phase(NamedEnum):
 class Time:
     cycle: int = 1
     phase: Phase = Phase.DAY
-    round: int = 0
+    stage: int = 0
+    # round: int = 0
+    tick: int = 0
 
     def __str__(self) -> str:
-        return f'{self.phase} {self.cycle} - {self.round}'
+        return f'{self.phase} {self.cycle} - {self.stage}'
+
+    def eq_cycle(self, other: Self) -> bool:
+        return self.cycle == other.cycle
+
+    def eq_phase(self, other: Self) -> bool:
+        return self.eq_cycle(other) and self.phase == other.phase
+
+    def eq_stage(self, other: Self) -> bool:
+        return self.eq_phase(other) and self.stage == other.stage
+
+    # def eq_round(self, other: Self) -> bool:
+    #    return self.eq_stage(other) and self.round == other.round
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, self.__class__):
+            return self.tick == other.tick
+        return NotImplemented
 
     def inc_phase(self) -> None:
-        self.round = 0
         self.phase = next(self.phase)
         if self.phase == Phase.FIRST:
             self.cycle += 1
+        self.stage = 0
+        # self.round = 0
+        self.tick += 1
 
-    def inc_round(self) -> None:
-        self.round += 1
+    def inc_stage(self) -> None:
+        self.stage += 1
+        # self.round = 0
+        self.tick += 1
+
+    # def inc_round(self) -> None:
+    #    self.round += 1
+    #    self.tick += 1
 
 
-class Clue(NamedTuple):
-    time: Time
-    source: str
-    content: str
+class Info(NamedTuple):
+    time: Time = Time()
+    source: 'tuple[PPlayer, ...]' = ()
+    target: 'tuple[PPlayer, ...]' = ()
+    content: str = ''
 
     def __str__(self) -> str:
-        return f'[{self.time}]{self.source}> {self.content}'
+        return f'[{self.time}]{pls2str(self.source)}> {self.content}'
+
+    def log(self, time: Time) -> str:
+        if self.time.eq_stage(time):
+            return f'\t{pls2str(self.source)}> {self.content}'
+        return str(self)
+
+
+class Input(NamedTuple):
+    prompt: str
+    options: tuple[str, ...] = ()
+
+    def __str__(self) -> str:
+        options = f' replaced by one of {self.options}' if self.options else ''
+        return f'["{self.prompt}"{options}]'
+
+
+class Output(NamedTuple):
+    output: str
 
 
 @runtime_checkable
@@ -124,10 +204,9 @@ class PPlayer(Protocol):
     seat: Seat
     vote: float
     night_priority: int
-    task: str
-    clues: list[Clue]
-    death_time: Time
-    death_causes: list[str]
+    death: list[Info]
+    tasks: list[Input]
+    results: list[Output]
 
     def __init__(self, game: 'PGame', char: Char, seat: Seat) -> None:
         ...
@@ -135,13 +214,10 @@ class PPlayer(Protocol):
     def __str__(self) -> str:
         ...
 
+    def str_public(self) -> str:
+        ...
+
     def boardcast(self, pls: Iterable['PPlayer'], content: str) -> None:
-        ...
-
-    def unicast(self, pl: 'PPlayer', content: str) -> None:
-        ...
-
-    def receive(self, content: str) -> None:
         ...
 
     def day(self) -> None:
@@ -150,26 +226,7 @@ class PPlayer(Protocol):
     def night(self) -> None:
         ...
 
-    def speech_expose(self) -> str:
-        ...
-
-    def speech_quit_expose(self) -> tuple[str, str]:
-        ...
-
-    def str_mandatory(self, options: Iterable[str]) -> str:
-        ...
-
-    def str_optional(
-        self, options: Iterable[str], optional: str = 'pass'
-    ) -> str:
-        ...
-
-    def pl_mandatory(self, options: Iterable['PPlayer']) -> 'PPlayer':
-        ...
-
-    def pl_optional(
-        self, options: Iterable['PPlayer'], optional: str = 'pass'
-    ) -> 'PPlayer | None':
+    def expose(self) -> None:
         ...
 
 
@@ -183,18 +240,6 @@ class Mark(NamedTuple):
 
     def exec(self) -> None:
         self.func(self.game, self.source, self.target)
-
-
-def pls2seats(pls: Iterable[PPlayer]) -> Generator[Seat]:
-    return (pl.seat for pl in pls)
-
-
-def pls2lstr(pls: Iterable[PPlayer]) -> Generator[str]:
-    return (str(seat) for seat in pls2seats(pls))
-
-
-def pls2str(pls: Iterable[PPlayer]) -> str:
-    return f"[{', '.join(pls2lstr(pls))}]"
 
 
 class PBadge(Protocol):
@@ -221,6 +266,7 @@ class PGame(Protocol):
     players: list[PPlayer]
     marks: list[Mark]
     post_marks: list[Mark]
+    info: list[Info]
     badge: PBadge
 
     options: list[PPlayer]
@@ -234,14 +280,10 @@ class PGame(Protocol):
     def __str__(self) -> str:
         ...
 
-    def boardcast(
-        self, pls: Iterable[PPlayer], content: str, source: str = 'Moderator'
-    ) -> None:
+    def boardcast(self, pls: Iterable[PPlayer], content: str) -> None:
         ...
 
-    def unicast(
-        self, pl: PPlayer, content: str, source: str = 'Moderator'
-    ) -> None:
+    def unicast(self, pl: PPlayer, content: str) -> None:
         ...
 
     def loop(self) -> None:
@@ -287,27 +329,59 @@ class PGame(Protocol):
         ...
 
 
+def pl2seat(pl: PPlayer) -> Seat:
+    return pl.seat
+
+
+def seat2str(seat: Seat) -> str:
+    return str(seat)
+
+
+def pl2str(pl: PPlayer) -> str:
+    return str(pl.seat)
+
+
+def str2seat(text: str) -> Seat:
+    return Seat(text)
+
+
 def seat2pl(game: PGame, seat: Seat) -> PPlayer:
     return game.players[seat]
 
 
-def str2pl(game: PGame, seat: str) -> PPlayer:
-    return game.players[Seat(seat)]
+def str2pl(game: PGame, text: str) -> PPlayer:
+    return game.players[Seat(text)]
+
+
+def pls2seats(pls: Iterable[PPlayer]) -> Generator[Seat]:
+    return (pl.seat for pl in pls)
+
+
+def seats2str(seats: Iterable[Seat]) -> str:
+    return str(LSeat(seats))
+
+
+def pls2str(pls: Iterable[PPlayer]) -> str:
+    return str(LSeat(pl.seat for pl in pls))
+
+
+def str2seats(texts: str) -> Generator[Seat]:
+    return (seat for seat in LSeat(texts))
 
 
 def seats2pls(game: PGame, seats: Iterable[Seat]) -> Generator[PPlayer]:
     return (game.players[seat] for seat in seats)
 
 
-def lstr2pls(game: PGame, seats: Iterable[str]) -> Generator[PPlayer]:
-    return (game.players[Seat(seat)] for seat in seats)
+def str2pls(game: PGame, texts: str) -> Generator[PPlayer]:
+    return (game.players[seat] for seat in LSeat(texts))
 
 
 class BaseGameError(Exception):
     ...
 
 
-class SelfExposureError(Exception):
+class SelfExposureError(BaseGameError):
     ...
 
 
