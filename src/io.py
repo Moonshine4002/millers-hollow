@@ -152,12 +152,14 @@ def get_file_inputs(pl: PPlayer) -> None:
             lines = file.readlines()
         if not lines:
             raise ValueError('empty file')
-        if lines[0].strip() == prompt:
+        content = lines[0].strip()
+        if content == prompt:
             continue
-        parse(pl, lines[0])
+        parse(pl, content)
         lines[0] = f'Please wait...\n'
         with file_path.open('w', encoding='utf-8') as file:
             file.writelines(lines)
+        break
 
 
 def get_inputs(pl: PPlayer) -> None:
@@ -273,12 +275,14 @@ async def async_get_file_inputs(pl: PPlayer) -> None:
             lines = file.readlines()
         if not lines:
             raise ValueError('empty file')
-        if lines[0].strip() == prompt:
+        content = lines[0].strip()
+        if content == prompt:
             continue
-        parse(pl, lines[0])
+        parse(pl, content)
         lines[0] = f'Please wait...\n'
         with file_path.open('w', encoding='utf-8') as file:
             file.writelines(lines)
+        break
 
 
 async def async_get_inputs(pl: PPlayer) -> None:

@@ -187,7 +187,9 @@ class Input(NamedTuple):
     options: tuple[str, ...] = ()
 
     def __str__(self) -> str:
-        options = f' replaced by one of {self.options}' if self.options else ''
+        options = (
+            f' replaced by one of {LStr(self.options)}' if self.options else ''
+        )
         return f'["{self.prompt}"{options}]'
 
 
@@ -202,8 +204,9 @@ class PPlayer(Protocol):
     role: Role
     life: bool
     seat: Seat
-    vote: float
     night_priority: int
+    vote: float
+    can_expose: bool
     death: list[Info]
     tasks: list[Input]
     results: list[Output]

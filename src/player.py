@@ -11,8 +11,9 @@ class BPlayer:
         self.role = Role(role, role, role)
         self.life = True
         self.seat = seat
-        self.vote = 1.0
         self.night_priority = 0
+        self.vote = 1.0
+        self.can_expose = False
         self.death: list[Info] = []
         self.tasks: list[Input] = []
         self.results: list[Output] = []
@@ -128,7 +129,7 @@ def input_speech_quit_expose(pl: PPlayer, prompt: str) -> tuple[str, str, str]:
 
 
 def speech_expose(pl: PPlayer, prompt: str) -> str:
-    if user_data.allow_exposure and pl.role.faction == 'werewolf':
+    if pl.can_expose:
         speech, expose = input_speech_expose(pl, prompt)
         if expose == 'expose':
             pl.expose()
@@ -138,7 +139,7 @@ def speech_expose(pl: PPlayer, prompt: str) -> str:
 
 
 def speech_quit_expose(pl: PPlayer, prompt: str) -> tuple[str, str]:
-    if user_data.allow_exposure and pl.role.faction == 'werewolf':
+    if pl.can_expose:
         speech, quit, expose = input_speech_quit_expose(pl, prompt)
         if expose == 'expose':
             pl.expose()
@@ -157,11 +158,13 @@ class Werewolf(BPlayer):
         self.role.faction = 'werewolf'
         self.role.category = 'werewolf'
         self.night_priority = 3
+        if user_data.allow_exposure:
+            self.can_expose = True
 
     def night(self) -> None:
         def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
             target.death.append(
-                Info(copy(game.time), (source,), (target,), self.role.kind)
+                Info(copy(game.time), (source,), (target,), self.role.faction)
             )
             target.life = False
 
@@ -203,6 +206,78 @@ class Werewolf(BPlayer):
             self.game.boardcast(
                 self.game.actors, f'Werewolves kill seat {target.seat}.'
             )
+
+
+class WhiteWolf(Werewolf):
+    def expose(self) -> None:
+        self.death.append(
+            Info(copy(self.game.time), (self,), (self,), 'self-exposed')
+        )
+        self.life = False
+        self.game.boardcast(
+            self.game.audience(),
+            f'Seat {self.seat} (a {self.role.faction}) self-exposed!',
+        )
+        choice = input_op(
+            self,
+            'pass or choose a player to kill',
+            self.game.options,
+            ('pass',),
+        )
+        if choice == 'pass':
+            return
+        self.game.boardcast(
+            self.game.audience(), f'Seat {self.seat} is a {self.role.kind}!'
+        )
+        pl = str2pl(self.game, choice)
+        self.game.boardcast(
+            self.game.audience(),
+            f'Seat {self.seat} killed seat {pl.seat}.',
+        )
+        pl.death.append(
+            Info(copy(self.game.time), (self,), (pl,), self.role.kind)
+        )
+        pl.life = False
+        raise SelfExposureError()
+
+
+class BlackWolf(Werewolf):
+    @property
+    def life(self) -> bool:
+        return self.__life
+
+    @life.setter
+    def life(self, value: bool) -> None:
+        def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
+            choice = input_op(
+                source,
+                'pass or choose a player to kill',
+                game.options,
+                ('pass',),
+            )
+            if choice == 'pass':
+                return
+            game.boardcast(
+                game.audience(), f'Seat {source.seat} is a {self.role.kind}!'
+            )
+            pl = str2pl(game, choice)
+            game.boardcast(
+                game.audience(),
+                f'Seat {self.seat} kill seat {pl.seat}.',
+            )
+            pl.death.append(
+                Info(copy(game.time), (source,), (pl,), self.role.kind)
+            )
+            pl.life = False
+
+        self.__life = value
+        if self.__life:
+            return
+        if any('witch' == death.content for death in self.death):
+            return
+        self.game.post_marks.append(
+            Mark(self.role.kind, self.game, self, self, func)
+        )
 
 
 class Seer(BPlayer):
@@ -309,7 +384,9 @@ class Hunter(BPlayer):
     @life.setter
     def life(self, value: bool) -> None:
         def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
-            game.boardcast(game.audience(), f'Seat {source.seat} is a hunter!')
+            game.boardcast(
+                game.audience(), f'Seat {source.seat} is a {self.role.kind}!'
+            )
             choice = input_op(
                 source,
                 'pass or choose a player to shoot',
@@ -317,10 +394,16 @@ class Hunter(BPlayer):
                 ('pass',),
             )
             if choice == 'pass':
-                game.boardcast(game.audience(), "Hunter didn't shoot anyone.")
+                game.boardcast(
+                    game.audience(),
+                    f"Seat {self.seat} didn't shoot anyone.",
+                )
                 return
             pl = str2pl(game, choice)
-            game.boardcast(game.audience(), f'Hunter shot seat {pl.seat}.')
+            game.boardcast(
+                game.audience(),
+                f'Seat {self.seat} shot seat {pl.seat}.',
+            )
             pl.death.append(
                 Info(copy(game.time), (source,), (pl,), self.role.kind)
             )
@@ -369,6 +452,7 @@ class Guard(BPlayer):
         )
         if choice == 'pass':
             self.guard = None
+            return
         pl = str2pl(self.game, choice)
         self.guard = pl
         self.game.marks.append(
@@ -391,7 +475,9 @@ class Fool(BPlayer):
     @life.setter
     def life(self, value: bool) -> None:
         def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
-            game.boardcast(game.audience(), f'Seat {source.seat} is a fool!')
+            game.boardcast(
+                game.audience(), f'Seat {source.seat} is a {self.role.kind}!'
+            )
 
         self.__life = value
         if self.__life:
@@ -407,6 +493,41 @@ class Fool(BPlayer):
         self.game.post_marks.append(
             Mark(self.role.kind, self.game, self, self, func)
         )
+
+
+class Knight(BPlayer):
+    def __init__(self, game: PGame, char: Char, seat: Seat) -> None:
+        super().__init__(game, char, seat)
+        self.role.faction = 'villager'
+        self.role.category = 'god'
+        self.can_expose = True
+
+    def expose(self) -> None:
+        self.game.boardcast(
+            self.game.audience(),
+            f'Seat {self.seat} (a {self.role.kind}) self-exposed!',
+        )
+        choice = input_op(
+            self,
+            'choose a player to duel',
+            self.game.options,
+        )
+        pl = str2pl(self.game, choice)
+        self.game.boardcast(
+            self.game.audience(),
+            f'Seat {self.seat} duel with seat {pl.seat}. Seat {pl.seat} is a {pl.role.faction}!',
+        )
+        if pl.role.faction == 'werewolf':
+            pl.death.append(
+                Info(copy(self.game.time), (self,), (pl,), self.role.kind)
+            )
+            pl.life = False
+            raise SelfExposureError()
+        else:
+            self.death.append(
+                Info(copy(self.game.time), (self,), (self,), self.role.kind)
+            )
+            self.life = False
 
 
 class Badge:
@@ -681,6 +802,7 @@ class Game:
         for pl in speakers:
             speech = speech_expose(pl, 'make a speech to everyone')
             pl.boardcast(self.audience(), speech)
+        self.options = list(self.alived())
 
         # vote
         self.time.inc_stage()
