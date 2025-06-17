@@ -132,22 +132,19 @@ def input_speech_quit_expose(pl: PPlayer, prompt: str) -> tuple[str, str, str]:
 def speech_expose(pl: PPlayer, prompt: str) -> str:
     if pl.can_expose:
         speech, expose = input_speech_expose(pl, prompt)
-        if expose == 'expose':
-            pl.expose()
-            return speech_expose(pl, prompt)
-        return speech
-    else:
-        return input_speech(pl, prompt)
+        if expose != 'expose':
+            return speech
+        pl.expose()
+    return input_speech(pl, prompt)
 
 
 def speech_quit_expose(pl: PPlayer, prompt: str) -> tuple[str, str]:
     if pl.can_expose:
         speech, quit, expose = input_speech_quit_expose(pl, prompt)
-        if expose == 'expose':
-            pl.expose()
-        return speech, quit
-    else:
-        return input_speech_quit(pl, prompt)
+        if expose != 'expose':
+            return speech, quit
+        pl.expose()
+    return input_speech_quit(pl, prompt)
 
 
 class Villager(BPlayer):
@@ -299,7 +296,7 @@ class Seer(BPlayer):
             self, "check one player's identity", self.game.options
         )
         pl = str2pl(self.game, choice)
-        self.receive(f'Seat {pl.seat} is {pl.role.faction}.')
+        self.receive(f'Seat {pl.seat} is a {pl.role.faction}.')
 
 
 class Witch(BPlayer):
@@ -525,9 +522,13 @@ class Knight(BPlayer):
         pl = str2pl(self.game, choice)
         self.game.boardcast(
             self.game.audience(),
-            f'Seat {self.seat} duel with seat {pl.seat}. Seat {pl.seat} is a {pl.role.faction}!',
+            f'Seat {self.seat} duel with seat {pl.seat}.',
         )
         if pl.role.faction == 'werewolf':
+            self.game.boardcast(
+                self.game.audience(),
+                f'Seat {pl.seat} is a werewolf',
+            )
             pl.death.append(
                 Info(copy(self.game.time), (self,), (pl,), self.role.kind)
             )
@@ -535,6 +536,10 @@ class Knight(BPlayer):
             self.game.died.append(pl)
             raise SelfExposureError()
         else:
+            self.game.boardcast(
+                self.game.audience(),
+                f'Seat {pl.seat} is not a werewolf',
+            )
             self.death.append(
                 Info(copy(self.game.time), (self,), (self,), self.role.kind)
             )
@@ -807,7 +812,7 @@ class Game:
         for pl in speakers:
             speech = speech_expose(pl, 'make a speech to everyone')
             pl.boardcast(self.audience(), speech)
-        self.options = list(self.alived())
+            self.options = list(self.alived())
 
         # vote
         self.time.inc_stage()
