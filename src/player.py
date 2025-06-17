@@ -293,7 +293,7 @@ class Seer(BPlayer):
     def night(self) -> None:
         self.game.boardcast(self.game.actors, 'Seer, please open your eyes!')
         choice = input_op(
-            self, "check one player's identity", self.game.options
+            self, 'the player you want to check', self.game.options
         )
         pl = str2pl(self.game, choice)
         self.receive(f'Seat {pl.seat} is a {pl.role.faction}.')
@@ -821,7 +821,7 @@ class Game:
             # speech
             speakers = self.badge.speakers()
             for pl in speakers:
-                speech = speech_expose(pl, 'make a speech to everyone')
+                speech = speech_expose(pl, 'make a public speaking')
                 pl.boardcast(self.audience(), speech)
                 self.verdict()
             self.died.clear()
@@ -999,7 +999,9 @@ class Game:
             self.audience(), f'Seat {pls2str(self.died)} are dying.'
         )
         for pl in self.died:
-            speech = input_speech(pl, 'You are dying, any last words?')
+            speech = input_speech(
+                pl, 'you are dying, make the last public speaking'
+            )
             pl.boardcast(self.audience(), speech)
 
     def audience(self) -> Generator[PPlayer]:

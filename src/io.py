@@ -127,7 +127,7 @@ def get_ai_inputs(pl: PPlayer) -> None:
     prompt = (
         f'You are seat {pl.seat}, a {pl.role.kind}.\n'
         f'Your personality: {pl.char.description}\n'
-        f'Your major task: {pl.tasks[3].prompt}\n'
+        f'Your task: Replace the content in the square brackets with your answer.\n'
         f'Output format: {" --- ".join(str(task) for task in pl.tasks)}'
     )
     messages.append({'role': 'system', 'content': prompt})
@@ -170,7 +170,7 @@ def get_inputs(pl: PPlayer) -> None:
         Input("summary of the game state and known players' identities"),
         Input('your immediate action and long term strategy'),
     ]
-    pl.tasks.append(Input('your remarks'))
+    pl.tasks.append(Input('unpublished annotations'))
     while True:
         try:
             match pl.char.control:
@@ -250,7 +250,7 @@ async def async_get_ai_inputs(pl: PPlayer) -> None:
     prompt = (
         f'You are seat {pl.seat}, a {pl.role.kind}.\n'
         f'Your personality: {pl.char.description}\n'
-        f'Your major task: {pl.tasks[3].prompt}\n'
+        f'Your task: Replace the content in the square brackets with your answer.\n'
         f'Output format: {" --- ".join(str(task) for task in pl.tasks)}'
     )
     messages.append({'role': 'system', 'content': prompt})
@@ -293,7 +293,7 @@ async def async_get_inputs(pl: PPlayer) -> None:
         Input("summary of the game state and known players' identities"),
         Input('your immediate action and long term strategy'),
     ]
-    pl.tasks.append(Input('your remarks'))
+    pl.tasks.append(Input('unpublished annotations'))
     while True:
         try:
             match pl.char.control:
