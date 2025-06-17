@@ -272,6 +272,7 @@ class PGame(Protocol):
     info: list[Info]
     badge: PBadge
 
+    winner: Role
     options: list[PPlayer]
     actors: list[PPlayer]
     died: list[PPlayer]
@@ -298,13 +299,13 @@ class PGame(Protocol):
     def night(self) -> None:
         ...
 
-    def exec(self) -> bool:
+    def exec(self) -> None:
         ...
 
-    def post_exec(self) -> bool:
+    def post_exec(self) -> None:
         ...
 
-    def winner(self) -> Role:
+    def verdict(self) -> None:
         ...
 
     def vote(
@@ -381,6 +382,10 @@ def str2pls(game: PGame, texts: str) -> Generator[PPlayer]:
 
 
 class BaseGameError(Exception):
+    ...
+
+
+class GameOverError(BaseGameError):
     ...
 
 
