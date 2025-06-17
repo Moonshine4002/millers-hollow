@@ -770,6 +770,7 @@ class Game:
             if self.post_exec():
                 break
             self.badge.badge()
+            self.died.clear()
 
         winner = self.winner()
         end_message = f'{winner.faction} win.\n' 'winners:\n\t' + '\n\t'.join(
