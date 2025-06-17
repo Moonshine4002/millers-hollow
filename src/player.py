@@ -44,6 +44,7 @@ class BPlayer:
             Info(copy(self.game.time), (self,), (self,), 'self-exposed')
         )
         self.life = False
+        self.game.died.append(self)
         self.game.boardcast(
             self.game.audience(),
             f'Seat {self.seat} (a {self.role.faction}) self-exposed!',
@@ -133,6 +134,7 @@ def speech_expose(pl: PPlayer, prompt: str) -> str:
         speech, expose = input_speech_expose(pl, prompt)
         if expose == 'expose':
             pl.expose()
+            return speech_expose(pl, prompt)
         return speech
     else:
         return input_speech(pl, prompt)
@@ -167,6 +169,7 @@ class Werewolf(BPlayer):
                 Info(copy(game.time), (source,), (target,), self.role.faction)
             )
             target.life = False
+            self.game.died.append(target)
 
         if self != self.game.actors[0]:
             return
@@ -214,6 +217,7 @@ class WhiteWolf(Werewolf):
             Info(copy(self.game.time), (self,), (self,), 'self-exposed')
         )
         self.life = False
+        self.game.died.append(self)
         self.game.boardcast(
             self.game.audience(),
             f'Seat {self.seat} (a {self.role.faction}) self-exposed!',
@@ -238,6 +242,7 @@ class WhiteWolf(Werewolf):
             Info(copy(self.game.time), (self,), (pl,), self.role.kind)
         )
         pl.life = False
+        self.game.died.append(pl)
         raise SelfExposureError()
 
 
@@ -269,6 +274,7 @@ class BlackWolf(Werewolf):
                 Info(copy(game.time), (source,), (pl,), self.role.kind)
             )
             pl.life = False
+            self.game.died.append(pl)
 
         self.__life = value
         if self.__life:
@@ -319,6 +325,7 @@ class Witch(BPlayer):
                 Info(copy(game.time), (source,), (target,), self.role.kind)
             )
             target.life = False
+            self.game.died.append(target)
 
         self.receive('Witch, please open your eyes!')
         target: PPlayer | None = self.game.data['target_for_witch']
@@ -408,6 +415,7 @@ class Hunter(BPlayer):
                 Info(copy(game.time), (source,), (pl,), self.role.kind)
             )
             pl.life = False
+            self.game.died.append(pl)
 
         self.__life = value
         if self.__life:
@@ -488,6 +496,7 @@ class Fool(BPlayer):
             return
         self.exposed = True
         self.life = True
+        self.game.died = [died for died in self.game.died if died != self]
         self.vote = 0.0
         self.death.clear()
         self.game.post_marks.append(
@@ -503,6 +512,7 @@ class Knight(BPlayer):
         self.can_expose = True
 
     def expose(self) -> None:
+        self.can_expose = False
         self.game.boardcast(
             self.game.audience(),
             f'Seat {self.seat} (a {self.role.kind}) self-exposed!',
@@ -522,12 +532,14 @@ class Knight(BPlayer):
                 Info(copy(self.game.time), (self,), (pl,), self.role.kind)
             )
             pl.life = False
+            self.game.died.append(pl)
             raise SelfExposureError()
         else:
             self.death.append(
                 Info(copy(self.game.time), (self,), (self,), self.role.kind)
             )
             self.life = False
+            self.game.died.append(self)
 
 
 class Badge:
@@ -752,7 +764,7 @@ class Game:
             try:
                 self.day()
             except SelfExposureError as e:
-                pass
+                self.died.clear()
             if self.exec():
                 break
             if self.post_exec():
@@ -769,15 +781,6 @@ class Game:
         )
 
     def day(self) -> None:
-        self.died = [
-            pl
-            for pl in self.audience()
-            if any(
-                death.time.cycle == self.time.cycle - 1
-                and death.time.phase == Phase.NIGHT
-                for death in pl.death
-            )
-        ]
         summary = (
             f'Seat {pls2str(self.died)} are killed last night. '
             if self.died
@@ -790,7 +793,8 @@ class Game:
 
         # day 2
         if self.time.cycle == 2:
-            self.testament(self.died)
+            self.testament()
+        self.died.clear()
 
         # sheriff
         if user_data.election_round:
@@ -816,7 +820,7 @@ class Game:
                 Info(copy(self.time), tuple(self.options), (targets,), 'vote')
             )
             targets.life = False
-            self.testament((targets,))
+            self.died.append(targets)
         else:
             self.time.inc_stage()
             targets.reverse()
@@ -838,9 +842,11 @@ class Game:
                     )
                 )
                 targets.life = False
-                self.testament((targets,))
+                self.died.append(targets)
             else:
                 pass
+        self.testament()
+        self.died.clear()
 
     def night(self) -> None:
         self.boardcast(
@@ -955,9 +961,9 @@ class Game:
                 )
             return targets
 
-    def testament(self, died: Iterable[PPlayer]) -> None:
+    def testament(self) -> None:
         self.time.inc_stage()
-        for pl in died:
+        for pl in self.died:
             speech = input_speech(pl, 'You are dying, any last words?')
             pl.boardcast(self.audience(), speech)
 

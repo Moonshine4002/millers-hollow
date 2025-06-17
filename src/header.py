@@ -316,7 +316,7 @@ class PGame(Protocol):
     ) -> None | PPlayer | list[PPlayer]:
         ...
 
-    def testament(self, died: Iterable[PPlayer]) -> None:
+    def testament(self) -> None:
         ...
 
     def audience(self) -> Generator[PPlayer]:
