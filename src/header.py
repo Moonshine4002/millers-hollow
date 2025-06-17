@@ -223,6 +223,9 @@ class PPlayer(Protocol):
     def boardcast(self, pls: Iterable['PPlayer'], content: str) -> None:
         ...
 
+    def receive(self, content: str) -> None:
+        ...
+
     def day(self) -> None:
         ...
 
@@ -230,6 +233,9 @@ class PPlayer(Protocol):
         ...
 
     def expose(self) -> None:
+        ...
+
+    def killed(self, source: Iterable['PPlayer'], content: str) -> None:
         ...
 
 

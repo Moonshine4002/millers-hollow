@@ -40,16 +40,20 @@ class BPlayer:
         ...
 
     def expose(self) -> None:
-        self.death.append(
-            Info(copy(self.game.time), (self,), (self,), 'self-exposed')
-        )
-        self.life = False
-        self.game.died.append(self)
+        self.killed((self,), 'self-exposed')
         self.game.boardcast(
             self.game.audience(),
             f'Seat {self.seat} (a {self.role.faction}) self-exposed!',
         )
         raise SelfExposureError()
+
+    def killed(self, source: Iterable[PPlayer], content: str) -> None:
+        self.death.append(
+            Info(copy(self.game.time), tuple(source), (self,), content)
+        )
+        if self.life:
+            self.game.died.append(self)
+            self.life = False
 
 
 def input_word(pl: PPlayer, prompt: str, option: Iterable[str]) -> str:
@@ -162,11 +166,7 @@ class Werewolf(BPlayer):
 
     def night(self) -> None:
         def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
-            target.death.append(
-                Info(copy(game.time), (source,), (target,), self.role.faction)
-            )
-            target.life = False
-            self.game.died.append(target)
+            target.killed((source,), self.role.faction)
 
         if self != self.game.actors[0]:
             return
@@ -210,11 +210,7 @@ class Werewolf(BPlayer):
 
 class WhiteWolf(Werewolf):
     def expose(self) -> None:
-        self.death.append(
-            Info(copy(self.game.time), (self,), (self,), 'self-exposed')
-        )
-        self.life = False
-        self.game.died.append(self)
+        self.killed((self,), 'self-exposed')
         self.game.boardcast(
             self.game.audience(),
             f'Seat {self.seat} (a {self.role.faction}) self-exposed!',
@@ -235,11 +231,7 @@ class WhiteWolf(Werewolf):
             self.game.audience(),
             f'Seat {self.seat} killed seat {pl.seat}.',
         )
-        pl.death.append(
-            Info(copy(self.game.time), (self,), (pl,), self.role.kind)
-        )
-        pl.life = False
-        self.game.died.append(pl)
+        pl.killed((self,), self.role.kind)
         raise SelfExposureError()
 
 
@@ -253,7 +245,7 @@ class BlackWolf(Werewolf):
         def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
             choice = input_op(
                 source,
-                'pass or choose a player to kill',
+                'you are dying, pass or choose a player to kill',
                 game.options,
                 ('pass',),
             )
@@ -267,11 +259,7 @@ class BlackWolf(Werewolf):
                 game.audience(),
                 f'Seat {self.seat} kill seat {pl.seat}.',
             )
-            pl.death.append(
-                Info(copy(game.time), (source,), (pl,), self.role.kind)
-            )
-            pl.life = False
-            self.game.died.append(pl)
+            pl.killed((source,), self.role.kind)
 
         self.__life = value
         if self.__life:
@@ -318,11 +306,7 @@ class Witch(BPlayer):
             ]
 
         def func_p(game: PGame, source: PPlayer, target: PPlayer) -> None:
-            target.death.append(
-                Info(copy(game.time), (source,), (target,), self.role.kind)
-            )
-            target.life = False
-            self.game.died.append(target)
+            target.killed((source,), self.role.kind)
 
         self.receive('Witch, please open your eyes!')
         target: PPlayer | None = self.game.data['target_for_witch']
@@ -344,7 +328,7 @@ class Witch(BPlayer):
         if antidote and poison:
             choice = input_op(
                 self,
-                'pass, save, or choose a seat number to poison',
+                'pass, save, or choose a player to poison',
                 self.game.options,
                 ('save', 'pass'),
             )
@@ -353,7 +337,7 @@ class Witch(BPlayer):
         elif poison:
             choice = input_op(
                 self,
-                'pass or choose a seat number to poison',
+                'pass or choose a player to poison',
                 self.game.options,
                 ('pass',),
             )
@@ -393,7 +377,7 @@ class Hunter(BPlayer):
             )
             choice = input_op(
                 source,
-                'pass or choose a player to shoot',
+                'you are dying, pass or choose a player to shoot',
                 game.options,
                 ('pass',),
             )
@@ -408,11 +392,7 @@ class Hunter(BPlayer):
                 game.audience(),
                 f'Seat {self.seat} shot seat {pl.seat}.',
             )
-            pl.death.append(
-                Info(copy(game.time), (source,), (pl,), self.role.kind)
-            )
-            pl.life = False
-            self.game.died.append(pl)
+            pl.killed((source,), self.role.kind)
 
         self.__life = value
         if self.__life:
@@ -529,22 +509,14 @@ class Knight(BPlayer):
                 self.game.audience(),
                 f'Seat {pl.seat} is a werewolf',
             )
-            pl.death.append(
-                Info(copy(self.game.time), (self,), (pl,), self.role.kind)
-            )
-            pl.life = False
-            self.game.died.append(pl)
+            pl.killed((self,), self.role.kind)
             raise SelfExposureError()
         else:
             self.game.boardcast(
                 self.game.audience(),
                 f'Seat {pl.seat} is not a werewolf',
             )
-            self.death.append(
-                Info(copy(self.game.time), (self,), (self,), self.role.kind)
-            )
-            self.life = False
-            self.game.died.append(self)
+            self.killed((self,), self.role.kind)
 
 
 class Badge:
@@ -650,7 +622,7 @@ class Badge:
             )
             choice = input_op(
                 self.owner,
-                'Say "destroy" to destroy the badge or say a seat number to transfer the badge.',
+                'You are dying. Say "destroy" to destroy the badge or choose a player to transfer the badge.',
                 self.game.options,
                 ['destroy'],
             )
@@ -803,6 +775,7 @@ class Game:
             # announcement
             self.exec()
             self.post_exec()
+            self.died.sort(key=lambda pl: pl.seat)
             summary = (
                 f'Seat {pls2str(self.died)} are killed last night. '
                 if self.died
@@ -834,16 +807,10 @@ class Game:
             if not targets:
                 pass
             elif isinstance(targets, PPlayer):
-                targets.death.append(
-                    Info(
-                        copy(self.time),
-                        tuple(self.options),
-                        (targets,),
-                        'vote',
-                    )
+                targets.killed(
+                    tuple(self.options),
+                    'vote',
                 )
-                targets.life = False
-                self.died.append(targets)
             else:
                 self.time.inc_stage()
                 targets.reverse()
@@ -856,16 +823,10 @@ class Game:
                 if not targets:
                     pass
                 elif isinstance(targets, PPlayer):
-                    targets.death.append(
-                        Info(
-                            copy(self.time),
-                            tuple(self.options),
-                            (targets,),
-                            'vote',
-                        )
+                    targets.killed(
+                        tuple(self.options),
+                        'vote',
                     )
-                    targets.life = False
-                    self.died.append(targets)
                 else:
                     pass
 
@@ -995,6 +956,7 @@ class Game:
         self.time.inc_stage()
         if not self.died:
             return
+        self.died.sort(key=lambda pl: pl.seat)
         self.boardcast(
             self.audience(), f'Seat {pls2str(self.died)} are dying.'
         )
