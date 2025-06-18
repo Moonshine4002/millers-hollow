@@ -517,6 +517,7 @@ class Knight(BPlayer):
                 f'Seat {pl.seat} is not a werewolf',
             )
             self.killed((self,), self.role.kind)
+            self.game.died.remove(self)
 
 
 class Badge:
@@ -726,7 +727,7 @@ class Game:
         for pl in self.players:
             self.unicast(pl, f'You are a {pl.role.kind}.')
 
-        self.options = list(self.alived())
+        self.verdict()
         self.boardcast(
             self.audience(),
             "This game is called The Werewolves of Miller's Hollow. "
@@ -831,12 +832,15 @@ class Game:
                     pass
 
         except SelfExposureError as e:
-            pass
-        finally:
+            self.verdict()
+            self.exec()
+            self.post_exec()
+        else:
             self.verdict()
             self.exec()
             self.post_exec()
             self.testament()
+        finally:
             self.died.clear()
 
     def night(self) -> None:
