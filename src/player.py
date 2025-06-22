@@ -26,7 +26,6 @@ def expose(mark: Mark) -> None:
             game.audience(),
             f'Seat {t.seat} (a {t.role.faction}) self-exposed!',
         )
-    game.died.clear()
     game.time.time_set(datetime.time(18))
     raise TimeChangedError('expose')
 
@@ -285,7 +284,6 @@ def white(mark: Mark) -> None:
                 f'Seat {t.seat} killed seat {pl.seat}.',
             )
             pl.killed(mark)
-    game.died.clear()
     game.time.time_set(datetime.time(18))
     raise TimeChangedError('expose')
 
@@ -395,9 +393,9 @@ class Witch(BPlayer):
 def gun(mark: Mark) -> None:
     game = mark.info.game
     for s in mark.info.source:
+        game.boardcast(game.audience(), f'Seat {s.seat} is a {s.role.kind}!')
         if any('poison' == mark.name for mark in s.death):
             return
-        # game.boardcast(game.audience(), f'Seat {s.seat} is a {s.role.kind}!')
         choice = input_op(
             s,
             'you are dying, pass or choose a player to shoot',
@@ -521,7 +519,6 @@ def duel(mark: Mark) -> None:
                 f'Seat {pl.seat} is a werewolf',
             )
             pl.killed(mark)
-            game.died.clear()
             game.time.time_set(datetime.time(18))
             raise TimeChangedError('expose')
         else:
@@ -530,7 +527,7 @@ def duel(mark: Mark) -> None:
                 f'Seat {pl.seat} is not a werewolf',
             )
             s.killed(mark)
-            game.died.clear()
+            game.died.remove(s)
 
 
 class Knight(BPlayer):
