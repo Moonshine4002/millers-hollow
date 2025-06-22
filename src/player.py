@@ -3,20 +3,49 @@ from .header import *
 from .io import Input, Output, output_info, get_inputs, async_get_inputs
 
 
+def empty(mark: Mark) -> None:
+    pass
+
+
+def kill(mark: Mark) -> None:
+    for t in mark.info.target:
+        t.killed(mark)
+
+
+def filtration(mark: Mark, elem: str) -> None:
+    for t in mark.info.target:
+        t.marks.reset(filter(lambda mark: mark.name != elem, t.marks))
+
+
+def expose(mark: Mark) -> None:
+    game = mark.info.game
+    for t in mark.info.target:
+        t.killed(mark)
+        game.boardcast(
+            game.audience(),
+            f'Seat {t.seat} (a {t.role.faction}) self-exposed!',
+        )
+    game.time.time_set(datetime.time(18))
+
+
 class BPlayer:
     def __init__(self, game: PGame, char: Char, seat: Seat) -> None:
         self.game = game
         self.char = char
+        self.seat = seat
+        self.life = True
         role = self.__class__.__name__.lower()
         self.role = Role(role, role, role)
-        self.life = True
-        self.seat = seat
-        self.night_priority = 0
-        self.vote = 1.0
-        self.can_expose = False
-        self.death: list[Info] = []
+        self.skills: dict[str, Skill] = {}
+        self.marks = Marks(self)
+        self.death = Marks(self)
         self.tasks: list[Input] = []
         self.results: list[Output] = []
+
+        self.vote = 1.0
+        self.can_expose = False
+        self.skills['vote'] = kill
+        self.skills['expose'] = expose
 
     def __str__(self) -> str:
         life = '☥' if self.life else '†'
@@ -25,13 +54,26 @@ class BPlayer:
     def str_public(self) -> str:
         return f'{self.seat} {self.char.name}({self.char.model}): {self.char.description}'
 
-    def boardcast(self, pls: Iterable[PPlayer], content: str) -> None:
-        info = Info(copy(self.game.time), (self,), tuple(pls), content)
-        self.game.info.append(info)
+    @staticmethod
+    def cast(info: Info) -> None:
+        info.game.info.append(info)
         output_info(info)
 
+    def boardcast(self, pls: Iterable[PPlayer], content: str) -> None:
+        info = Info(
+            self.game, copy(self.game.time), (self,), tuple(pls), content
+        )
+        self.cast(info)
+
     def receive(self, content: str) -> None:
-        self.game.unicast(self, content)
+        info = Info(self.game, copy(self.game.time), (), (self,), content)
+        self.cast(info)
+
+    def loop(self) -> None:
+        if self.game.time.state == State.DAY:
+            self.day()
+        elif self.game.time.state == State.NIGHT:
+            self.night()
 
     def day(self) -> None:
         ...
@@ -39,21 +81,34 @@ class BPlayer:
     def night(self) -> None:
         ...
 
-    def expose(self) -> None:
-        self.killed((self,), 'self-exposed')
-        self.game.boardcast(
-            self.game.audience(),
-            f'Seat {self.seat} (a {self.role.faction}) self-exposed!',
-        )
-        raise SelfExposureError()
+    def dying(self) -> None:
+        ...
 
-    def killed(self, source: Iterable[PPlayer], content: str) -> None:
-        self.death.append(
-            Info(copy(self.game.time), tuple(source), (self,), content)
-        )
+    def verdict(self) -> None:
+        if all(pl.role.eq_faction(self.role) for pl in self.game.options):
+            self.game.winner = self.role
+            self.game.time.state = State.END
+
+    def exec(self) -> None:
+        while self.marks:
+            self.marks.sort(key=lambda mark: mark.priority)
+            mark = self.marks.pop()
+            if skill := self.skills.get(mark.name):
+                skill(mark)
+                continue
+            for pl in mark.info.source:
+                if skill := pl.skills.get(mark.name):
+                    skill(mark)
+                    break
+
+    def killed(self, mark: Mark) -> None:
+        self.death.append(mark)
         if self.life:
             self.game.died.append(self)
             self.life = False
+
+    def expose(self) -> None:
+        self.marks.add('expose', (self,))
 
 
 def input_word(pl: PPlayer, prompt: str, option: Iterable[str]) -> str:
@@ -158,117 +213,51 @@ class Villager(BPlayer):
 class Werewolf(BPlayer):
     def __init__(self, game: PGame, char: Char, seat: Seat) -> None:
         super().__init__(game, char, seat)
-        self.role.faction = 'werewolf'
-        self.role.category = 'werewolf'
-        self.night_priority = 3
         if user_data.allow_exposure:
             self.can_expose = True
+        self.skills['claw'] = kill
+
+    def verdict(self) -> None:
+        if user_data.win_condition == 'all':
+            super().verdict()
+            return
+        pls = list(
+            filter(
+                lambda pl: not pl.role.eq_faction(self.role), self.game.options
+            )
+        )
+        if not pls or all(pl.role.eq_category(pls[0].role) for pl in pls):
+            self.game.winner = self.role
+            self.game.time.state = State.END
 
     def night(self) -> None:
-        def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
-            target.killed((source,), self.role.faction)
-
-        if self != self.game.actors[0]:
+        if self.game.time.datetime.time() != datetime.time(0):
             return
-
+        actors = list(self.game.alived_role(self.role.faction))
+        if self != actors[0]:
+            return
         self.game.boardcast(
-            self.game.actors,
-            f'Werewolves {pls2str(self.game.actors)}, please open your eyes!',
+            actors,
+            f'Werewolves {pls2str(actors)}, please open your eyes!',
         )
-        for pl in self.game.actors:
-            if len(self.game.actors) == 1:
+        for pl in actors:
+            if len(actors) == 1:
                 break
             speech = input_speech(pl, 'talk with your teammates')
-            pl.boardcast(self.game.actors, speech)
+            pl.boardcast(actors, speech)
         targets = self.game.vote(
             self.game.options,
-            self.game.actors,
+            actors,
             'choose one player to kill',
             silent=True,
         )
         if not targets:
-            self.game.data['target_for_witch'] = None
-            self.game.boardcast(self.game.actors, 'Werewolves kill nobody.')
-        elif isinstance(targets, PPlayer):
-            self.game.marks.append(
-                Mark(self.role.faction, self.game, self, targets, func)
-            )
-            self.game.data['target_for_witch'] = targets
-            self.game.boardcast(
-                self.game.actors, f'Werewolves kill seat {targets.seat}.'
-            )
-        else:
-            target = targets[0]
-            self.game.marks.append(
-                Mark(self.role.faction, self.game, self, target, func)
-            )
-            self.game.data['target_for_witch'] = target
-            self.game.boardcast(
-                self.game.actors, f'Werewolves kill seat {target.seat}.'
-            )
-
-
-class WhiteWolf(Werewolf):
-    def expose(self) -> None:
-        self.killed((self,), 'self-exposed')
-        self.game.boardcast(
-            self.game.audience(),
-            f'Seat {self.seat} (a {self.role.faction}) self-exposed!',
-        )
-        choice = input_op(
-            self,
-            'pass or choose a player to kill',
-            self.game.options,
-            ('pass',),
-        )
-        if choice == 'pass':
-            raise SelfExposureError()
-        self.game.boardcast(
-            self.game.audience(), f'Seat {self.seat} is a {self.role.kind}!'
-        )
-        pl = str2pl(self.game, choice)
-        self.game.boardcast(
-            self.game.audience(),
-            f'Seat {self.seat} killed seat {pl.seat}.',
-        )
-        pl.killed((self,), self.role.kind)
-        raise SelfExposureError()
-
-
-class BlackWolf(Werewolf):
-    @property
-    def life(self) -> bool:
-        return self.__life
-
-    @life.setter
-    def life(self, value: bool) -> None:
-        def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
-            choice = input_op(
-                source,
-                'you are dying, pass or choose a player to kill',
-                game.options,
-                ('pass',),
-            )
-            if choice == 'pass':
-                return
-            game.boardcast(
-                game.audience(), f'Seat {source.seat} is a {self.role.kind}!'
-            )
-            pl = str2pl(game, choice)
-            game.boardcast(
-                game.audience(),
-                f'Seat {self.seat} kill seat {pl.seat}.',
-            )
-            pl.killed((source,), self.role.kind)
-
-        self.__life = value
-        if self.__life:
+            self.game.boardcast(actors, 'Werewolves kill nobody.')
             return
-        if any('witch' == death.content for death in self.death):
-            return
-        self.game.post_marks.append(
-            Mark(self.role.kind, self.game, self, self, func)
-        )
+        random.shuffle(targets)
+        target = targets[0]
+        target.marks.add('claw', actors)
+        self.game.boardcast(actors, f'Werewolves kill seat {target.seat}.')
 
 
 class Seer(BPlayer):
@@ -276,15 +265,19 @@ class Seer(BPlayer):
         super().__init__(game, char, seat)
         self.role.faction = 'villager'
         self.role.category = 'god'
-        self.night_priority = 1
+
+        self.skills['seer'] = empty
 
     def night(self) -> None:
-        self.game.boardcast(self.game.actors, 'Seer, please open your eyes!')
+        if self.game.time.datetime.time() != datetime.time(0):
+            return
+        self.receive('Seer, please open your eyes!')
         choice = input_op(
             self, 'the player you want to check', self.game.options
         )
         pl = str2pl(self.game, choice)
         self.receive(f'Seat {pl.seat} is a {pl.role.faction}.')
+        pl.marks.add('seer', (self,))
 
 
 class Witch(BPlayer):
@@ -292,37 +285,37 @@ class Witch(BPlayer):
         super().__init__(game, char, seat)
         self.role.faction = 'villager'
         self.role.category = 'god'
-        self.night_priority = 2
 
         self.antidote = True
         self.poison = True
+        self.skills['antidote'] = functools.partial(filtration, elem='claw')
+        self.skills['poison'] = kill
 
     def night(self) -> None:
-        def func_a(game: PGame, source: PPlayer, target: PPlayer) -> None:
-            game.marks = [
-                mark
-                for mark in game.marks
-                if not (mark.target == target and mark.name == 'werewolf')
-            ]
-
-        def func_p(game: PGame, source: PPlayer, target: PPlayer) -> None:
-            target.killed((source,), self.role.kind)
-
+        if self.game.time.datetime.time() != datetime.time(1):
+            return
         self.receive('Witch, please open your eyes!')
-        target: PPlayer | None = self.game.data['target_for_witch']
+        target: PPlayer | None = None
+        for mark in itertools.chain.from_iterable(
+            pl.marks for pl in self.game.options
+        ):
+            if mark.name == 'claw':
+                target = mark.info.target[0]
         if self.antidote:
             target_str = f'seat {target.seat}' if target else 'nobody'
             self.receive(
                 f'Tonight {target_str} has been killed by the werewolves.'
             )
-        self.game.boardcast(
-            self.game.actors,
+        self.receive(
             f'You have {int(self.antidote)} antidote and {int(self.poison)} poison.',
         )
         antidote = (
             self.antidote
             and target
-            and not (target == self and self.game.time.cycle != 1)
+            and not (
+                target == self
+                and self.game.time.datetime.day != self.game.time.start.day + 1
+            )
         )
         poison = self.poison
         if antidote and poison:
@@ -347,16 +340,39 @@ class Witch(BPlayer):
             return
         elif choice == 'save':
             self.antidote = False
-            assert isinstance(target, PPlayer)
-            self.game.marks.append(
-                Mark('antidote', self.game, self, target, func_a, priority=1)
-            )
+            if target is None:
+                raise RuntimeError('wrong choice')
+            target.marks.add('antidote', (self,), 1)
         else:
             self.poison = False
             pl = str2pl(self.game, choice)
-            self.game.marks.append(
-                Mark('poison', self.game, self, pl, func_p, priority=1)
+            pl.marks.add('poison', (self,), 1)
+
+
+def gun(mark: Mark) -> None:
+    game = mark.info.game
+    for s in mark.info.source:
+        if any('poison' == mark.name for mark in s.death):
+            return
+        game.boardcast(game.audience(), f'Seat {s.seat} is a {s.role.kind}!')
+        choice = input_op(
+            s,
+            'you are dying, pass or choose a player to shoot',
+            game.options,
+            ('pass',),
+        )
+        if choice == 'pass':
+            game.boardcast(
+                game.audience(),
+                f"Seat {s.seat} didn't shoot anyone.",
             )
+            return
+        pl = str2pl(game, choice)
+        game.boardcast(
+            game.audience(),
+            f'Seat {s.seat} shot seat {pl.seat}.',
+        )
+        pl.killed(mark)
 
 
 class Hunter(BPlayer):
@@ -365,43 +381,24 @@ class Hunter(BPlayer):
         self.role.faction = 'villager'
         self.role.category = 'god'
 
-    @property
-    def life(self) -> bool:
-        return self.__life
+        self.gun = True
+        self.skills['gun'] = gun
 
-    @life.setter
-    def life(self, value: bool) -> None:
-        def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
-            game.boardcast(
-                game.audience(), f'Seat {source.seat} is a {self.role.kind}!'
-            )
-            choice = input_op(
-                source,
-                'you are dying, pass or choose a player to shoot',
-                game.options,
-                ('pass',),
-            )
-            if choice == 'pass':
-                game.boardcast(
-                    game.audience(),
-                    f"Seat {self.seat} didn't shoot anyone.",
-                )
-                return
-            pl = str2pl(game, choice)
-            game.boardcast(
-                game.audience(),
-                f'Seat {self.seat} shot seat {pl.seat}.',
-            )
-            pl.killed((source,), self.role.kind)
+    def dying(self) -> None:
+        if self.life:
+            return
+        if not self.gun:
+            return
+        self.gun = False
+        self.marks.add('gun', (self,))
 
-        self.__life = value
-        if self.__life:
+
+def shield(mark: Mark) -> None:
+    for t in mark.info.target:
+        if any(mark.name == 'antidote' for mark in t.marks):
+            filtration(mark, 'antidote')
             return
-        if any('witch' == death.content for death in self.death):
-            return
-        self.game.post_marks.append(
-            Mark(self.role.kind, self.game, self, self, func)
-        )
+        filtration(mark, 'werewolf')
 
 
 class Guard(BPlayer):
@@ -409,40 +406,36 @@ class Guard(BPlayer):
         super().__init__(game, char, seat)
         self.role.faction = 'villager'
         self.role.category = 'god'
-        self.night_priority = 4
 
         self.guard: PPlayer | None = None
+        self.skills['shield'] = shield
 
     def night(self) -> None:
-        def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
-            if any(
-                mark.target == target and mark.name == 'antidote'
-                for mark in game.marks
-            ):
-                game.marks = [
-                    mark
-                    for mark in game.marks
-                    if not (mark.target == target and mark.name == 'antidote')
-                ]
-                return
-            game.marks = [
-                mark
-                for mark in game.marks
-                if not (mark.target == target and mark.name == 'werewolf')
-            ]
-
-        self.game.boardcast(self.game.actors, 'Guard, please open your eyes!')
+        if self.game.time.datetime.time() != datetime.time(23):
+            return
+        self.receive('Guard, please open your eyes!')
+        options = list(
+            filter(lambda option: option != self.guard, self.game.options)
+        )
         choice = input_op(
-            self, 'who will you protect tonight?', self.game.options, ('pass',)
+            self, 'who will you protect tonight?', options, ('pass',)
         )
         if choice == 'pass':
             self.guard = None
             return
         pl = str2pl(self.game, choice)
         self.guard = pl
-        self.game.marks.append(
-            Mark(self.role.kind, self.game, self, pl, func, priority=2)
-        )
+        pl.marks.add('shield', (self,), priority=2)
+
+
+def vote_fool(mark: Mark) -> None:
+    game = mark.info.game
+    for t in mark.info.target:
+        if not isinstance(t, Fool):
+            raise RuntimeError('wrong player')
+        game.boardcast(game.audience(), f'Seat {t.seat} is a {t.role.kind}!')
+        t.exposed = True
+        t.vote = 0.0
 
 
 class Fool(BPlayer):
@@ -452,72 +445,7 @@ class Fool(BPlayer):
         self.role.category = 'god'
 
         self.exposed = False
-
-    @property
-    def life(self) -> bool:
-        return self.__life
-
-    @life.setter
-    def life(self, value: bool) -> None:
-        def func(game: PGame, source: PPlayer, target: PPlayer) -> None:
-            game.boardcast(
-                game.audience(), f'Seat {source.seat} is a {self.role.kind}!'
-            )
-
-        self.__life = value
-        if self.__life:
-            return
-        if any('vote' != death.content for death in self.death):
-            return
-        if self.exposed:
-            return
-        self.exposed = True
-        self.life = True
-        self.game.died = [died for died in self.game.died if died != self]
-        self.vote = 0.0
-        self.death.clear()
-        self.game.post_marks.append(
-            Mark(self.role.kind, self.game, self, self, func)
-        )
-
-
-class Knight(BPlayer):
-    def __init__(self, game: PGame, char: Char, seat: Seat) -> None:
-        super().__init__(game, char, seat)
-        self.role.faction = 'villager'
-        self.role.category = 'god'
-        self.can_expose = True
-
-    def expose(self) -> None:
-        self.can_expose = False
-        self.game.boardcast(
-            self.game.audience(),
-            f'Seat {self.seat} (a {self.role.kind}) self-exposed!',
-        )
-        choice = input_op(
-            self,
-            'choose a player to duel',
-            self.game.options,
-        )
-        pl = str2pl(self.game, choice)
-        self.game.boardcast(
-            self.game.audience(),
-            f'Seat {self.seat} duel with seat {pl.seat}.',
-        )
-        if pl.role.faction == 'werewolf':
-            self.game.boardcast(
-                self.game.audience(),
-                f'Seat {pl.seat} is a werewolf',
-            )
-            pl.killed((self,), self.role.kind)
-            raise SelfExposureError()
-        else:
-            self.game.boardcast(
-                self.game.audience(),
-                f'Seat {pl.seat} is not a werewolf',
-            )
-            self.killed((self,), self.role.kind)
-            self.game.died.remove(self)
+        self.skills['vote'] = vote_fool
 
 
 class Badge:
@@ -589,12 +517,12 @@ class Badge:
         )
         if not targets:
             pass
-        elif isinstance(targets, PPlayer):
-            self.owner = targets
-            targets.vote = 1.5
+        elif len(targets) == 1:
+            target = targets[0]
+            self.owner = target
+            target.vote = 1.5
             user_data.election_round = 0
         else:
-            self.game.time.inc_stage()
             targets.reverse()
             for pl in targets:
                 speech = speech_expose(
@@ -606,14 +534,15 @@ class Badge:
             )
             if not targets:
                 pass
-            elif isinstance(targets, PPlayer):
-                self.owner = targets
-                targets.vote = 1.5
+            elif len(targets) == 1:
+                target = targets[0]
+                self.owner = target
+                target.vote = 1.5
                 user_data.election_round = 0
             else:
                 pass
 
-    def badge(self) -> None:
+    def transfer(self) -> None:
         if not self.owner:
             return
         if self.owner.life == False:
@@ -680,42 +609,38 @@ class Game:
         self.roles = list(roles)
         self.time = Time()
         self.players: list[PPlayer] = []
-        self.marks: list[Mark] = []
-        self.post_marks: list[Mark] = []
         self.info: list[Info] = []
         self.badge: PBadge = Badge(self)
-        self.winner: Role = Role('')
+
+        self.winner = Role('')
         self.options: list[PPlayer] = []
-        self.actors: list[PPlayer] = []
         self.died: list[PPlayer] = []
-        self.data: dict[str, Any] = {}
 
-        roles = Counter(self.roles)
-        self.data['roles'] = ', '.join(
-            f'{num} {Pl.__name__.lower()}' for Pl, num in roles.items()
-        )
-
-        random.shuffle(self.chars)
-        random.shuffle(self.roles)
-        for seat, (char, Pl) in enumerate(zip(self.chars, self.roles)):
+        ran_chars = copy(self.chars)
+        ran_roles = copy(self.roles)
+        random.shuffle(ran_chars)
+        random.shuffle(ran_roles)
+        for seat, (char, Pl) in enumerate(zip(ran_chars, ran_roles)):
             self.players.append(Pl(self, char, Seat(seat)))
+        self.options = list(self.alived())
 
     def __str__(self) -> str:
         info_player = '\n\t'.join(str(pl) for pl in self.players)
-        return f'[{self.time}]players: \n\t{info_player}'
+        return f'players: \n\t{info_player}'
 
     def boardcast(self, pls: Iterable[PPlayer], content: str) -> None:
-        info = Info(copy(self.time), (), tuple(pls), content)
-        self.info.append(info)
-        output_info(info)
+        info = Info(self, copy(self.time), (), tuple(pls), content)
+        BPlayer.cast(info)
 
     def unicast(self, pl: PPlayer, content: str) -> None:
-        self.boardcast((pl,), content)
+        info = Info(self, copy(self.time), (), (pl,), content)
+        BPlayer.cast(info)
 
     def loop(self) -> None:
         start_message = f"players: \n\t{'\n\t'.join(pl.str_public() for pl in self.players)}"
         output_info(
             Info(
+                self,
                 copy(self.time),
                 (),
                 tuple(self.audience()),
@@ -727,22 +652,28 @@ class Game:
         for pl in self.players:
             self.unicast(pl, f'You are a {pl.role.kind}.')
 
-        self.verdict()
+        roles_counter = Counter(self.roles)
+        setup = ', '.join(
+            f'{num} {Pl.__name__.lower()}' for Pl, num in roles_counter.items()
+        )
         self.boardcast(
             self.audience(),
             "This game is called The Werewolves of Miller's Hollow. "
-            f"The game setup is {self.data['roles']}. "
-            f'Players list from seat 1 to {len(self.options)}.',
+            f'The game setup is {setup}. '
+            f'Players list from seat 1 to {len(self.players)}.',
         )
 
-        try:
-            while True:
-                self.time.inc_phase()
-                self.night()
-                self.time.inc_phase()
-                self.day()
-        except GameOverError as e:
-            pass
+        while True:
+            match self.time.state:
+                case State.BEGIN:
+                    self.time.time_set(datetime.time(17))
+                case State.DAY:
+                    self.day()
+                case State.NIGHT:
+                    self.night()
+                case State.END:
+                    break
+            self.time.time_inc()
 
         end_message = (
             f'{self.winner.faction} win.\n'
@@ -756,158 +687,119 @@ class Game:
             + str(self)
         )
         output_info(
-            Info(copy(self.time), (), tuple(self.audience()), end_message),
+            Info(
+                self, copy(self.time), (), tuple(self.audience()), end_message
+            ),
             console=True,
         )
 
     def day(self) -> None:
-        try:
-            self.boardcast(
-                self.audience(),
-                "It's daytime. Everyone woke up.",
-            )
-
-            # sheriff
-            if user_data.election_round:
-                user_data.election_round -= 1
-                self.badge.election()
-                self.verdict()
-
-            # announcement
-            self.exec()
-            self.post_exec()
-            self.died.sort(key=lambda pl: pl.seat)
-            summary = (
-                f'Seat {pls2str(self.died)} are killed last night. '
-                if self.died
-                else 'Nobody died last night. '
-            )
-            self.boardcast(
-                self.audience(),
-                f'{summary}Seat {pls2str(self.options)} are still alive.',
-            )
-
-            # testament
-            if self.time.cycle == 2:
-                self.testament()
-            self.died.clear()
-
-            # speech
-            speakers = self.badge.speakers()
-            for pl in speakers:
-                speech = speech_expose(pl, 'make a public speaking')
-                pl.boardcast(self.audience(), speech)
-                self.verdict()
-            self.died.clear()
-
-            # vote
-            self.time.inc_stage()
-            targets = self.vote(
-                self.options, self.options, 'your vote to eliminate a player'
-            )
-            if not targets:
-                pass
-            elif isinstance(targets, PPlayer):
-                targets.killed(
-                    tuple(self.options),
-                    'vote',
+        match self.time.datetime.hour:
+            case 6:
+                self.boardcast(
+                    self.audience(),
+                    "It's daytime. Everyone woke up.",
                 )
-            else:
-                self.time.inc_stage()
-                targets.reverse()
-                for pl in targets:
-                    speech = speech_expose(pl, 'give the additional speech')
+            case 7:  # sheriff
+                if user_data.election_round:
+                    user_data.election_round -= 1
+                    self.badge.election()
+            case 8:  # announcement
+                self.exec()
+                self.died.sort(key=lambda pl: pl.seat)
+                self.boardcast(
+                    self.audience(),
+                    (
+                        f'Seat {pls2str(self.died)} are killed last night. '
+                        if self.died
+                        else 'Nobody died last night. '
+                    )
+                    + f'Seat {pls2str(self.alived())} are still alive.',
+                )
+            case 9:  # verdict
+                while self.died:
+                    self.verdict()
+                    if self.time.datetime.day == self.time.start.day + 1:
+                        self.testament()
+                    for pl in self.died:
+                        pl.dying()
+                    self.died.clear()
+                    self.exec()
+            case 12:  # speech
+                speakers = self.badge.speakers()
+                for pl in speakers:
+                    speech = speech_expose(pl, 'make a public speaking')
                     pl.boardcast(self.audience(), speech)
+            case 13:  # vote
                 targets = self.vote(
-                    targets, self.options, 'vote again to eliminate a player'
+                    self.options,
+                    self.options,
+                    'your vote to eliminate a player',
                 )
                 if not targets:
                     pass
-                elif isinstance(targets, PPlayer):
-                    targets.killed(
-                        tuple(self.options),
-                        'vote',
-                    )
+                elif len(targets) == 1:
+                    target = targets[0]
+                    target.marks.add('vote', self.options)
                 else:
-                    pass
-
-        except SelfExposureError as e:
-            self.verdict()
-            self.exec()
-            self.post_exec()
-        else:
-            self.verdict()
-            self.exec()
-            self.post_exec()
-            self.testament()
-        finally:
-            self.died.clear()
+                    targets.reverse()
+                    for pl in targets:
+                        speech = speech_expose(pl, 'extra public speaking')
+                        pl.boardcast(self.audience(), speech)
+                    targets = self.vote(
+                        targets,
+                        self.options,
+                        'vote again to eliminate a player',
+                    )
+                    if not targets:
+                        pass
+                    elif len(targets) == 1:
+                        target = targets[0]
+                        target.marks.add('vote', self.options)
+                self.exec()
+            case 14:  # verdict
+                while self.died:
+                    self.verdict()
+                    self.testament()
+                    for pl in self.died:
+                        pl.dying()
+                    self.died.clear()
+                    self.exec()
+        for pl in self.options:
+            pl.day()
 
     def night(self) -> None:
-        self.boardcast(
-            self.audience(),
-            "It's dark, everyone close your eyes. I will talk with you/your team secretly at night.",
-        )
-
-        actions: dict[int, list[PPlayer]] = {}
-        for pl in self.players:
-            if not pl.life:
-                continue
-            actions.setdefault(pl.night_priority, []).append(pl)
-        while actions:
-            self.time.inc_stage()
-            self.actors = actions.pop(max(actions))
-            for pl in self.actors:
-                pl.night()
-
-    def exec(self) -> None:
-        self.marks.sort(key=lambda mark: mark.priority)
-        while self.marks:
-            mark = self.marks.pop()
-            mark.exec()
-        self.verdict()
-        self.badge.badge()
-
-    def post_exec(self) -> None:
-        while self.post_marks:
-            self.time.inc_stage()
-            self.post_marks.sort(key=lambda mark: mark.priority)
-            mark = self.post_marks.pop()
-            mark.exec()
-            self.verdict()
-            self.badge.badge()
-            if self.winner:
-                return
+        match self.time.datetime.hour:
+            case 18:
+                self.boardcast(
+                    self.audience(),
+                    "It's dark, everyone close your eyes. I will talk with you/your team secretly at night.",
+                )
+        for pl in self.options:
+            pl.night()
 
     def verdict(self) -> None:
         self.options = list(self.alived())
-        count_villagers = 0
-        count_god = 0
-        count_werewolfs = 0
         for pl in self.options:
-            match pl.role:
-                case Role('villager', 'villager'):
-                    count_villagers += 1
-                case Role('villager', 'god'):
-                    count_god += 1
-                case Role('werewolf'):
-                    count_werewolfs += 1
-                case _:
-                    raise NotImplementedError('unknown faction')
-        if count_villagers + count_werewolfs + count_god == 0:
-            self.winner = Role('nobody')
-        if count_werewolfs == 0:
-            self.winner = Role('villager')
-        if user_data.win_condition == 'all':
-            if count_villagers + count_god == 0:
-                self.winner = Role('werewolf')
-        elif user_data.win_condition == 'partial':
-            if count_villagers * count_god == 0:
-                self.winner = Role('werewolf')
-        # if count_villagers + count_god < count_werewolfs:
-        #    return Role('werewolf')
-        if self.winner:
-            raise GameOverError
+            pl.verdict()
+        self.badge.transfer()
+
+    def exec(self) -> None:
+        for pl in self.options:
+            pl.exec()
+
+    def testament(self) -> None:
+        if not self.died:
+            raise RuntimeError('no died')
+        self.died.sort(key=lambda pl: pl.seat)
+        self.boardcast(
+            self.audience(), f'Seat {pls2str(self.died)} are dying.'
+        )
+        for pl in self.died:
+            speech = input_speech(
+                pl, 'you are dying, make the last public speaking'
+            )
+            pl.boardcast(self.audience(), speech)
 
     def vote(
         self,
@@ -915,7 +807,7 @@ class Game:
         voters_iter: Iterable[PPlayer],
         task: str,
         silent: bool = False,
-    ) -> None | PPlayer | list[PPlayer]:
+    ) -> list[PPlayer]:
         candidates = list(candidates_iter)
         voters = list(voters_iter)
         ballot = {pl: 0.0 for pl in candidates}
@@ -937,38 +829,22 @@ class Game:
         if abstain == len(voters):
             if not silent:
                 self.boardcast(self.audience(), 'Everyone passed.')
-            return None
+            return []
         highest = max(ballot.values())
         targets = [pl for pl, value in ballot.items() if value == highest]
-        if len(targets) == 1:
-            target = targets[0]
-            if not silent:
+        if not silent:
+            if len(targets) == 1:
+                target = targets[0]
                 self.boardcast(
                     self.audience(),
                     f'Seat {target.seat} got the highest votes. Vote result: {vote_text[:-2]}.',
                 )
-            return target
-        else:
-            if not silent:
+            else:
                 self.boardcast(
                     self.audience(),
                     f'Seat {pls2str(targets)} ended in a tie. Vote result: {vote_text[:-2]}.',
                 )
-            return targets
-
-    def testament(self) -> None:
-        self.time.inc_stage()
-        if not self.died:
-            return
-        self.died.sort(key=lambda pl: pl.seat)
-        self.boardcast(
-            self.audience(), f'Seat {pls2str(self.died)} are dying.'
-        )
-        for pl in self.died:
-            speech = input_speech(
-                pl, 'you are dying, make the last public speaking'
-            )
-            pl.boardcast(self.audience(), speech)
+        return targets
 
     def audience(self) -> Generator[PPlayer]:
         return (pl for pl in self.players)

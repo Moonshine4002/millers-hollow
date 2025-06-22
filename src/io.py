@@ -58,7 +58,10 @@ def output_info(
     clear_text: str = '',
 ) -> None:
     global log_time
-    text = info.log(log_time)
+    if info.time.eq_step(log_time):
+        text = f'\t{pls2str(info.source)}> {info.content}'
+    else:
+        text = str(info)
     log_time = info.time
     log(f'{text} > {pls2str(info.target)}\n', clear_text)
     if console or any(pl.char.control == 'console' for pl in info.target):
@@ -185,13 +188,14 @@ def get_inputs(pl: PPlayer) -> None:
         except NotImplementedError as e:
             raise
         except Exception as e:
-            output_info(Info(copy(pl.game.time), (pl,), (), repr(e)))
+            output_info(Info(pl.game, copy(pl.game.time), (pl,), (), repr(e)))
         else:
             output_str = ' --- '.join(
                 f'{i.prompt}: {o.output}' for i, o in zip(pl.tasks, pl.results)
             )
             output_info(
                 Info(
+                    pl.game,
                     copy(pl.game.time),
                     (pl,),
                     (),
@@ -308,13 +312,14 @@ async def async_get_inputs(pl: PPlayer) -> None:
         except NotImplementedError as e:
             raise
         except Exception as e:
-            output_info(Info(copy(pl.game.time), (pl,), (), repr(e)))
+            output_info(Info(pl.game, copy(pl.game.time), (pl,), (), repr(e)))
         else:
             output_str = ' --- '.join(
                 f'{i.prompt}: {o.output}' for i, o in zip(pl.tasks, pl.results)
             )
             output_info(
                 Info(
+                    pl.game,
                     copy(pl.game.time),
                     (pl,),
                     (),

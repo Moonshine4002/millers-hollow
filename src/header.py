@@ -1,16 +1,18 @@
 import asyncio
-from collections import Counter, UserList
+from collections import Counter, UserList, UserString
 from collections.abc import Callable, Generator, Iterable
 from copy import copy, deepcopy
 from dataclasses import dataclass
+import datetime
 from enum import Enum, auto
+import functools
 import itertools
 import pathlib
 import random
 import string
 import time
 from typing import Any, Literal, NamedTuple, Protocol, Self, TypeAlias
-from typing import runtime_checkable
+from typing import final, runtime_checkable
 
 
 class NamedEnum(Enum):
@@ -104,82 +106,61 @@ class LStr(UserList[str]):
         return '/'.join(str(elem) for elem in self)
 
 
-class Phase(NamedEnum):
+class State(NamedEnum):
+    BEGIN = auto()
     DAY = auto()
     NIGHT = auto()
+    END = auto()
 
     FIRST = DAY
     LAST = NIGHT
 
-    def __next__(self) -> Self:
-        match self:
-            case self.DAY:
-                return self.NIGHT
-            case self.NIGHT:
-                return self.DAY
-            case _:
-                raise NotImplementedError('unknown phase')
 
-
-@dataclass
 class Time:
-    cycle: int = 1
-    phase: Phase = Phase.DAY
-    stage: int = 0
-    # round: int = 0
-    tick: int = 0
+    def __init__(self) -> None:
+        self.start = datetime.datetime.now()
+        self.datetime = datetime.datetime.now()
+        self.state = State.BEGIN
+        self.step = 0
 
     def __str__(self) -> str:
-        return f'{self.phase} {self.cycle} - {self.stage}'
+        return self.datetime.strftime('%d-%H:%M:%S')
 
-    def eq_cycle(self, other: Self) -> bool:
-        return self.cycle == other.cycle
+    def time_inc(self) -> None:
+        self.time_add(datetime.timedelta(hours=1))
 
-    def eq_phase(self, other: Self) -> bool:
-        return self.eq_cycle(other) and self.phase == other.phase
+    def time_add(self, delta: datetime.timedelta) -> None:
+        if self.state == State.END:
+            return
+        self.datetime += delta
+        self.refresh()
 
-    def eq_stage(self, other: Self) -> bool:
-        return self.eq_phase(other) and self.stage == other.stage
+    def time_set(self, time: datetime.time) -> None:
+        if self.state == State.END:
+            return
+        self.datetime = datetime.datetime.combine(self.datetime, time)
+        self.refresh()
 
-    # def eq_round(self, other: Self) -> bool:
-    #    return self.eq_stage(other) and self.round == other.round
+    def eq_date(self, other: Self) -> bool:
+        return self.datetime.date() == other.datetime.date()
+
+    def eq_state(self, other: Self) -> bool:
+        return self.eq_date(other) and self.state == other.state
+
+    def eq_step(self, other: Self) -> bool:
+        return self.step == other.step
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, self.__class__):
-            return self.tick == other.tick
+            return self.eq_step(other)
         return NotImplemented
 
-    def inc_phase(self) -> None:
-        self.phase = next(self.phase)
-        if self.phase == Phase.FIRST:
-            self.cycle += 1
-        self.stage = 0
-        # self.round = 0
-        self.tick += 1
-
-    def inc_stage(self) -> None:
-        self.stage += 1
-        # self.round = 0
-        self.tick += 1
-
-    # def inc_round(self) -> None:
-    #    self.round += 1
-    #    self.tick += 1
-
-
-class Info(NamedTuple):
-    time: Time = Time()
-    source: 'tuple[PPlayer, ...]' = ()
-    target: 'tuple[PPlayer, ...]' = ()
-    content: str = ''
-
-    def __str__(self) -> str:
-        return f'[{self.time}]{pls2str(self.source)}> {self.content}'
-
-    def log(self, time: Time) -> str:
-        if self.time.eq_stage(time):
-            return f'\t{pls2str(self.source)}> {self.content}'
-        return str(self)
+    def refresh(self) -> None:
+        self.step += 1
+        if 6 <= self.datetime.hour < 18:
+            self.state = State.DAY
+        else:
+            self.state = State.NIGHT
 
 
 class Input(NamedTuple):
@@ -197,19 +178,57 @@ class Output(NamedTuple):
     output: str
 
 
+class Info(NamedTuple):
+    game: 'PGame'
+    time: Time = Time()
+    source: tuple['PPlayer', ...] = ()
+    target: tuple['PPlayer', ...] = ()
+    content: str = ''
+
+    def __str__(self) -> str:
+        return f'[{self.time}]{pls2str(self.source)}> {self.content}'
+
+
+class Mark(NamedTuple):
+    name: str
+    info: Info
+    priority: int = 0
+
+
+Skill: TypeAlias = Callable[[Mark], None]
+
+
+class Marks(UserList[Mark]):
+    def __init__(self, pl: 'PPlayer') -> None:
+        self.pl = pl
+        super().__init__()
+
+    def reset(self, marks: Iterable[Mark]) -> None:
+        self.data = list(marks)
+
+    def add(
+        self, name: str, source: Iterable['PPlayer'], priority: int = 0
+    ) -> None:
+        game = self.pl.game
+        info = Info(game, copy(game.time), tuple(source), (self.pl,))
+        return super().append(Mark(name, info, priority))
+
+
 @runtime_checkable
 class PPlayer(Protocol):
     game: 'PGame'
     char: Char
-    role: Role
-    life: bool
     seat: Seat
-    night_priority: int
-    vote: float
-    can_expose: bool
-    death: list[Info]
+    life: bool
+    role: Role
+    skills: dict[str, Skill]
+    marks: Marks
+    death: Marks
     tasks: list[Input]
     results: list[Output]
+
+    vote: float
+    can_expose: bool = False
 
     def __init__(self, game: 'PGame', char: Char, seat: Seat) -> None:
         ...
@@ -220,10 +239,17 @@ class PPlayer(Protocol):
     def str_public(self) -> str:
         ...
 
+    @staticmethod
+    def cast(info: Info) -> None:
+        ...
+
     def boardcast(self, pls: Iterable['PPlayer'], content: str) -> None:
         ...
 
     def receive(self, content: str) -> None:
+        ...
+
+    def loop(self) -> None:
         ...
 
     def day(self) -> None:
@@ -232,28 +258,25 @@ class PPlayer(Protocol):
     def night(self) -> None:
         ...
 
+    def dying(self) -> None:
+        ...
+
+    def verdict(self) -> None:
+        ...
+
+    def exec(self) -> None:
+        ...
+
+    def killed(self, mark: Mark) -> None:
+        ...
+
     def expose(self) -> None:
         ...
 
-    def killed(self, source: Iterable['PPlayer'], content: str) -> None:
-        ...
-
-
-class Mark(NamedTuple):
-    name: str
-    game: 'PGame'
-    source: PPlayer
-    target: PPlayer
-    func: Callable[['PGame', PPlayer, PPlayer], None]
-    priority: int = 0
-
-    def exec(self) -> None:
-        self.func(self.game, self.source, self.target)
-
 
 class PBadge(Protocol):
-    owner: PPlayer | None
     game: 'PGame'
+    owner: PPlayer | None
 
     def __init__(self, game: 'PGame') -> None:
         ...
@@ -261,7 +284,7 @@ class PBadge(Protocol):
     def election(self) -> None:
         ...
 
-    def badge(self) -> None:
+    def transfer(self) -> None:
         ...
 
     def speakers(self) -> list[PPlayer]:
@@ -273,16 +296,12 @@ class PGame(Protocol):
     roles: list[type[PPlayer]]
     time: Time
     players: list[PPlayer]
-    marks: list[Mark]
-    post_marks: list[Mark]
     info: list[Info]
     badge: PBadge
 
     winner: Role
     options: list[PPlayer]
-    actors: list[PPlayer]
     died: list[PPlayer]
-    data: dict[str, Any]
 
     def __init__(self) -> None:
         ...
@@ -305,13 +324,13 @@ class PGame(Protocol):
     def night(self) -> None:
         ...
 
+    def verdict(self) -> None:
+        ...
+
     def exec(self) -> None:
         ...
 
-    def post_exec(self) -> None:
-        ...
-
-    def verdict(self) -> None:
+    def testament(self) -> None:
         ...
 
     def vote(
@@ -320,10 +339,7 @@ class PGame(Protocol):
         voters: Iterable[PPlayer],
         task: str,
         silent: bool = False,
-    ) -> None | PPlayer | list[PPlayer]:
-        ...
-
-    def testament(self) -> None:
+    ) -> list[PPlayer]:
         ...
 
     def audience(self) -> Generator[PPlayer]:
@@ -385,18 +401,6 @@ def seats2pls(game: PGame, seats: Iterable[Seat]) -> Generator[PPlayer]:
 
 def str2pls(game: PGame, texts: str) -> Generator[PPlayer]:
     return (game.players[seat] for seat in LSeat(texts))
-
-
-class BaseGameError(Exception):
-    ...
-
-
-class GameOverError(BaseGameError):
-    ...
-
-
-class SelfExposureError(BaseGameError):
-    ...
 
 
 from . import user_data
