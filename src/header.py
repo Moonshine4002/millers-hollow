@@ -130,14 +130,10 @@ class Time:
         self.time_add(datetime.timedelta(hours=1))
 
     def time_add(self, delta: datetime.timedelta) -> None:
-        if self.state == State.END:
-            return
         self.datetime += delta
         self.refresh()
 
     def time_set(self, time: datetime.time) -> None:
-        if self.state == State.END:
-            return
         self.datetime = datetime.datetime.combine(self.datetime, time)
         self.refresh()
 
@@ -194,6 +190,18 @@ class Mark(NamedTuple):
     info: Info
     priority: int = 0
 
+    def exec(self) -> None:
+        for t in self.info.target:
+            if skill := t.skills.get(self.name):
+                skill(self)
+                continue
+            for s in self.info.source:
+                if skill := s.skills.get(self.name):
+                    skill(self)
+                    break
+            else:
+                raise RuntimeError('no skill')
+
 
 Skill: TypeAlias = Callable[[Mark], None]
 
@@ -212,6 +220,17 @@ class Marks(UserList[Mark]):
         game = self.pl.game
         info = Info(game, copy(game.time), tuple(source), (self.pl,))
         return super().append(Mark(name, info, priority))
+
+    def add_exec(self, name: str, source: Iterable['PPlayer']) -> None:
+        game = self.pl.game
+        info = Info(game, copy(game.time), tuple(source), (self.pl,))
+        Mark(name, info).exec()
+
+    def exec(self) -> None:
+        while self:
+            self.sort(key=lambda mark: mark.priority)
+            mark = self.pop()
+            mark.exec()
 
 
 @runtime_checkable
@@ -345,13 +364,7 @@ class PGame(Protocol):
     def audience(self) -> Generator[PPlayer]:
         ...
 
-    def audience_role(self, role: str) -> Generator[PPlayer]:
-        ...
-
     def alived(self) -> Generator[PPlayer]:
-        ...
-
-    def alived_role(self, role: str) -> Generator[PPlayer]:
         ...
 
 
@@ -401,6 +414,14 @@ def seats2pls(game: PGame, seats: Iterable[Seat]) -> Generator[PPlayer]:
 
 def str2pls(game: PGame, texts: str) -> Generator[PPlayer]:
     return (game.players[seat] for seat in LSeat(texts))
+
+
+class BaseGameError(Exception):
+    ...
+
+
+class TimeChangedError(BaseGameError):
+    ...
 
 
 from . import user_data

@@ -21,11 +21,14 @@ def expose(mark: Mark) -> None:
     game = mark.info.game
     for t in mark.info.target:
         t.killed(mark)
+        game.verdict()
         game.boardcast(
             game.audience(),
             f'Seat {t.seat} (a {t.role.faction}) self-exposed!',
         )
+    game.died.clear()
     game.time.time_set(datetime.time(18))
+    raise TimeChangedError('expose')
 
 
 class BPlayer:
@@ -88,18 +91,10 @@ class BPlayer:
         if all(pl.role.eq_faction(self.role) for pl in self.game.options):
             self.game.winner = self.role
             self.game.time.state = State.END
+            raise TimeChangedError('game over')
 
     def exec(self) -> None:
-        while self.marks:
-            self.marks.sort(key=lambda mark: mark.priority)
-            mark = self.marks.pop()
-            if skill := self.skills.get(mark.name):
-                skill(mark)
-                continue
-            for pl in mark.info.source:
-                if skill := pl.skills.get(mark.name):
-                    skill(mark)
-                    break
+        self.marks.exec()
 
     def killed(self, mark: Mark) -> None:
         self.death.append(mark)
@@ -108,7 +103,7 @@ class BPlayer:
             self.life = False
 
     def expose(self) -> None:
-        self.marks.add('expose', (self,))
+        self.marks.add_exec('expose', (self,))
 
 
 def input_word(pl: PPlayer, prompt: str, option: Iterable[str]) -> str:
@@ -229,11 +224,14 @@ class Werewolf(BPlayer):
         if not pls or all(pl.role.eq_category(pls[0].role) for pl in pls):
             self.game.winner = self.role
             self.game.time.state = State.END
+            TimeChangedError('game over')
 
     def night(self) -> None:
         if self.game.time.datetime.time() != datetime.time(0):
             return
-        actors = list(self.game.alived_role(self.role.faction))
+        actors = list(
+            filter(lambda pl: pl.role.faction == 'werewolf', self.game.options)
+        )
         if self != actors[0]:
             return
         self.game.boardcast(
@@ -260,13 +258,59 @@ class Werewolf(BPlayer):
         self.game.boardcast(actors, f'Werewolves kill seat {target.seat}.')
 
 
+def white(mark: Mark) -> None:
+    game = mark.info.game
+    for t in mark.info.target:
+        t.killed(mark)
+        game.verdict()
+        choice = input_op(
+            t,
+            'pass or choose a player to kill',
+            game.options,
+            ('pass',),
+        )
+        if choice == 'pass':
+            game.boardcast(
+                game.audience(),
+                f'Seat {t.seat} (a {t.role.faction}) self-exposed!',
+            )
+        else:
+            game.boardcast(
+                game.audience(),
+                f'Seat {t.seat} (a {t.role.kind}) self-exposed!',
+            )
+            pl = str2pl(game, choice)
+            game.boardcast(
+                game.audience(),
+                f'Seat {t.seat} killed seat {pl.seat}.',
+            )
+            pl.killed(mark)
+    game.died.clear()
+    game.time.time_set(datetime.time(18))
+    raise TimeChangedError('expose')
+
+
+class WhiteWolf(Werewolf):
+    def __init__(self, game: PGame, char: Char, seat: Seat) -> None:
+        super().__init__(game, char, seat)
+        self.role.faction = 'werewolf'
+        self.role.category = 'god'
+
+        self.skills['expose'] = white
+
+
+def seer(mark: Mark) -> None:
+    for s, t in zip(mark.info.source, mark.info.target):
+        s.receive(f'Seat {t.seat} is a {t.role.faction}.')
+
+
 class Seer(BPlayer):
     def __init__(self, game: PGame, char: Char, seat: Seat) -> None:
         super().__init__(game, char, seat)
         self.role.faction = 'villager'
         self.role.category = 'god'
 
-        self.skills['seer'] = empty
+        self.skills['seer'] = seer
 
     def night(self) -> None:
         if self.game.time.datetime.time() != datetime.time(0):
@@ -276,8 +320,7 @@ class Seer(BPlayer):
             self, 'the player you want to check', self.game.options
         )
         pl = str2pl(self.game, choice)
-        self.receive(f'Seat {pl.seat} is a {pl.role.faction}.')
-        pl.marks.add('seer', (self,))
+        pl.marks.add_exec('seer', (self,))
 
 
 class Witch(BPlayer):
@@ -354,7 +397,7 @@ def gun(mark: Mark) -> None:
     for s in mark.info.source:
         if any('poison' == mark.name for mark in s.death):
             return
-        game.boardcast(game.audience(), f'Seat {s.seat} is a {s.role.kind}!')
+        # game.boardcast(game.audience(), f'Seat {s.seat} is a {s.role.kind}!')
         choice = input_op(
             s,
             'you are dying, pass or choose a player to shoot',
@@ -391,6 +434,12 @@ class Hunter(BPlayer):
             return
         self.gun = False
         self.marks.add('gun', (self,))
+
+
+class BlackWolf(Werewolf, Hunter):
+    def __init__(self, game: PGame, char: Char, seat: Seat) -> None:
+        super().__init__(game, char, seat)
+        self.role.faction = 'werewolf'
 
 
 def shield(mark: Mark) -> None:
@@ -446,6 +495,52 @@ class Fool(BPlayer):
 
         self.exposed = False
         self.skills['vote'] = vote_fool
+
+
+def duel(mark: Mark) -> None:
+    game = mark.info.game
+    for s in mark.info.source:
+        s.can_expose = False
+        game.boardcast(
+            game.audience(),
+            f'Seat {s.seat} (a {s.role.kind}) self-exposed!',
+        )
+        choice = input_op(
+            s,
+            'choose a player to duel',
+            game.options,
+        )
+        pl = str2pl(game, choice)
+        game.boardcast(
+            game.audience(),
+            f'Seat {s.seat} duel with seat {pl.seat}.',
+        )
+        if pl.role.faction == 'werewolf':
+            game.boardcast(
+                game.audience(),
+                f'Seat {pl.seat} is a werewolf',
+            )
+            pl.killed(mark)
+            game.died.clear()
+            game.time.time_set(datetime.time(18))
+            raise TimeChangedError('expose')
+        else:
+            game.boardcast(
+                game.audience(),
+                f'Seat {pl.seat} is not a werewolf',
+            )
+            s.killed(mark)
+            game.died.clear()
+
+
+class Knight(BPlayer):
+    def __init__(self, game: PGame, char: Char, seat: Seat) -> None:
+        super().__init__(game, char, seat)
+        self.role.faction = 'villager'
+        self.role.category = 'god'
+
+        self.can_expose = True
+        self.skills['expose'] = duel
 
 
 class Badge:
@@ -622,7 +717,7 @@ class Game:
         random.shuffle(ran_roles)
         for seat, (char, Pl) in enumerate(zip(ran_chars, ran_roles)):
             self.players.append(Pl(self, char, Seat(seat)))
-        self.options = list(self.alived())
+        self.verdict()
 
     def __str__(self) -> str:
         info_player = '\n\t'.join(str(pl) for pl in self.players)
@@ -664,16 +759,29 @@ class Game:
         )
 
         while True:
-            match self.time.state:
-                case State.BEGIN:
-                    self.time.time_set(datetime.time(17))
-                case State.DAY:
-                    self.day()
-                case State.NIGHT:
-                    self.night()
-                case State.END:
-                    break
-            self.time.time_inc()
+            try:
+                match self.time.state:
+                    case State.BEGIN:
+                        self.time.time_set(datetime.time(18))
+                        raise TimeChangedError('begin')
+                    case State.DAY:
+                        self.day()
+                    case State.NIGHT:
+                        self.night()
+                    case State.END:
+                        break
+            except TimeChangedError as e:
+                try:
+                    while self.died:
+                        self.verdict()
+                        for pl in self.died:
+                            pl.dying()
+                        self.died.clear()
+                        self.exec()
+                except TimeChangedError as e:
+                    pass
+            else:
+                self.time.time_inc()
 
         end_message = (
             f'{self.winner.faction} win.\n'
@@ -773,7 +881,7 @@ class Game:
             case 18:
                 self.boardcast(
                     self.audience(),
-                    "It's dark, everyone close your eyes. I will talk with you/your team secretly at night.",
+                    f"It's dark, Everyone close your eyes. Seat {pls2str(self.alived())} are still alive.",
                 )
         for pl in self.options:
             pl.night()
@@ -785,7 +893,7 @@ class Game:
         self.badge.transfer()
 
     def exec(self) -> None:
-        for pl in self.options:
+        for pl in self.players:
             pl.exec()
 
     def testament(self) -> None:
@@ -849,11 +957,5 @@ class Game:
     def audience(self) -> Generator[PPlayer]:
         return (pl for pl in self.players)
 
-    def audience_role(self, role: str) -> Generator[PPlayer]:
-        return (pl for pl in self.players if pl.role.kind == role)
-
     def alived(self) -> Generator[PPlayer]:
         return (pl for pl in self.players if pl.life)
-
-    def alived_role(self, role: str) -> Generator[PPlayer]:
-        return (pl for pl in self.players if pl.life and pl.role.kind == role)
