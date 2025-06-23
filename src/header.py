@@ -9,6 +9,7 @@ import functools
 import itertools
 import pathlib
 import random
+import re
 import string
 import time
 from typing import Any, Literal, NamedTuple, Protocol, Self, TypeAlias

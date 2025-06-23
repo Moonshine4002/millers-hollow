@@ -98,9 +98,13 @@ def parse(pl: PPlayer, content: str) -> None:
     pl.results = [
         Output(content.strip(' \'"[]').lower()) for content in lcontent
     ]
-    for i, o in zip(pl.tasks, pl.results):
+    for e, (i, o) in enumerate(zip(pl.tasks, pl.results)):
         if i.options and o.output not in i.options:
-            raise ValueError(f'wrong value: {o.output}')
+            nums = re.findall(r'[0-9]+', o.output)
+            if len(nums) == 1 and nums[0] in i.options:
+                pl.results[e] = Output(nums[0])
+            else:
+                raise ValueError(f'wrong value: {o.output}')
 
 
 def input_ai(pl: PPlayer, messages: list[ChatCompletionMessageParam]) -> str:
@@ -123,8 +127,8 @@ def get_ai_inputs(pl: PPlayer) -> None:
             continue
         message: ChatCompletionMessageParam = {
             'role': 'user',
-            'content': info.content,
-            'name': pls2str(info.source),
+            'content': f'Seat {pls2str(info.source)}: {info.content}',
+            'name': f'Seat {pls2str(info.source)}',
         }
         messages.append(message)
     prompt = (
@@ -247,8 +251,8 @@ async def async_get_ai_inputs(pl: PPlayer) -> None:
             continue
         message: ChatCompletionMessageParam = {
             'role': 'user',
-            'content': info.content,
-            'name': pls2str(info.source),
+            'content': f'Seat {pls2str(info.source)}: {info.content}',
+            'name': f'Seat {pls2str(info.source)}',
         }
         messages.append(message)
     prompt = (

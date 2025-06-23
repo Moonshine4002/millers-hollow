@@ -245,7 +245,7 @@ class Werewolf(BPlayer):
         targets = self.game.vote(
             self.game.options,
             actors,
-            'choose one player to kill',
+            'choose one player to kill secretly',
             silent=True,
         )
         if not targets:
@@ -264,7 +264,7 @@ def white(mark: Mark) -> None:
         game.verdict()
         choice = input_op(
             t,
-            'pass or choose a player to kill',
+            'you are dying, pass or choose a player to kill',
             game.options,
             ('pass',),
         )
@@ -393,7 +393,7 @@ class Witch(BPlayer):
 def gun(mark: Mark) -> None:
     game = mark.info.game
     for s in mark.info.source:
-        game.boardcast(game.audience(), f'Seat {s.seat} is a {s.role.kind}!')
+        game.boardcast(game.audience(), f'Seat {s.seat} has a gun!')
         if any('poison' == mark.name for mark in s.death):
             return
         choice = input_op(
