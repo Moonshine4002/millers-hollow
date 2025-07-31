@@ -18,7 +18,7 @@ from typing import final, runtime_checkable
 
 
 import aiosqlite
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 import uvicorn
 
@@ -38,6 +38,7 @@ class Database:
         except Exception as e:
             print(f'Error: {e}')
             await conn.rollback()
+            raise
         finally:
             await conn.close()
 
@@ -54,6 +55,7 @@ class Database:
             except Exception as e:
                 print(f'Error: {e}')
                 await conn.rollback()
+                raise
 
     @staticmethod
     async def init_db() -> None:
@@ -164,15 +166,18 @@ class Database:
                 await conn.execute(SQL)
 
     @staticmethod
-    async def insert_user(name: str, controller: str) -> None:
+    async def insert_user(name: str, controller: str, silent=False) -> None:
         SQL = """
         INSERT INTO users (name, controller) VALUES (?, ?);
         """
-        async with Database.get_conn() as conn:
-            try:
+        try:
+            async with Database.get_conn() as conn:
                 await conn.execute(SQL, (name, controller))
-            except Exception as e:
+        except Exception as e:
+            if silent:
                 pass
+            else:
+                raise
 
     @staticmethod
     async def delete_user(name: str) -> None:
@@ -500,7 +505,7 @@ class Games:
 
     async def gather_add_ai(self):
         coros = [
-            Database.insert_user(name, 'ai')
+            Database.insert_user(name, 'ai', silent=True)
             for name in random.sample(string.ascii_uppercase, 12)
         ]
         await asyncio.gather(*coros)
@@ -533,8 +538,19 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.post('/register')
-async def register_user(user: User) -> None:
-    await Database.insert_user(user.name, user.controller)
+async def register_user(user: User) -> dict:
+    try:
+        await Database.insert_user(user.name, user.controller)
+        return {'name': user.name, 'controller': user.controller}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                'status': 'error',
+                'message': str(e),
+                'suggestion': f'User {user.name} already exists',
+            },
+        )
 
 
 uvicorn.run(app)
