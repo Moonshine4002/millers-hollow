@@ -29,16 +29,31 @@ print(pathlib.Path.cwd())
 class Database:
     @staticmethod
     @contextlib.asynccontextmanager
-    async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
+    async def get_conn() -> AsyncGenerator[aiosqlite.Connection, None]:
+        conn = await aiosqlite.connect('data.db')
         try:
-            db = await aiosqlite.connect('data.db')
             # db.row_factory = aiosqlite.Row
-            yield db
-            await db.commit()
-        except:
-            await db.rollback()
+            yield conn
+            await conn.commit()
+        except Exception as e:
+            print(f'Error: {e}')
+            await conn.rollback()
         finally:
-            await db.close()
+            await conn.close()
+
+    @staticmethod
+    @contextlib.asynccontextmanager
+    async def get_cursor(
+        sql: str, para: tuple = ()
+    ) -> AsyncGenerator[aiosqlite.Cursor, None]:
+        async with aiosqlite.connect('data.db') as conn:
+            try:
+                async with conn.execute(sql, para) as cursor:
+                    yield cursor
+                await conn.commit()
+            except Exception as e:
+                print(f'Error: {e}')
+                await conn.rollback()
 
     @staticmethod
     async def init_db() -> None:
@@ -144,18 +159,18 @@ class Database:
         ('guard', 'speak'),
         ('guard', 'shield');
         """
-        async with Database.get_db() as db:
-            for SQL in SQLS.split('---'):
-                await db.execute(SQL)
+        for SQL in SQLS.split('---'):
+            async with Database.get_conn() as conn:
+                await conn.execute(SQL)
 
     @staticmethod
     async def insert_user(name: str, controller: str) -> None:
         SQL = """
         INSERT INTO users (name, controller) VALUES (?, ?);
         """
-        async with Database.get_db() as db:
+        async with Database.get_conn() as conn:
             try:
-                await db.execute(SQL, (name, controller))
+                await conn.execute(SQL, (name, controller))
             except Exception as e:
                 pass
 
@@ -164,16 +179,16 @@ class Database:
         SQL = """
         DELETE FROM users WHERE name = ?;
         """
-        async with Database.get_db() as db:
-            await db.execute(SQL, (name,))
+        async with Database.get_conn() as conn:
+            await conn.execute(SQL, (name,))
 
     @staticmethod
     async def select_user() -> list:
         SQL = """
         SELECT * FROM users;
         """
-        async with Database.get_db() as db:
-            cursor = await db.execute(SQL)
+        async with Database.get_conn() as conn:
+            cursor = await conn.execute(SQL)
             return await cursor.fetchall()
 
     @staticmethod
@@ -182,8 +197,8 @@ class Database:
         UPDATE users SET total_games = total_games + 1, wins = wins + ?
         WHERE name = ?;
         """
-        async with Database.get_db() as db:
-            await db.execute(SQL, (int(win), name))
+        async with Database.get_conn() as conn:
+            await conn.execute(SQL, (int(win), name))
 
 
 class Game:
@@ -194,18 +209,18 @@ class Game:
         self.system_speak_id = 0
 
     async def init_db(self) -> None:
-        async with Database.get_db() as db:
+        async with Database.get_conn() as conn:
             SQL = """
             INSERT INTO games DEFAULT VALUES;
             """
-            await db.execute(SQL)
-            cursor = await db.execute('SELECT last_insert_rowid()')
+            await conn.execute(SQL)
+            cursor = await conn.execute('SELECT last_insert_rowid()')
             self.id = (await cursor.fetchone())[0]
 
             SQL = """
             SELECT id FROM users WHERE controller != 'system';
             """
-            cursor = await db.execute(SQL)
+            cursor = await conn.execute(SQL)
             players = await cursor.fetchall()
 
             roles = [
@@ -231,7 +246,7 @@ class Game:
             for seat, ((player_id,), role_id) in enumerate(
                 zip(players, roles)
             ):
-                await db.execute(
+                await conn.execute(
                     SQL, (self.id, player_id, seat + 1, role_id, role_id)
                 )
 
@@ -239,8 +254,8 @@ class Game:
             INSERT OR IGNORE INTO player_skill (game_id, player_id, skill_id) VALUES
             (?, 1, 'speak');
             """
-            await db.execute(SQL, (self.id,))
-            cursor = await db.execute('SELECT last_insert_rowid()')
+            await conn.execute(SQL, (self.id,))
+            cursor = await conn.execute('SELECT last_insert_rowid()')
             self.system_speak_id = (await cursor.fetchone())[0]
 
             SQL = """
@@ -249,7 +264,7 @@ class Game:
             JOIN role_skill rs ON rs.role_id = a.role_id
             WHERE a.game_id = ?
             """
-            await db.execute(SQL, (self.id,))
+            await conn.execute(SQL, (self.id,))
 
             SQL = """
             UPDATE player_skill AS ps1 SET link_id =
@@ -258,9 +273,9 @@ class Game:
             AND ps2.game_id = ps1.game_id AND ps2.player_id = ps1.player_id
             AND ps2.skill_id = s.link_id;
             """
-            await db.execute(SQL, (self.id,))
+            await conn.execute(SQL, (self.id,))
 
-            await self.insert_log(1, 'speak', 'public', 0, 'Game begin.')
+        await self.insert_log(1, 'speak', 'public', 0, 'Game begin.')
 
     async def loop(self) -> None:
         def setdefault(
@@ -310,15 +325,15 @@ class Game:
         await asyncio.gather(*coros)
 
     async def player(self, player_id: int, skill_ids: list[str]) -> None:
-        async with Database.get_db() as db:
+        async with Database.get_conn() as conn:
             while skill_ids:
                 random.shuffle(skill_ids)
                 skill_id = skill_ids.pop()
-                if await self.player_skill(db, player_id, skill_id):
+                if await self.player_skill(conn, player_id, skill_id):
                     break
 
     async def player_skill(
-        self, db: aiosqlite.Connection, player_id: int, skill_id: str
+        self, conn: aiosqlite.Connection, player_id: int, skill_id: str
     ) -> bool:
         await asyncio.sleep(0.3)
         targets = [i + 1 for i in range(9)]
@@ -362,8 +377,8 @@ class Game:
         WHERE game_id = ?
         GROUP BY faction;
         """
-        async with Database.get_db() as db:
-            cursor = await db.execute(SQL, (self.id,))
+        async with Database.get_conn() as conn:
+            cursor = await conn.execute(SQL, (self.id,))
             factions = await cursor.fetchall()
 
         winner = ''
@@ -383,24 +398,17 @@ class Game:
         WHERE id = ?
         RETURNING cycle, phase;
         """
-        async with Database.get_db() as db:
-            cursor = await db.execute(SQL, (self.id,))
+        async with Database.get_conn() as conn:
+            cursor = await conn.execute(SQL, (self.id,))
             self.cycle, self.phase = await cursor.fetchone()
 
     async def select_skill(self) -> list:
         SQL = """
         SELECT player_id, skill_id FROM player_skill WHERE game_id = ?;
         """
-        async with Database.get_db() as db:
-            cursor = await db.execute(SQL, (self.id,))
+        async with Database.get_conn() as conn:
+            cursor = await conn.execute(SQL, (self.id,))
             return await cursor.fetchall()
-
-    # def select_target(self, player_id: int, skill_id: str) -> int:
-    #    SQL = """
-    #    SELECT target_id FROM player_skill WHERE game_id = ? AND player_id = ? AND skill_id = ?;
-    #    """
-    #    self.db.cursor.execute(SQL, (self.id, player_id, skill_id))
-    #    return self.db.cursor.fetchall()[0][0]
 
     async def update_player_skill(
         self, player_id: int, skill_id: str, target_id: int = 0
@@ -408,8 +416,8 @@ class Game:
         SQL = """
         UPDATE player_skill SET target_id = ?, cycle = ? WHERE game_id = ? AND player_id = ? AND skill_id = ?;
         """
-        async with Database.get_db() as db:
-            await db.execute(
+        async with Database.get_conn() as conn:
+            await conn.execute(
                 SQL, (target_id, self.cycle, self.id, player_id, skill_id)
             )
 
@@ -426,8 +434,8 @@ class Game:
         SELECT id, ?, ?, ? FROM player_skill
         WHERE game_id = ? AND player_id = ? AND skill_id = ?;
         """
-        async with Database.get_db() as db:
-            await db.execute(
+        async with Database.get_conn() as conn:
+            await conn.execute(
                 SQL, (type_, target_id, comment, self.id, player_id, skill_id)
             )
 
@@ -455,8 +463,10 @@ class Game:
         LEFT JOIN attribute at ON at.game_id = :gid AND at.player_id = l.target_id
         WHERE ps.game_id = :gid {SQL_WHERE if condition else ''};
         """
-        async with Database.get_db() as db:
-            cursor = await db.execute(SQL, {'gid': self.id, 'pid': player_id})
+        async with Database.get_conn() as conn:
+            cursor = await conn.execute(
+                SQL, {'gid': self.id, 'pid': player_id}
+            )
             logs = await cursor.fetchall()
 
         text = ''
