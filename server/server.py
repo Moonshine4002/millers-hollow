@@ -1,6 +1,7 @@
 import asyncio
 from collections import Counter, UserList, UserString
-from collections.abc import Callable, Generator, Iterable
+from collections.abc import AsyncGenerator, Callable, Generator, Iterable
+import contextlib
 from copy import copy, deepcopy
 from dataclasses import dataclass
 import datetime
@@ -16,8 +17,8 @@ from typing import Any, Literal, NamedTuple, Protocol, Self, TypeAlias
 from typing import final, runtime_checkable
 
 
-import sqlite3
-from fastapi import FastAPI, HTTPException
+import aiosqlite
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 import uvicorn
 
@@ -26,17 +27,21 @@ print(pathlib.Path.cwd())
 
 
 class Database:
-    def __init__(self) -> None:
-        self.conn = sqlite3.connect('data.db')
-        self.cursor = self.conn.cursor()
+    @staticmethod
+    @contextlib.asynccontextmanager
+    async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
+        try:
+            db = await aiosqlite.connect('data.db')
+            # db.row_factory = aiosqlite.Row
+            yield db
+            await db.commit()
+        except:
+            await db.rollback()
+        finally:
+            await db.close()
 
-        with self.conn:
-            self.init_db()
-
-    def __del__(self) -> None:
-        self.conn.close()
-
-    def init_db(self) -> None:
+    @staticmethod
+    async def init_db() -> None:
         SQLS = """
         CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -139,120 +144,136 @@ class Database:
         ('guard', 'speak'),
         ('guard', 'shield');
         """
-        for SQL in SQLS.split('---'):
-            self.cursor.execute(SQL)
+        async with Database.get_db() as db:
+            for SQL in SQLS.split('---'):
+                await db.execute(SQL)
 
-    def insert_user(self, name: str, controller: str) -> None:
+    @staticmethod
+    async def insert_user(name: str, controller: str) -> None:
         SQL = """
         INSERT INTO users (name, controller) VALUES (?, ?);
         """
-        self.cursor.execute(SQL, (name, controller))
+        async with Database.get_db() as db:
+            try:
+                await db.execute(SQL, (name, controller))
+            except Exception as e:
+                pass
 
-    def delete_user(self, name: str) -> None:
+    @staticmethod
+    async def delete_user(name: str) -> None:
         SQL = """
         DELETE FROM users WHERE name = ?;
         """
-        self.cursor.execute(SQL, (name,))
+        async with Database.get_db() as db:
+            await db.execute(SQL, (name,))
 
-    def select_user(self) -> None:
+    @staticmethod
+    async def select_user() -> list:
         SQL = """
         SELECT * FROM users;
         """
-        self.cursor.execute(SQL)
-        print(self.cursor.fetchall())
+        async with Database.get_db() as db:
+            cursor = await db.execute(SQL)
+            return await cursor.fetchall()
 
-    def update_user(self, name: str, win: bool) -> None:
+    @staticmethod
+    async def update_user(name: str, win: bool) -> None:
         SQL = """
         UPDATE users SET total_games = total_games + 1, wins = wins + ?
         WHERE name = ?;
         """
-        self.cursor.execute(SQL, (int(win), name))
+        async with Database.get_db() as db:
+            await db.execute(SQL, (int(win), name))
 
 
 class Game:
-    def __init__(self, db: Database) -> None:
-        self.db = db
+    def __init__(self) -> None:
         self.cycle = 1
         self.phase = 'night'
+        self.id = 0
+        self.system_speak_id = 0
 
-        with self.db.conn:
-            self.init_db()
+    async def init_db(self) -> None:
+        async with Database.get_db() as db:
+            SQL = """
+            INSERT INTO games DEFAULT VALUES;
+            """
+            await db.execute(SQL)
+            cursor = await db.execute('SELECT last_insert_rowid()')
+            self.id = (await cursor.fetchone())[0]
 
-    def init_db(self) -> None:
-        SQL = """
-        INSERT INTO games DEFAULT VALUES;
-        """
-        self.db.cursor.execute(SQL)
-        self.id = self.db.cursor.lastrowid
+            SQL = """
+            SELECT id FROM users WHERE controller != 'system';
+            """
+            cursor = await db.execute(SQL)
+            players = await cursor.fetchall()
 
-        SQL = """
-        SELECT id FROM users WHERE controller != 'system';
-        """
-        self.db.cursor.execute(SQL)
-        players = self.db.cursor.fetchall()
+            roles = [
+                'villager',
+                'villager',
+                'villager',
+                'werewolf',
+                'werewolf',
+                'werewolf',
+                'seer',
+                'witch',
+                'hunter',
+            ]
+            if len(players) < len(roles):
+                raise ValueError('not enough users')
 
-        roles = [
-            'villager',
-            'villager',
-            'villager',
-            'werewolf',
-            'werewolf',
-            'werewolf',
-            'seer',
-            'witch',
-            'hunter',
-        ]
-        if len(players) < len(roles):
-            raise ValueError('not enough users')
+            SQL = """
+            INSERT INTO attribute (game_id, player_id, seat, role_id, faction) VALUES
+            (?, ?, ?, ?, (SELECT faction FROM roles WHERE id = ?));
+            """
+            random.shuffle(roles)
+            random.shuffle(players)
+            for seat, ((player_id,), role_id) in enumerate(
+                zip(players, roles)
+            ):
+                await db.execute(
+                    SQL, (self.id, player_id, seat + 1, role_id, role_id)
+                )
 
-        SQL = """
-        INSERT INTO attribute (game_id, player_id, seat, role_id, faction) VALUES
-        (?, ?, ?, ?, (SELECT faction FROM roles WHERE id = ?));
-        """
-        random.shuffle(roles)
-        random.shuffle(players)
-        for seat, ((player_id,), role_id) in enumerate(zip(players, roles)):
-            self.db.cursor.execute(
-                SQL, (self.id, player_id, seat + 1, role_id, role_id)
-            )
+            SQL = """
+            INSERT OR IGNORE INTO player_skill (game_id, player_id, skill_id) VALUES
+            (?, 1, 'speak');
+            """
+            await db.execute(SQL, (self.id,))
+            cursor = await db.execute('SELECT last_insert_rowid()')
+            self.system_speak_id = (await cursor.fetchone())[0]
 
-        SQL = """
-        INSERT OR IGNORE INTO player_skill (game_id, player_id, skill_id) VALUES
-        (?, 1, 'speak');
-        """
-        self.db.cursor.execute(SQL, (self.id,))
-        self.system_speak_id = self.db.cursor.lastrowid
+            SQL = """
+            INSERT INTO player_skill (game_id, player_id, skill_id)
+            SELECT a.game_id, a.player_id, rs.skill_id FROM attribute a
+            JOIN role_skill rs ON rs.role_id = a.role_id
+            WHERE a.game_id = ?
+            """
+            await db.execute(SQL, (self.id,))
 
-        SQL = """
-        INSERT INTO player_skill (game_id, player_id, skill_id)
-        SELECT a.game_id, a.player_id, rs.skill_id FROM attribute a
-        JOIN role_skill rs ON rs.role_id = a.role_id
-        WHERE a.game_id = ?
-        """
-        self.db.cursor.execute(SQL, (self.id,))
+            SQL = """
+            UPDATE player_skill AS ps1 SET link_id =
+            ps2.id FROM skills s, player_skill ps2
+            WHERE ps1.game_id = ? AND s.id = ps1.skill_id
+            AND ps2.game_id = ps1.game_id AND ps2.player_id = ps1.player_id
+            AND ps2.skill_id = s.link_id;
+            """
+            await db.execute(SQL, (self.id,))
 
-        SQL = """
-        UPDATE player_skill AS ps1 SET link_id =
-        ps2.id FROM skills s, player_skill ps2
-        WHERE ps1.game_id = ? AND s.id = ps1.skill_id
-        AND ps2.game_id = ps1.game_id AND ps2.player_id = ps1.player_id
-        AND ps2.skill_id = s.link_id;
-        """
-        self.db.cursor.execute(SQL, (self.id,))
+            await self.insert_log(1, 'speak', 'public', 0, 'Game begin.')
 
-    def loop(self) -> None:
+    async def loop(self) -> None:
         def setdefault(
             d: dict[int, dict[int, list[str]]],
             seq: int,
             player_id: int,
-            skill_id: int,
+            skill_id: str,
         ):
             d.setdefault(seq, {})
             d[seq].setdefault(player_id, [])
             d[seq][player_id].append(skill_id)
 
-        with self.db.conn:
-            skills = self.select_skill()
+        skills = await self.select_skill()
 
         d: dict[int, dict[int, list[str]]] = {}
         skill_seq = {
@@ -276,74 +297,74 @@ class Game:
         for seq, value in d.items():
             if seq == 0:
                 continue
-            asyncio.run(
-                self.player_gather(
-                    self.player(player_id, skill_ids)
-                    for player_id, skill_ids in value.items()
-                )
+            await self.player_gather(
+                self.player(player_id, skill_ids)
+                for player_id, skill_ids in value.items()
             )
 
-        with self.db.conn:
-            self.verdict()
+        await self.verdict()
 
-        with self.db.conn:
-            self.update_game()
+        await self.update_game()
 
     async def player_gather(self, coros) -> None:
         await asyncio.gather(*coros)
 
     async def player(self, player_id: int, skill_ids: list[str]) -> None:
-        with self.db.conn:
+        async with Database.get_db() as db:
             while skill_ids:
                 random.shuffle(skill_ids)
                 skill_id = skill_ids.pop()
-                if await self.player_skill(player_id, skill_id):
+                if await self.player_skill(db, player_id, skill_id):
                     break
 
-    async def player_skill(self, player_id: int, skill_id: str) -> bool:
+    async def player_skill(
+        self, db: aiosqlite.Connection, player_id: int, skill_id: str
+    ) -> bool:
         await asyncio.sleep(0.3)
         targets = [i + 1 for i in range(9)]
         match skill_id:
             case 'vote':
                 target = random.choice(targets)
-                self.update_player_skill(player_id, skill_id, target)
-                self.insert_log(player_id, skill_id, 'private', target)
+                await self.update_player_skill(player_id, skill_id, target)
+                await self.insert_log(player_id, skill_id, 'private', target)
             case 'speak':
                 text = 'test'
-                self.insert_log(player_id, skill_id, 'public', 0, text)
+                await self.insert_log(player_id, skill_id, 'public', 0, text)
             case 'kill':
                 target = random.choice(targets)
-                self.update_player_skill(player_id, skill_id, target)
-                self.insert_log(player_id, skill_id, 'private', target)
+                await self.update_player_skill(player_id, skill_id, target)
+                await self.insert_log(player_id, skill_id, 'private', target)
             case 'identify':
                 target = random.choice(targets)
-                self.update_player_skill(player_id, skill_id, target)
-                self.insert_log(player_id, skill_id, 'private', target)
+                await self.update_player_skill(player_id, skill_id, target)
+                await self.insert_log(player_id, skill_id, 'private', target)
             case 'heal':
                 target = random.choice(targets)
-                self.update_player_skill(player_id, skill_id, target)
-                self.insert_log(player_id, skill_id, 'private', target)
+                await self.update_player_skill(player_id, skill_id, target)
+                await self.insert_log(player_id, skill_id, 'private', target)
             case 'poison':
                 target = random.choice(targets)
-                self.update_player_skill(player_id, skill_id, target)
-                self.insert_log(player_id, skill_id, 'private', target)
+                await self.update_player_skill(player_id, skill_id, target)
+                await self.insert_log(player_id, skill_id, 'private', target)
             case 'shoot':
                 pass
             case 'shield':
                 target = random.choice(targets)
-                self.update_player_skill(player_id, skill_id, target)
-                self.insert_log(player_id, skill_id, 'private', target)
+                await self.update_player_skill(player_id, skill_id, target)
+                await self.insert_log(player_id, skill_id, 'private', target)
             case _:
                 raise NotImplementedError
+        return False
 
-    def verdict(self) -> None:
+    async def verdict(self) -> None:
         SQL = """
         SELECT faction, COUNT(*) FROM attribute
         WHERE game_id = ?
         GROUP BY faction;
         """
-        self.db.cursor.execute(SQL, (self.id,))
-        factions = self.db.cursor.fetchall()
+        async with Database.get_db() as db:
+            cursor = await db.execute(SQL, (self.id,))
+            factions = await cursor.fetchall()
 
         winner = ''
         for faction, count in factions:
@@ -354,7 +375,7 @@ class Game:
         print(factions)
         print(f'winner: {winner if winner else "none"}.')
 
-    def update_game(self) -> None:
+    async def update_game(self) -> None:
         SQL = """
         UPDATE games SET
             cycle = CASE WHEN phase = 'night' THEN cycle + 1 ELSE cycle END,
@@ -362,15 +383,17 @@ class Game:
         WHERE id = ?
         RETURNING cycle, phase;
         """
-        self.db.cursor.execute(SQL, (self.id,))
-        self.cycle, self.phase = self.db.cursor.fetchone()
+        async with Database.get_db() as db:
+            cursor = await db.execute(SQL, (self.id,))
+            self.cycle, self.phase = await cursor.fetchone()
 
-    def select_skill(self) -> list:
+    async def select_skill(self) -> list:
         SQL = """
         SELECT player_id, skill_id FROM player_skill WHERE game_id = ?;
         """
-        self.db.cursor.execute(SQL, (self.id,))
-        return self.db.cursor.fetchall()
+        async with Database.get_db() as db:
+            cursor = await db.execute(SQL, (self.id,))
+            return await cursor.fetchall()
 
     # def select_target(self, player_id: int, skill_id: str) -> int:
     #    SQL = """
@@ -379,17 +402,18 @@ class Game:
     #    self.db.cursor.execute(SQL, (self.id, player_id, skill_id))
     #    return self.db.cursor.fetchall()[0][0]
 
-    def update_player_skill(
+    async def update_player_skill(
         self, player_id: int, skill_id: str, target_id: int = 0
     ) -> None:
         SQL = """
         UPDATE player_skill SET target_id = ?, cycle = ? WHERE game_id = ? AND player_id = ? AND skill_id = ?;
         """
-        self.db.cursor.execute(
-            SQL, (target_id, self.cycle, self.id, player_id, skill_id)
-        )
+        async with Database.get_db() as db:
+            await db.execute(
+                SQL, (target_id, self.cycle, self.id, player_id, skill_id)
+            )
 
-    def insert_log(
+    async def insert_log(
         self,
         player_id: int,
         skill_id: str,
@@ -402,11 +426,12 @@ class Game:
         SELECT id, ?, ?, ? FROM player_skill
         WHERE game_id = ? AND player_id = ? AND skill_id = ?;
         """
-        self.db.cursor.execute(
-            SQL, (type_, target_id, comment, self.id, player_id, skill_id)
-        )
+        async with Database.get_db() as db:
+            await db.execute(
+                SQL, (type_, target_id, comment, self.id, player_id, skill_id)
+            )
 
-    def select_log(self, player_id: int, condition: bool = True) -> str:
+    async def select_log(self, player_id: int, condition: bool = True) -> str:
         SQL_WHERE = """
         AND (
             up.controller = 'system'
@@ -430,8 +455,9 @@ class Game:
         LEFT JOIN attribute at ON at.game_id = :gid AND at.player_id = l.target_id
         WHERE ps.game_id = :gid {SQL_WHERE if condition else ''};
         """
-        self.db.cursor.execute(SQL, {'gid': self.id, 'pid': player_id})
-        logs = self.db.cursor.fetchall()
+        async with Database.get_db() as db:
+            cursor = await db.execute(SQL, {'gid': self.id, 'pid': player_id})
+            logs = await cursor.fetchall()
 
         text = ''
         for (
@@ -449,22 +475,56 @@ class Game:
         return text.strip()
 
 
-db = Database()
+class Games:
+    def __init__(self):
+        self.games: dict[int, Game] = {}
 
-with db.conn:
-    try:
-        db.insert_user('me', 'human')
-        for name in random.sample(string.ascii_uppercase, 12):
-            db.insert_user(name, 'ai')
-    except sqlite3.Error as e:
-        pass
+    async def add_game(self) -> None:
+        game = Game()
+        await game.init_db()
+        self.games[game.id] = game
 
-game = Game(db)
+    async def gather_loop(self):
+        coros = [game.loop() for game in self.games.values()]
+        await asyncio.gather(*coros)
 
-with db.conn:
-    game.insert_log(1, 'speak', 'public', 0, 'Game begin.')
+    async def gather_add_ai(self):
+        coros = [
+            Database.insert_user(name, 'ai')
+            for name in random.sample(string.ascii_uppercase, 12)
+        ]
+        await asyncio.gather(*coros)
 
-game.loop()
+    async def gather_log(self):
+        coros = [game.select_log(1, False) for game in self.games.values()]
+        results = await asyncio.gather(*coros)
+        for result in results:
+            print(result)
 
-with db.conn:
-    print(game.select_log(1, False))
+
+class User(BaseModel):
+    name: str
+    controller: str
+
+
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    await Database.init_db()
+    games = Games()
+    await games.gather_add_ai()
+    await games.add_game()
+    await games.gather_loop()
+    await games.gather_log()
+    yield
+    print('App is shutting down.')
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+@app.post('/register')
+async def register_user(user: User) -> None:
+    await Database.insert_user(user.name, user.controller)
+
+
+uvicorn.run(app)
