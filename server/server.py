@@ -18,7 +18,7 @@ from typing import final, runtime_checkable
 
 
 import aiosqlite
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, responses, status
 from pydantic import BaseModel
 import uvicorn
 
@@ -188,13 +188,13 @@ class Database:
             await conn.execute(SQL, (name,))
 
     @staticmethod
-    async def select_user() -> list:
+    async def select_user(name: str) -> list:
         SQL = """
-        SELECT * FROM users;
+        SELECT name, controller FROM users WHERE name = ?;
         """
         async with Database.get_conn() as conn:
-            cursor = await conn.execute(SQL)
-            return await cursor.fetchall()
+            cursor = await conn.execute(SQL, (name,))
+            return await cursor.fetchone()
 
     @staticmethod
     async def update_user(name: str, win: bool) -> None:
@@ -538,19 +538,31 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.post('/register')
-async def register_user(user: User) -> dict:
+async def register(user: User) -> dict:
     try:
         await Database.insert_user(user.name, user.controller)
-        return {'name': user.name, 'controller': user.controller}
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                'status': 'error',
-                'message': str(e),
-                'suggestion': f'User {user.name} already exists',
-            },
+        return responses.JSONResponse(
+            'Registration successful', status_code=status.HTTP_201_CREATED
         )
+    except Exception as e:
+        name, controller = await Database.select_user(user.name)
+        if controller == user.controller:
+            return responses.JSONResponse(
+                'Login successful', status_code=status.HTTP_200_OK
+            )
+        else:
+            raise responses.JSONResponse(
+                f'User {user.name} already exists',
+                status.HTTP_401_UNAUTHORIZED,
+            )
 
 
-uvicorn.run(app)
+@app.post('/login')
+async def login():
+    return responses.RedirectResponse(
+        url='/register', status_code=status.HTTP_302_FOUND
+    )
+
+
+if __name__ == '__main__':
+    uvicorn.run(app)
