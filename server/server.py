@@ -542,26 +542,24 @@ async def register(user: User) -> dict:
     try:
         await Database.insert_user(user.name, user.controller)
         return responses.JSONResponse(
-            'Registration successful', status_code=status.HTTP_201_CREATED
+            'Registration successful', status.HTTP_201_CREATED
         )
     except Exception as e:
         name, controller = await Database.select_user(user.name)
         if controller == user.controller:
             return responses.JSONResponse(
-                'Login successful', status_code=status.HTTP_200_OK
+                'Login successful', status.HTTP_200_OK
             )
         else:
-            raise responses.JSONResponse(
+            return responses.JSONResponse(
                 f'User {user.name} already exists',
                 status.HTTP_401_UNAUTHORIZED,
             )
 
 
 @app.post('/login')
-async def login():
-    return responses.RedirectResponse(
-        url='/register', status_code=status.HTTP_302_FOUND
-    )
+async def login(user: User):
+    return responses.RedirectResponse(url='/register')
 
 
 if __name__ == '__main__':

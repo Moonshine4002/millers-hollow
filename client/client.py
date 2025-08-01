@@ -66,17 +66,19 @@ class MainWidget(QtWidgets.QWidget):
         self.user_controller = self.user_input_controller.text()
         data = {'name': self.user_name, 'controller': self.user_controller}
         try:
-            response = httpx.post('http://localhost:8000/register', json=data)
+            response = httpx.post(
+                'http://localhost:8000/login', json=data, follow_redirects=True
+            )
             response.raise_for_status()
             style_sheet = 'color: #00dd00;'
-            text = response.json()['message']
+            text = response.json()
         except httpx.HTTPStatusError as e:
             self.user_button.setEnabled(True)
             self.user_input_name.setEnabled(True)
             self.user_input_controller.setEnabled(True)
             if e.response.status_code == 401:
                 style_sheet = 'color: #dd0000;'
-                text = response.json()['detail']
+                text = response.json()
             else:
                 raise
         self.user_response.setStyleSheet(style_sheet)
