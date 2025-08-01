@@ -1,5 +1,5 @@
 import asyncio
-from collections import Counter, UserList, UserString
+import collections
 from collections.abc import AsyncGenerator, Callable, Generator, Iterable
 import contextlib
 from copy import copy, deepcopy
@@ -56,6 +56,20 @@ class Database:
                 print(f'Error: {e}')
                 await conn.rollback()
                 raise
+
+    @staticmethod
+    async def fetchall(cursor: aiosqlite.Cursor) -> list:
+        fetch = await cursor.fetchall()
+        if fetch is None:
+            return []
+        return list(fetch)
+
+    @staticmethod
+    async def fetchone(cursor: aiosqlite.Cursor) -> tuple:
+        fetch = await cursor.fetchone()
+        if fetch is None:
+            return ()
+        return tuple(fetch)
 
     @staticmethod
     async def init_db() -> None:
@@ -188,13 +202,13 @@ class Database:
             await conn.execute(SQL, (name,))
 
     @staticmethod
-    async def select_user(name: str) -> list:
+    async def select_user(name: str) -> tuple:
         SQL = """
-        SELECT name, controller FROM users WHERE name = ?;
+        SELECT id, name, controller FROM users WHERE name = ?;
         """
         async with Database.get_conn() as conn:
             cursor = await conn.execute(SQL, (name,))
-            return await cursor.fetchone()
+            return await Database.fetchone(cursor)
 
     @staticmethod
     async def update_user(name: str, win: bool) -> None:
@@ -213,20 +227,24 @@ class Game:
         self.id = 0
         self.system_speak_id = 0
 
-    async def init_db(self) -> None:
+    async def get_id(self) -> int:
         async with Database.get_conn() as conn:
             SQL = """
             INSERT INTO games DEFAULT VALUES;
             """
             await conn.execute(SQL)
             cursor = await conn.execute('SELECT last_insert_rowid()')
-            self.id = (await cursor.fetchone())[0]
+            fetch = await Database.fetchone(cursor)
+            self.id = fetch[0]
+            return self.id
 
+    async def init_db(self, player_ids=list[int]) -> None:
+        async with Database.get_conn() as conn:
             SQL = """
-            SELECT id FROM users WHERE controller != 'system';
+            SELECT id FROM users WHERE controller = 'ai';
             """
             cursor = await conn.execute(SQL)
-            players = await cursor.fetchall()
+            ais = await Database.fetchall(cursor)
 
             roles = [
                 'villager',
@@ -239,17 +257,23 @@ class Game:
                 'witch',
                 'hunter',
             ]
-            if len(players) < len(roles):
-                raise ValueError('not enough users')
+            ai_num = len(roles) - len(player_ids)
+            if ai_num < 0:
+                raise ValueError('Too many users')
+            elif ai_num > len(ais):
+                raise ValueError('Not enough users')
+            ais = random.sample(ais, ai_num)
+            for (ai_id,) in ais:
+                player_ids.append(ai_id)
 
             SQL = """
             INSERT INTO attribute (game_id, player_id, seat, role_id, faction) VALUES
             (?, ?, ?, ?, (SELECT faction FROM roles WHERE id = ?));
             """
             random.shuffle(roles)
-            random.shuffle(players)
-            for seat, ((player_id,), role_id) in enumerate(
-                zip(players, roles)
+            random.shuffle(player_ids)
+            for seat, (player_id, role_id) in enumerate(
+                zip(player_ids, roles)
             ):
                 await conn.execute(
                     SQL, (self.id, player_id, seat + 1, role_id, role_id)
@@ -261,7 +285,8 @@ class Game:
             """
             await conn.execute(SQL, (self.id,))
             cursor = await conn.execute('SELECT last_insert_rowid()')
-            self.system_speak_id = (await cursor.fetchone())[0]
+            fetch = await Database.fetchone(cursor)
+            self.system_speak_id = fetch[0]
 
             SQL = """
             INSERT INTO player_skill (game_id, player_id, skill_id)
@@ -384,7 +409,7 @@ class Game:
         """
         async with Database.get_conn() as conn:
             cursor = await conn.execute(SQL, (self.id,))
-            factions = await cursor.fetchall()
+            factions = await Database.fetchall(cursor)
 
         winner = ''
         for faction, count in factions:
@@ -405,7 +430,8 @@ class Game:
         """
         async with Database.get_conn() as conn:
             cursor = await conn.execute(SQL, (self.id,))
-            self.cycle, self.phase = await cursor.fetchone()
+            fetch = await Database.fetchone(cursor)
+            self.cycle, self.phase = fetch
 
     async def select_skill(self) -> list:
         SQL = """
@@ -413,7 +439,7 @@ class Game:
         """
         async with Database.get_conn() as conn:
             cursor = await conn.execute(SQL, (self.id,))
-            return await cursor.fetchall()
+            return await Database.fetchall(cursor)
 
     async def update_player_skill(
         self, player_id: int, skill_id: str, target_id: int = 0
@@ -472,7 +498,7 @@ class Game:
             cursor = await conn.execute(
                 SQL, {'gid': self.id, 'pid': player_id}
             )
-            logs = await cursor.fetchall()
+            logs = await Database.fetchall(cursor)
 
         text = ''
         for (
@@ -490,31 +516,44 @@ class Game:
         return text.strip()
 
 
-class Games:
-    def __init__(self):
-        self.games: dict[int, Game] = {}
+class Games(collections.UserDict[int, Game]):
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
+        self.player_ids: dict[int, list] = {}
 
-    async def add_game(self) -> None:
+    async def add_game(self) -> int:
         game = Game()
-        await game.init_db()
-        self.games[game.id] = game
+        game_id = await game.get_id()
+        self[game_id] = game
+        self.player_ids[game_id] = []
+        return game_id
+
+    async def add_player(self, game_id: int, player_id: int) -> None:
+        self.player_ids[game_id].append(player_id)
+
+    async def start_game(self, game_id: int) -> None:
+        game = self[game_id]
+        await game.init_db(self.player_ids[game_id])
 
     async def gather_loop(self):
-        coros = [game.loop() for game in self.games.values()]
+        coros = [game.loop() for game in self.values()]
         await asyncio.gather(*coros)
 
     async def gather_add_ai(self):
         coros = [
             Database.insert_user(name, 'ai', silent=True)
-            for name in random.sample(string.ascii_uppercase, 12)
+            for name in string.ascii_uppercase
         ]
         await asyncio.gather(*coros)
 
     async def gather_log(self):
-        coros = [game.select_log(1, False) for game in self.games.values()]
+        coros = [game.select_log(1, False) for game in self.values()]
         results = await asyncio.gather(*coros)
         for result in results:
             print(result)
+
+
+games = Games()
 
 
 class User(BaseModel):
@@ -522,44 +561,81 @@ class User(BaseModel):
     controller: str
 
 
+class Player(BaseModel):
+    name: str
+    game_id: int
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     await Database.init_db()
-    games = Games()
     await games.gather_add_ai()
-    await games.add_game()
-    await games.gather_loop()
-    await games.gather_log()
     yield
-    print('App is shutting down.')
 
 
 app = FastAPI(lifespan=lifespan)
 
 
 @app.post('/register')
-async def register(user: User) -> dict:
+async def register(user: User) -> responses.JSONResponse:
     try:
-        await Database.insert_user(user.name, user.controller)
-        return responses.JSONResponse(
-            'Registration successful', status.HTTP_201_CREATED
-        )
-    except Exception as e:
-        name, controller = await Database.select_user(user.name)
+        id_, name, controller = await Database.select_user(user.name)
         if controller == user.controller:
             return responses.JSONResponse(
-                'Login successful', status.HTTP_200_OK
+                {'id': id_, 'message': 'Login successful'}, status.HTTP_200_OK
             )
         else:
             return responses.JSONResponse(
-                f'User {user.name} already exists',
+                {'id': 0, 'message': f'User {user.name} already exists'},
                 status.HTTP_401_UNAUTHORIZED,
             )
+    except Exception as e:
+        await Database.insert_user(user.name, user.controller)
+        id_, name, controller = await Database.select_user(user.name)
+        return responses.JSONResponse(
+            {'id': id_, 'message': 'Registration successful'},
+            status.HTTP_201_CREATED,
+        )
 
 
 @app.post('/login')
-async def login(user: User):
+async def login(user: User) -> responses.RedirectResponse:
     return responses.RedirectResponse(url='/register')
+
+
+@app.post('/games')
+async def create() -> responses.JSONResponse:
+    game_id = await games.add_game()
+    return responses.JSONResponse(
+        {'game_id': game_id, 'message': 'Game created'},
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
+@app.post('/games/{game_id}/players/{player_id}')
+async def join(game_id: int, player_id: int) -> responses.JSONResponse:
+    if games.get(game_id):
+        await games.add_player(game_id, player_id)
+        return responses.JSONResponse(
+            'Join game successfully', status_code=status.HTTP_200_OK
+        )
+    else:
+        return responses.JSONResponse(
+            'Game do not exists', status_code=status.HTTP_404_NOT_FOUND
+        )
+
+
+@app.post('/games/{game_id}/start')
+async def start(game_id: int) -> responses.JSONResponse:
+    if games.get(game_id):
+        await games.start_game(game_id)
+        return responses.JSONResponse(
+            'Start game successfully', status_code=status.HTTP_200_OK
+        )
+    else:
+        return responses.JSONResponse(
+            'Game do not exists', status_code=status.HTTP_404_NOT_FOUND
+        )
 
 
 if __name__ == '__main__':
