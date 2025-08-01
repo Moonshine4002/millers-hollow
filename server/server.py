@@ -74,7 +74,7 @@ class Database:
     @staticmethod
     async def init_db() -> None:
         SQLS = """
-        CREATE TABLE IF NOT EXISTS users (
+        CREATE TABLE IF NOT EXISTS user (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
         controller TEXT NOT NULL,
@@ -83,19 +83,19 @@ class Database:
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
         ---
-        CREATE TABLE IF NOT EXISTS games (
+        CREATE TABLE IF NOT EXISTS game (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         cycle INTEGER DEFAULT 1,
         phase TEXT DEFAULT 'night',
         start TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         end TIMESTAMP);
         ---
-        CREATE TABLE IF NOT EXISTS roles (
+        CREATE TABLE IF NOT EXISTS role (
         id TEXT PRIMARY KEY,
         faction TEXT NOT NULL,
         description TEXT DEFAULT '');
         ---
-        CREATE TABLE IF NOT EXISTS skills (
+        CREATE TABLE IF NOT EXISTS skill (
         id TEXT PRIMARY KEY,
         link_id TEXT DEFAULT '',
         link_type TEXT DEFAULT '',
@@ -134,10 +134,10 @@ class Database:
         type TEXT NOT NULL,
         comment TEXT DEFAULT '');
         ---
-        INSERT OR IGNORE INTO users (name, controller) VALUES
+        INSERT OR IGNORE INTO user (name, controller) VALUES
         ('Moderator', 'system');
         ---
-        INSERT OR IGNORE INTO roles (id, faction) VALUES
+        INSERT OR IGNORE INTO role (id, faction) VALUES
         ('villager', 'human'),
         ('werewolf', 'werewolf'),
         ('seer', 'god'),
@@ -145,7 +145,7 @@ class Database:
         ('hunter', 'god'),
         ('guard', 'god');
         ---
-        INSERT OR IGNORE INTO skills (id, link_id, link_type) VALUES
+        INSERT OR IGNORE INTO skill (id, link_id, link_type) VALUES
         ('vote', '', ''),
         ('speak', '', ''),
         ('kill', '', ''),
@@ -182,7 +182,7 @@ class Database:
     @staticmethod
     async def insert_user(name: str, controller: str, silent=False) -> None:
         SQL = """
-        INSERT INTO users (name, controller) VALUES (?, ?);
+        INSERT INTO user (name, controller) VALUES (?, ?);
         """
         try:
             async with Database.get_conn() as conn:
@@ -196,7 +196,7 @@ class Database:
     @staticmethod
     async def delete_user(name: str) -> None:
         SQL = """
-        DELETE FROM users WHERE name = ?;
+        DELETE FROM user WHERE name = ?;
         """
         async with Database.get_conn() as conn:
             await conn.execute(SQL, (name,))
@@ -204,7 +204,7 @@ class Database:
     @staticmethod
     async def select_user(name: str) -> tuple:
         SQL = """
-        SELECT id, name, controller FROM users WHERE name = ?;
+        SELECT id, name, controller FROM user WHERE name = ?;
         """
         async with Database.get_conn() as conn:
             cursor = await conn.execute(SQL, (name,))
@@ -213,7 +213,7 @@ class Database:
     @staticmethod
     async def update_user(name: str, win: bool) -> None:
         SQL = """
-        UPDATE users SET total_games = total_games + 1, wins = wins + ?
+        UPDATE user SET total_games = total_games + 1, wins = wins + ?
         WHERE name = ?;
         """
         async with Database.get_conn() as conn:
@@ -230,7 +230,7 @@ class Game:
     async def get_id(self) -> int:
         async with Database.get_conn() as conn:
             SQL = """
-            INSERT INTO games DEFAULT VALUES;
+            INSERT INTO game DEFAULT VALUES;
             """
             await conn.execute(SQL)
             cursor = await conn.execute('SELECT last_insert_rowid()')
@@ -241,7 +241,7 @@ class Game:
     async def init_db(self, player_ids=list[int]) -> None:
         async with Database.get_conn() as conn:
             SQL = """
-            SELECT id FROM users WHERE controller = 'ai';
+            SELECT id FROM user WHERE controller = 'ai';
             """
             cursor = await conn.execute(SQL)
             ais = await Database.fetchall(cursor)
@@ -259,16 +259,16 @@ class Game:
             ]
             ai_num = len(roles) - len(player_ids)
             if ai_num < 0:
-                raise ValueError('Too many users')
+                raise ValueError('Too many user')
             elif ai_num > len(ais):
-                raise ValueError('Not enough users')
+                raise ValueError('Not enough user')
             ais = random.sample(ais, ai_num)
             for (ai_id,) in ais:
                 player_ids.append(ai_id)
 
             SQL = """
             INSERT INTO attribute (game_id, player_id, seat, role_id, faction) VALUES
-            (?, ?, ?, ?, (SELECT faction FROM roles WHERE id = ?));
+            (?, ?, ?, ?, (SELECT faction FROM role WHERE id = ?));
             """
             random.shuffle(roles)
             random.shuffle(player_ids)
@@ -298,7 +298,7 @@ class Game:
 
             SQL = """
             UPDATE player_skill AS ps1 SET link_id =
-            ps2.id FROM skills s, player_skill ps2
+            ps2.id FROM skill s, player_skill ps2
             WHERE ps1.game_id = ? AND s.id = ps1.skill_id
             AND ps2.game_id = ps1.game_id AND ps2.player_id = ps1.player_id
             AND ps2.skill_id = s.link_id;
@@ -422,7 +422,7 @@ class Game:
 
     async def update_game(self) -> None:
         SQL = """
-        UPDATE games SET
+        UPDATE game SET
             cycle = CASE WHEN phase = 'night' THEN cycle + 1 ELSE cycle END,
             phase = CASE WHEN phase = 'night' THEN 'day' ELSE 'night' END
         WHERE id = ?
@@ -432,6 +432,16 @@ class Game:
             cursor = await conn.execute(SQL, (self.id,))
             fetch = await Database.fetchone(cursor)
             self.cycle, self.phase = fetch
+
+    async def select_player(self) -> list:
+        SQL = """
+        SELECT u.name, a.seat, a.life FROM attribute a
+        JOIN user u ON u.id = a.player_id
+        WHERE game_id = ?;
+        """
+        async with Database.get_conn() as conn:
+            cursor = await conn.execute(SQL, (self.id,))
+            return await Database.fetchall(cursor)
 
     async def select_skill(self) -> list:
         SQL = """
@@ -488,9 +498,9 @@ class Game:
         SELECT up.name, ap.seat, ps.skill_id, ut.name, at.seat, l.comment
         FROM log l
         JOIN player_skill ps ON ps.id = l.player_skill_id
-        LEFT JOIN users up ON up.id = ps.player_id
+        LEFT JOIN user up ON up.id = ps.player_id
         LEFT JOIN attribute ap ON ap.game_id = :gid AND ap.player_id = ps.player_id
-        LEFT JOIN users ut ON ut.id = l.target_id
+        LEFT JOIN user ut ON ut.id = l.target_id
         LEFT JOIN attribute at ON at.game_id = :gid AND at.player_id = l.target_id
         WHERE ps.game_id = :gid {SQL_WHERE if condition else ''};
         """
@@ -631,6 +641,20 @@ async def start(game_id: int) -> responses.JSONResponse:
         await games.start_game(game_id)
         return responses.JSONResponse(
             'Start game successfully', status_code=status.HTTP_200_OK
+        )
+    else:
+        return responses.JSONResponse(
+            'Game do not exists', status_code=status.HTTP_404_NOT_FOUND
+        )
+
+
+@app.get('/games/{game_id}/stats/players')
+async def stats_players(game_id: int) -> responses.JSONResponse:
+    if games.get(game_id):
+        players = await games[game_id].select_player()
+        return responses.JSONResponse(
+            {'stats': players, 'message': 'Start game successfully'},
+            status_code=status.HTTP_200_OK,
         )
     else:
         return responses.JSONResponse(

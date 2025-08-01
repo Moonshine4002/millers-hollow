@@ -12,6 +12,7 @@ class MainWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.player_id = 0
+        self.room = 0
 
         SPACING = 10
         MINIMUM_WIDTH = 100
@@ -56,7 +57,16 @@ class MainWidget(QtWidgets.QWidget):
         self.user = QtWidgets.QGroupBox('user')
         self.user.setLayout(self.user_form)
 
+        self.player_table = QtWidgets.QTableWidget()
+        self.player_table.setRowCount(9)
+        self.player_table.setColumnCount(3)
+        self.player_table.setHorizontalHeaderLabels(['Name', 'Seat', 'Life'])
+        self.player_button = QtWidgets.QPushButton('refresh')
+        self.player_button.clicked.connect(self.button_refresh)
+
         self.player_form = QtWidgets.QFormLayout()
+        self.player_form.addRow(self.player_table)
+        self.player_form.addRow(self.player_button)
 
         self.player = QtWidgets.QGroupBox('player')
         self.player.setLayout(self.player_form)
@@ -82,6 +92,7 @@ class MainWidget(QtWidgets.QWidget):
         self.h_layout.addLayout(self.l_layout)
         self.h_layout.addLayout(self.r_layout)
 
+    @QtCore.Slot()
     def button_login(self) -> None:
         self.user_verification.setEnabled(False)
         self.user_input_name.setEnabled(False)
@@ -116,9 +127,11 @@ class MainWidget(QtWidgets.QWidget):
         self.user_status.setStyleSheet(self.STYLE_SHEET[sytle_sheet_key])
         self.user_status.setText(text)
 
+    @QtCore.Slot()
     def button_register(self) -> None:
         self.button_login()
 
+    @QtCore.Slot()
     def button_join(self) -> None:
         self.user_input_room.setEnabled(False)
         self.user_button_join.setEnabled(False)
@@ -149,6 +162,7 @@ class MainWidget(QtWidgets.QWidget):
         self.user_game_status.setStyleSheet(self.STYLE_SHEET[sytle_sheet_key])
         self.user_game_status.setText(text)
 
+    @QtCore.Slot()
     def button_create(self) -> None:
         self.user_input_room.setEnabled(False)
         self.user_button_join.setEnabled(False)
@@ -156,7 +170,6 @@ class MainWidget(QtWidgets.QWidget):
         try:
             response = httpx.post(f'http://localhost:8000/games')
             response.raise_for_status()
-            print(response.json())
             self.room = response.json()['game_id']
             success = True
             text = 'success'
@@ -180,6 +193,7 @@ class MainWidget(QtWidgets.QWidget):
         if success:
             self.button_join()
 
+    @QtCore.Slot()
     def button_start(self) -> None:
         self.user_button_start.setEnabled(False)
         try:
@@ -205,6 +219,20 @@ class MainWidget(QtWidgets.QWidget):
             self.user_button_start.setEnabled(True)
         self.user_game_status.setStyleSheet(self.STYLE_SHEET[sytle_sheet_key])
         self.user_game_status.setText(text)
+
+    @QtCore.Slot()
+    def button_refresh(self) -> None:
+        response = httpx.get(
+            f'http://localhost:8000/games/{self.room}/stats/players'
+        )
+        response.raise_for_status()
+        for name, seat, life in response.json()['stats']:
+            item_name = QtWidgets.QTableWidgetItem(name)
+            item_seat = QtWidgets.QTableWidgetItem(str(seat))
+            item_life = QtWidgets.QTableWidgetItem(str(life))
+            self.player_table.setItem(seat - 1, 0, item_name)
+            self.player_table.setItem(seat - 1, 1, item_seat)
+            self.player_table.setItem(seat - 1, 2, item_life)
 
 
 class MainWindow(QtWidgets.QMainWindow):
