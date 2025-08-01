@@ -4,6 +4,11 @@ from PySide6 import QtCore, QtWidgets, QtGui
 
 
 class MainWidget(QtWidgets.QWidget):
+    STYLE_SHEET = {
+        'success': 'color: #00dd00;',
+        'error': 'color: #dd0000;',
+    }
+
     def __init__(self):
         super().__init__()
 
@@ -70,18 +75,22 @@ class MainWidget(QtWidgets.QWidget):
                 'http://localhost:8000/login', json=data, follow_redirects=True
             )
             response.raise_for_status()
-            style_sheet = 'color: #00dd00;'
+            success = True
             text = response.json()
         except httpx.HTTPStatusError as e:
+            success = False
+            text = response.json()
+        except Exception as e:
+            success = False
+            text = f'Error: {e}'
+        if success:
+            sytle_sheet_key = 'success'
+        else:
+            sytle_sheet_key = 'error'
             self.user_button.setEnabled(True)
             self.user_input_name.setEnabled(True)
             self.user_input_controller.setEnabled(True)
-            if e.response.status_code == 401:
-                style_sheet = 'color: #dd0000;'
-                text = response.json()
-            else:
-                raise
-        self.user_response.setStyleSheet(style_sheet)
+        self.user_response.setStyleSheet(self.STYLE_SHEET[sytle_sheet_key])
         self.user_response.setText(text)
 
     def login(self) -> None:
