@@ -226,6 +226,8 @@ class Game:
         self.phase = 'night'
         self.id = 0
         self.system_speak_id = 0
+        self.player_ids: list[int] = []
+        self.started = False
 
     async def get_id(self) -> int:
         async with Database.get_conn() as conn:
@@ -238,7 +240,7 @@ class Game:
             self.id = fetch[0]
             return self.id
 
-    async def init_db(self, player_ids=list[int]) -> None:
+    async def init_db(self) -> None:
         async with Database.get_conn() as conn:
             SQL = """
             SELECT id FROM user WHERE controller = 'ai';
@@ -257,23 +259,23 @@ class Game:
                 'witch',
                 'hunter',
             ]
-            ai_num = len(roles) - len(player_ids)
+            ai_num = len(roles) - len(self.player_ids)
             if ai_num < 0:
                 raise ValueError('Too many user')
             elif ai_num > len(ais):
                 raise ValueError('Not enough user')
             ais = random.sample(ais, ai_num)
             for (ai_id,) in ais:
-                player_ids.append(ai_id)
+                self.player_ids.append(ai_id)
 
             SQL = """
             INSERT INTO attribute (game_id, player_id, seat, role_id, faction) VALUES
             (?, ?, ?, ?, (SELECT faction FROM role WHERE id = ?));
             """
             random.shuffle(roles)
-            random.shuffle(player_ids)
+            random.shuffle(self.player_ids)
             for seat, (player_id, role_id) in enumerate(
-                zip(player_ids, roles)
+                zip(self.player_ids, roles)
             ):
                 await conn.execute(
                     SQL, (self.id, player_id, seat + 1, role_id, role_id)
@@ -529,21 +531,26 @@ class Game:
 class Games(collections.UserDict[int, Game]):
     def __init__(self, *args) -> None:
         super().__init__(*args)
-        self.player_ids: dict[int, list] = {}
 
     async def add_game(self) -> int:
         game = Game()
         game_id = await game.get_id()
         self[game_id] = game
-        self.player_ids[game_id] = []
         return game_id
 
-    async def add_player(self, game_id: int, player_id: int) -> None:
-        self.player_ids[game_id].append(player_id)
+    async def add_player(self, game_id: int, player_id: int) -> bool:
+        game = self[game_id]
+        if game.started:
+            return False
+        if player_id in game.player_ids:
+            return True
+        game.player_ids.append(player_id)
+        return True
 
     async def start_game(self, game_id: int) -> None:
         game = self[game_id]
-        await game.init_db(self.player_ids[game_id])
+        game.started = True
+        await game.init_db()
 
     async def gather_loop(self):
         coros = [game.loop() for game in self.values()]
@@ -625,10 +632,15 @@ async def create() -> responses.JSONResponse:
 @app.post('/games/{game_id}/players/{player_id}')
 async def join(game_id: int, player_id: int) -> responses.JSONResponse:
     if games.get(game_id):
-        await games.add_player(game_id, player_id)
-        return responses.JSONResponse(
-            'Join game successfully', status_code=status.HTTP_200_OK
-        )
+        success = await games.add_player(game_id, player_id)
+        if success:
+            return responses.JSONResponse(
+                'Join game successfully', status_code=status.HTTP_200_OK
+            )
+        else:
+            return responses.JSONResponse(
+                'Game started', status_code=status.HTTP_409_CONFLICT
+            )
     else:
         return responses.JSONResponse(
             'Game do not exists', status_code=status.HTTP_404_NOT_FOUND
@@ -651,11 +663,16 @@ async def start(game_id: int) -> responses.JSONResponse:
 @app.get('/games/{game_id}/stats/players')
 async def stats_players(game_id: int) -> responses.JSONResponse:
     if games.get(game_id):
-        players = await games[game_id].select_player()
-        return responses.JSONResponse(
-            {'stats': players, 'message': 'Start game successfully'},
-            status_code=status.HTTP_200_OK,
-        )
+        if games[game_id].started:
+            players = await games[game_id].select_player()
+            return responses.JSONResponse(
+                {'stats': players, 'message': 'Start game successfully'},
+                status_code=status.HTTP_200_OK,
+            )
+        else:
+            return responses.JSONResponse(
+                'NotImplemented', status_code=status.HTTP_501_NOT_IMPLEMENTED
+            )
     else:
         return responses.JSONResponse(
             'Game do not exists', status_code=status.HTTP_404_NOT_FOUND

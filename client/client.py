@@ -1,6 +1,7 @@
-import httpx
 import sys
+
 from PySide6 import QtCore, QtWidgets, QtGui
+import httpx
 
 
 class MainWidget(QtWidgets.QWidget):
@@ -28,14 +29,14 @@ class MainWidget(QtWidgets.QWidget):
         self.user_input_room = QtWidgets.QLineEdit()
         self.user_input_room.setEnabled(False)
         self.user_button_join = QtWidgets.QPushButton('join')
-        self.user_button_join.setEnabled(False)
         self.user_button_join.clicked.connect(self.button_join)
+        self.user_button_join.setEnabled(False)
         self.user_button_create = QtWidgets.QPushButton('create')
-        self.user_button_create.setEnabled(False)
         self.user_button_create.clicked.connect(self.button_create)
+        self.user_button_create.setEnabled(False)
         self.user_button_start = QtWidgets.QPushButton('start')
-        self.user_button_start.setEnabled(False)
         self.user_button_start.clicked.connect(self.button_start)
+        self.user_button_start.setEnabled(False)
         self.user_game_status = QtWidgets.QLabel('')
 
         self.user_room = QtWidgets.QHBoxLayout()
@@ -63,6 +64,7 @@ class MainWidget(QtWidgets.QWidget):
         self.player_table.setHorizontalHeaderLabels(['Name', 'Seat', 'Life'])
         self.player_button = QtWidgets.QPushButton('refresh')
         self.player_button.clicked.connect(self.button_refresh)
+        self.player_button.setEnabled(False)
 
         self.player_form = QtWidgets.QFormLayout()
         self.player_form.addRow(self.player_table)
@@ -154,6 +156,7 @@ class MainWidget(QtWidgets.QWidget):
             text = f'Error: {e}'
         if success:
             sytle_sheet_key = 'success'
+            self.player_button.setEnabled(True)
         else:
             sytle_sheet_key = 'error'
             self.user_input_room.setEnabled(True)
@@ -222,17 +225,24 @@ class MainWidget(QtWidgets.QWidget):
 
     @QtCore.Slot()
     def button_refresh(self) -> None:
-        response = httpx.get(
-            f'http://localhost:8000/games/{self.room}/stats/players'
-        )
-        response.raise_for_status()
-        for name, seat, life in response.json()['stats']:
-            item_name = QtWidgets.QTableWidgetItem(name)
-            item_seat = QtWidgets.QTableWidgetItem(str(seat))
-            item_life = QtWidgets.QTableWidgetItem(str(life))
-            self.player_table.setItem(seat - 1, 0, item_name)
-            self.player_table.setItem(seat - 1, 1, item_seat)
-            self.player_table.setItem(seat - 1, 2, item_life)
+        self.user_button_start.setEnabled(False)
+        try:
+            response = httpx.get(
+                f'http://localhost:8000/games/{self.room}/stats/players'
+            )
+            response.raise_for_status()
+            for name, seat, life in response.json()['stats']:
+                item_name = QtWidgets.QTableWidgetItem(name)
+                item_seat = QtWidgets.QTableWidgetItem(str(seat))
+                item_life = QtWidgets.QTableWidgetItem(str(life))
+                self.player_table.setItem(seat - 1, 0, item_name)
+                self.player_table.setItem(seat - 1, 1, item_seat)
+                self.player_table.setItem(seat - 1, 2, item_life)
+        except httpx.HTTPStatusError as e:
+            print(response.json())
+        except Exception as e:
+            print(f'Error: {e}')
+        self.user_button_start.setEnabled(True)
 
 
 class MainWindow(QtWidgets.QMainWindow):
