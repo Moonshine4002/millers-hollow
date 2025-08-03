@@ -62,8 +62,10 @@ class MainWidget(QtWidgets.QWidget):
         # player
         self.player_table = QtWidgets.QTableWidget()
         self.player_table.setRowCount(9)
-        self.player_table.setColumnCount(3)
-        self.player_table.setHorizontalHeaderLabels(['Name', 'Seat', 'Life'])
+        self.player_table.setColumnCount(4)
+        self.player_table.setHorizontalHeaderLabels(
+            ['ID', 'Name', 'Role', 'Life']
+        )
         self.player_button = QtWidgets.QPushButton('refresh')
         self.player_button.clicked.connect(self.button_stats_player)
         self.player_button.setEnabled(False)
@@ -246,16 +248,20 @@ class MainWidget(QtWidgets.QWidget):
         self.player_button.setEnabled(False)
         try:
             response = httpx.get(
-                f'http://localhost:8000/games/{self.room}/stats/player'
+                f'http://localhost:8000/games/{self.room}/players/{self.player_id}/stats/player'
             )
             response.raise_for_status()
-            for name, seat, life in response.json()['stats']:
+            for id_, (name, controller, seat, role, life) in response.json()[
+                'stats'
+            ].items():
+                item_id = QtWidgets.QTableWidgetItem(str(id_))
                 item_name = QtWidgets.QTableWidgetItem(name)
-                item_seat = QtWidgets.QTableWidgetItem(str(seat))
+                item_role = QtWidgets.QTableWidgetItem(role)
                 item_life = QtWidgets.QTableWidgetItem(str(life))
-                self.player_table.setItem(seat - 1, 0, item_name)
-                self.player_table.setItem(seat - 1, 1, item_seat)
-                self.player_table.setItem(seat - 1, 2, item_life)
+                self.player_table.setItem(seat - 1, 0, item_id)
+                self.player_table.setItem(seat - 1, 1, item_name)
+                self.player_table.setItem(seat - 1, 2, item_role)
+                self.player_table.setItem(seat - 1, 3, item_life)
         except httpx.HTTPStatusError as e:
             print(response.json())
         except Exception as e:
@@ -267,7 +273,7 @@ class MainWidget(QtWidgets.QWidget):
         self.log_button.setEnabled(False)
         try:
             response = httpx.get(
-                f'http://localhost:8000/games/{self.room}/stats/log/players/{self.player_id}'
+                f'http://localhost:8000/games/{self.room}/players/{self.player_id}/stats/log'
             )
             response.raise_for_status()
             self.log_text.setText(response.json()['stats'])

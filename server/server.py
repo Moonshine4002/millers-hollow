@@ -288,7 +288,7 @@ class Game:
             SQL = """
             INSERT OR IGNORE INTO player_skill (game_id, player_id, skill_id) VALUES
             (?, 1, 'speak');
-            """
+            """   # TODO: find Moderator
             await conn.execute(SQL, (self.id,))
             cursor = await conn.execute('SELECT last_insert_rowid()')
             fetch = await Database.fetchone(cursor)
@@ -358,35 +358,49 @@ class Game:
 
         await self.update_game()
 
-    async def player(self, player_id: int, skill_ids: list[str]) -> None:
-        (name, controller, seat, role_id) = await self.select_player(player_id)
+    async def player(self, self_id: int, skill_ids: list[str]) -> None:
+        player_dict = await self.select_players(self_id)
+        (
+            self_name,
+            self_controller,
+            self_seat,
+            self_role,
+            self_life,
+        ) = player_dict[self_id]
         async with Database.get_conn() as conn:
             while skill_ids:
-                if controller == 'ai':
-                    log = await self.select_log(player_id)
-                    role_info = f'name: {name}, role: {role_id}, seat: {seat}'
+                if self_controller == 'ai':
+                    log = await self.select_log(self_id)
+                    player_infos = ''
+                    for id_, (
+                        name,
+                        controller,
+                        seat,
+                        role,
+                        life,
+                    ) in player_dict.items():
+                        player_infos += f'id: {id_}, name: {name}, seat: {seat}, role: {role}, life: {life}'
                     output = await input_ai(
                         'deepseek-chat',
-                        role_info,
+                        player_infos,
                         skill_ids,
-                        list(range(0, 10)),
+                        list(range(0, 10)),  # TODO: valid targets
                         log,
                     )
                     if await self.player_skill(
                         conn,
-                        player_id,
+                        self_id,
                         skill_ids,
                         output['skill'],
                         output['target'],
                         output['speech'],
                     ):
                         break
-                elif controller == 'random':
-                    random.shuffle(skill_ids)
-                    skill_id = skill_ids.pop()
+                elif self_controller == 'random':
+                    skill_id = random.choice(skill_ids)
                     target = random.randrange(0, 10)
                     if await self.player_skill(
-                        conn, player_id, skill_ids, skill_id, target
+                        conn, self_id, skill_ids, skill_id, target
                     ):
                         break
                 else:
@@ -401,6 +415,7 @@ class Game:
         target: int = 0,
         comment: str = '',
     ) -> bool:
+        skill_ids.remove(skill_id)
         match skill_id:
             case 'vote':
                 await self.update_skill(player_id, skill_id, target)
@@ -426,7 +441,7 @@ class Game:
                 await self.insert_log(
                     player_id, skill_id, 'private', target, comment
                 )
-                return True
+                return True   # TODO: use link
             case 'poison':
                 await self.update_skill(player_id, skill_id, target)
                 await self.insert_log(
@@ -499,25 +514,26 @@ class Game:
             fetch = await Database.fetchone(cursor)
             self.cycle, self.phase = fetch
 
-    async def select_players(self) -> list:
+    async def select_players(self, player_id: int) -> dict:
         SQL = """
-        SELECT u.name, a.seat, a.life FROM attribute a
+        SELECT a.player_id, u.name, u.controller, a.seat, a.role_id, a.life FROM attribute a
         JOIN user u ON u.id = a.player_id
         WHERE a.game_id = ?;
         """
         async with Database.get_conn() as conn:
             cursor = await conn.execute(SQL, (self.id,))
-            return await Database.fetchall(cursor)
+            players = await Database.fetchall(cursor)
 
-    async def select_player(self, player_id: int) -> tuple:
-        SQL = """
-        SELECT u.name, u.controller, a.seat, a.role_id FROM attribute a
-        JOIN user u ON u.id = a.player_id
-        WHERE a.game_id = ? AND a.player_id = ?;
-        """
-        async with Database.get_conn() as conn:
-            cursor = await conn.execute(SQL, (self.id, player_id))
-            return await Database.fetchone(cursor)
+        # TODO: filter known info
+        player_dict = {}
+        for id_, name, controller, seat, role, life in players:
+            player_dict[id_] = (name, controller, seat, role, life)
+        for id_, (name, controller, seat, role, life) in player_dict.items():
+            if role != player_dict[player_id]:
+                role = 'unknown'
+                life = 'unknown'
+                player_dict[id_] = (name, controller, seat, role, life)
+        return player_dict
 
     async def select_skill(self) -> list:
         SQL = """
@@ -751,11 +767,11 @@ async def start(
         )
 
 
-@app.get('/games/{game_id}/stats/player')
-async def stats_player(game_id: int) -> responses.JSONResponse:
+@app.get('/games/{game_id}/players/{player_id}/stats/player')
+async def stats_player(game_id: int, player_id: int) -> responses.JSONResponse:
     if games.get(game_id):
         if games[game_id].started:
-            players = await games[game_id].select_players()
+            players = await games[game_id].select_players(player_id)
             return responses.JSONResponse(
                 {'stats': players, 'message': 'Start game successfully'},
                 status_code=status.HTTP_200_OK,
@@ -770,7 +786,7 @@ async def stats_player(game_id: int) -> responses.JSONResponse:
         )
 
 
-@app.get('/games/{game_id}/stats/log/players/{player_id}')
+@app.get('/games/{game_id}/players/{player_id}/stats/log')
 async def stats_log(game_id: int, player_id: int) -> responses.JSONResponse:
     if games.get(game_id):
         if games[game_id].started:

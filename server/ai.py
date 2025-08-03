@@ -58,8 +58,8 @@ Output format:
 - Output using "{language}".
 - Please reply strictly according to this JSON format:
 {json_format}
-Your role:
-{role}
+Players:
+{players}
 Available skills:
 {skills}
 Game log:
@@ -68,12 +68,12 @@ Game log:
 
 
 async def input_ai(
-    model: str, role: str, skills: list[str], targets: list[int], log: str
+    model: str, players: str, skills: list[str], targets: list[int], log: str
 ) -> dict:
     input_ = frame.format(
         language=language,
         json_format=json_format,
-        role=role,
+        players=players,
         skills=skills,
         log=log,
     )
