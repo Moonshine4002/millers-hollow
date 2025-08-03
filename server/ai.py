@@ -1,13 +1,11 @@
 from configparser import ConfigParser
-import json
 import re
-from typing_extensions import Annotated
 
 from openai import OpenAI, AsyncOpenAI
 from openai.types.chat.chat_completion_message_param import (
     ChatCompletionMessageParam,
 )
-from pydantic import BaseModel, RootModel, AfterValidator
+from pydantic import BaseModel
 
 config = ConfigParser()
 config.read('./config.ini', encoding='utf-8')
@@ -27,32 +25,20 @@ async_client = AsyncOpenAI(
     base_url=base_url,
 )
 
-# def target_validation(value:int, options:list[int]) -> int:
-#    if value not in options:
-#        raise ValueError("Value is not valid")
-#    return value
 
-
-class JsonFormatSub(BaseModel):
-    # target: Annotated[int , AfterValidator(target_validation)]
+class JsonFormat(BaseModel):
+    skill: str
     target: int
     speech: str
     reason: str
 
 
-class JsonFormat(RootModel):
-    root: dict[str, JsonFormatSub]
-
-
 json_format = """
 {
-    "Your chosen skill (replace)" : {
-    "target": An integer seat number if needed (or ignored),
-    "speech": "A public speech if needed (or ignored)",
-    "reason": "Your skill choice (which will not be public)"
-    },
-    "Your second chosen skill (if able to)" : {...},
-    ...
+    "skill": "Your chosen skill",
+    "target": An integer seat number if needed (input 0 if ignored),
+    "speech": "A public speech if needed (input "" if ignored)",
+    "reason": "Your reasoning (which will not be public)"
 }
 """
 
@@ -122,12 +108,11 @@ async def parse(content: str, skills: list[str], targets: list[int]) -> dict:
     matches: list[str] = re.findall(r'\{.*\}', content, re.DOTALL)
     if len(matches) != 1:
         raise ValueError(f'Got {len(matches)} matches')
-    try:
-        output: dict = JsonFormat.model_validate_json(matches[0]).model_dump()
-    except json.JSONDecodeError:
-        raise ValueError('Invalid JSON format')
-    if not all(key in skills for key in output.keys()):
+    output: dict = JsonFormat.model_validate_json(matches[0]).model_dump()
+    if output['skill'] not in skills:
         raise ValueError(f'Invalid JSON format: chosen skill beyond {skills}')
-    if not all(value['target'] in targets for value in output.values()):
-        raise ValueError(f'Invalid JSON format: key beyond {targets}')
+    if output['target'] not in targets:
+        raise ValueError(
+            f'Invalid JSON format: chosen target beyond {targets}'
+        )
     return output

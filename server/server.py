@@ -17,7 +17,7 @@ from typing import final, runtime_checkable
 
 
 import aiosqlite
-from fastapi import FastAPI, responses, status
+from fastapi import FastAPI, BackgroundTasks, responses, status
 from pydantic import BaseModel
 import uvicorn
 
@@ -361,41 +361,42 @@ class Game:
     async def player(self, player_id: int, skill_ids: list[str]) -> None:
         (name, controller, seat, role_id) = await self.select_player(player_id)
         async with Database.get_conn() as conn:
-            if controller == 'ai':
-                log = await self.select_log(player_id)
-                role_info = f'name: {name}, role: {role_id}, seat: {seat}'
-                output = await input_ai(
-                    'deepseek-chat',
-                    role_info,
-                    skill_ids,
-                    list(range(1, 10)),
-                    log,
-                )
-                for skill_id, value in output.items():
+            while skill_ids:
+                if controller == 'ai':
+                    log = await self.select_log(player_id)
+                    role_info = f'name: {name}, role: {role_id}, seat: {seat}'
+                    output = await input_ai(
+                        'deepseek-chat',
+                        role_info,
+                        skill_ids,
+                        list(range(0, 10)),
+                        log,
+                    )
                     if await self.player_skill(
                         conn,
                         player_id,
-                        skill_id,
-                        value['target'],
-                        value['speech'],
+                        skill_ids,
+                        output['skill'],
+                        output['target'],
+                        output['speech'],
                     ):
                         break
-            elif controller == 'random':
-                random.shuffle(skill_ids)
-                while skill_ids:
+                elif controller == 'random':
+                    random.shuffle(skill_ids)
                     skill_id = skill_ids.pop()
-                    target = random.randrange(1, 10)
+                    target = random.randrange(0, 10)
                     if await self.player_skill(
-                        conn, player_id, skill_id, target
+                        conn, player_id, skill_ids, skill_id, target
                     ):
                         break
-            else:
-                await asyncio.Event().wait()
+                else:
+                    await asyncio.Event().wait()
 
     async def player_skill(
         self,
         conn: aiosqlite.Connection,
         player_id: int,
+        skill_ids: list[str],
         skill_id: str,
         target: int = 0,
         comment: str = '',
@@ -425,11 +426,13 @@ class Game:
                 await self.insert_log(
                     player_id, skill_id, 'private', target, comment
                 )
+                return True
             case 'poison':
                 await self.update_skill(player_id, skill_id, target)
                 await self.insert_log(
                     player_id, skill_id, 'private', target, comment
                 )
+                return True
             case 'shoot':
                 pass
             case 'shield':
@@ -632,20 +635,23 @@ class Games(collections.UserDict[int, Game]):
         game = self[game_id]
         game.started = True
         await game.init_db()
+
+    async def start_game_loop(self, game_id: int) -> None:
+        game = self[game_id]
         await game.loop()
 
-    async def gather_loop(self):
+    async def gather_loop(self) -> None:
         coros = [game.loop() for game in self.values()]
         await asyncio.gather(*coros)
 
-    async def gather_add_ai(self):
+    async def gather_add_ai(self) -> None:
         coros = [
             Database.insert_user(name, 'ai', silent=True)
             for name in string.ascii_uppercase
         ]
         await asyncio.gather(*coros)
 
-    async def gather_log(self):
+    async def gather_log(self) -> None:
         coros = [game.select_log(0) for game in self.values()]
         results = await asyncio.gather(*coros)
         for result in results:
@@ -730,9 +736,12 @@ async def join(game_id: int, player_id: int) -> responses.JSONResponse:
 
 
 @app.post('/games/{game_id}/start')
-async def start(game_id: int) -> responses.JSONResponse:
+async def start(
+    game_id: int, background_tasks: BackgroundTasks
+) -> responses.JSONResponse:
     if games.get(game_id):
         await games.start_game(game_id)
+        background_tasks.add_task(games.start_game_loop, game_id)
         return responses.JSONResponse(
             'Start game successfully', status_code=status.HTTP_200_OK
         )
