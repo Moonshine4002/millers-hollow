@@ -1,0 +1,133 @@
+from configparser import ConfigParser
+import json
+import re
+from typing_extensions import Annotated
+
+from openai import OpenAI, AsyncOpenAI
+from openai.types.chat.chat_completion_message_param import (
+    ChatCompletionMessageParam,
+)
+from pydantic import BaseModel, RootModel, AfterValidator
+
+config = ConfigParser()
+config.read('./config.ini', encoding='utf-8')
+
+api_key = config.get('ai', 'api_key')
+base_url = config.get('ai', 'base_url')
+language = config.get('ai', 'language')
+
+
+client = OpenAI(
+    api_key=api_key,
+    base_url=base_url,
+)
+
+async_client = AsyncOpenAI(
+    api_key=api_key,
+    base_url=base_url,
+)
+
+# def target_validation(value:int, options:list[int]) -> int:
+#    if value not in options:
+#        raise ValueError("Value is not valid")
+#    return value
+
+
+class JsonFormatSub(BaseModel):
+    # target: Annotated[int , AfterValidator(target_validation)]
+    target: int
+    speech: str
+    reason: str
+
+
+class JsonFormat(RootModel):
+    root: dict[str, JsonFormatSub]
+
+
+json_format = """
+{
+    "Your chosen skill (replace)" : {
+    "target": An integer seat number if needed (or ignored),
+    "speech": "A public speech if needed (or ignored)",
+    "reason": "Your skill choice (which will not be public)"
+    },
+    "Your second chosen skill (if able to)" : {...},
+    ...
+}
+"""
+
+frame = """
+You are playing a game called The Werewolves of Miller's Hollow.
+Please be sure that you know the rules.
+You will be given a input describing the game scenario.
+Try your best to win the game.
+Game rules:
+- The Moderator is always truthful.
+- You win if your team wins.
+- Werewolves win by eliminating either all villagers or all gods.
+- Werewolves can suicidally expose themselves, ending that day instantly."
+- The sheriff election continues for 2 rounds.
+- Players killed on the first night or eliminated by vote have a dying speech.
+Output format:
+- Output using "{language}".
+- Please reply strictly according to this JSON format:
+{json_format}
+Your role:
+{role}
+Available skills:
+{skills}
+Game log:
+{log}
+"""
+
+
+async def input_ai(
+    model: str, role: str, skills: list[str], targets: list[int], log: str
+) -> dict:
+    input_ = frame.format(
+        language=language,
+        json_format=json_format,
+        role=role,
+        skills=skills,
+        log=log,
+    )
+    messages: list[ChatCompletionMessageParam] = []
+    messages.append({'role': 'user', 'content': input_})
+    while True:
+        chat_completion = await async_client.chat.completions.create(
+            messages=messages,
+            model=model,
+        )   # type: ignore
+        content = chat_completion.choices[0].message.content
+        try:
+            if not content:
+                content = ''
+                raise ValueError('empty output')
+            output = await parse(content, skills, targets)
+        except Exception as e:
+            print(f'Error: {e}')
+            messages.append({'role': 'assistant', 'content': content})
+            messages.append(
+                {
+                    'role': 'system',
+                    'content': f'You output in wrong format, error: {e}',
+                }
+            )
+        else:
+            break
+    return output
+
+
+async def parse(content: str, skills: list[str], targets: list[int]) -> dict:
+    matches: list[str] = re.findall(r'\{.*\}', content, re.DOTALL)
+    if len(matches) != 1:
+        raise ValueError(f'Got {len(matches)} matches')
+    try:
+        output: dict = JsonFormat.model_validate_json(matches[0]).model_dump()
+    except json.JSONDecodeError:
+        raise ValueError('Invalid JSON format')
+    if not all(key in skills for key in output.keys()):
+        raise ValueError(f'Invalid JSON format: chosen skill beyond {skills}')
+    if not all(value['target'] in targets for value in output.values()):
+        raise ValueError(f'Invalid JSON format: key beyond {targets}')
+    return output

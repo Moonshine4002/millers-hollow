@@ -10,7 +10,6 @@ import functools
 import itertools
 import pathlib
 import random
-import re
 import string
 import time
 from typing import Any, Literal, NamedTuple, Protocol, Self, TypeAlias
@@ -21,6 +20,8 @@ import aiosqlite
 from fastapi import FastAPI, responses, status
 from pydantic import BaseModel
 import uvicorn
+
+from ai import input_ai
 
 
 print(pathlib.Path.cwd())
@@ -247,6 +248,9 @@ class Game:
             """
             cursor = await conn.execute(SQL)
             ais = await Database.fetchall(cursor)
+            ai_ids = [
+                ai_id for (ai_id,) in ais if ai_id not in self.player_ids
+            ]
 
             roles = [
                 'villager',
@@ -262,10 +266,10 @@ class Game:
             ai_num = len(roles) - len(self.player_ids)
             if ai_num < 0:
                 raise ValueError('Too many user')
-            elif ai_num > len(ais):
+            elif ai_num > len(ai_ids):
                 raise ValueError('Not enough user')
-            ais = random.sample(ais, ai_num)
-            for (ai_id,) in ais:
+            ai_ids = random.sample(ai_ids, ai_num)
+            for ai_id in ai_ids:
                 self.player_ids.append(ai_id)
 
             SQL = """
@@ -344,66 +348,123 @@ class Game:
         for seq, value in d.items():
             if seq == 0:
                 continue
-            await self.player_gather(
+            coros = [
                 self.player(player_id, skill_ids)
                 for player_id, skill_ids in value.items()
-            )
+            ]
+            await asyncio.gather(*coros)
 
         await self.verdict()
 
         await self.update_game()
 
-    async def player_gather(self, coros) -> None:
-        await asyncio.gather(*coros)
-
     async def player(self, player_id: int, skill_ids: list[str]) -> None:
+        (name, controller, seat, role_id) = await self.select_player(player_id)
         async with Database.get_conn() as conn:
-            while skill_ids:
+            if controller == 'ai':
+                log = await self.select_log(player_id)
+                role_info = f'name: {name}, role: {role_id}, seat: {seat}'
+                output = await input_ai(
+                    'deepseek-chat',
+                    role_info,
+                    skill_ids,
+                    list(range(1, 10)),
+                    log,
+                )
+                for skill_id, value in output.items():
+                    if await self.player_skill(
+                        conn,
+                        player_id,
+                        skill_id,
+                        value['target'],
+                        value['speech'],
+                    ):
+                        break
+            elif controller == 'random':
                 random.shuffle(skill_ids)
-                skill_id = skill_ids.pop()
-                if await self.player_skill(conn, player_id, skill_id):
-                    break
+                while skill_ids:
+                    skill_id = skill_ids.pop()
+                    target = random.randrange(1, 10)
+                    if await self.player_skill(
+                        conn, player_id, skill_id, target
+                    ):
+                        break
+            else:
+                await asyncio.Event().wait()
 
     async def player_skill(
-        self, conn: aiosqlite.Connection, player_id: int, skill_id: str
+        self,
+        conn: aiosqlite.Connection,
+        player_id: int,
+        skill_id: str,
+        target: int = 0,
+        comment: str = '',
     ) -> bool:
-        await asyncio.sleep(0.3)
-        targets = [i + 1 for i in range(9)]
         match skill_id:
             case 'vote':
-                target = random.choice(targets)
-                await self.update_player_skill(player_id, skill_id, target)
-                await self.insert_log(player_id, skill_id, 'private', target)
+                await self.update_skill(player_id, skill_id, target)
+                await self.insert_log(
+                    player_id, skill_id, 'private', target, comment
+                )
             case 'speak':
-                text = 'test'
-                await self.insert_log(player_id, skill_id, 'public', 0, text)
+                await self.insert_log(
+                    player_id, skill_id, 'public', 0, comment
+                )
             case 'kill':
-                target = random.choice(targets)
-                await self.update_player_skill(player_id, skill_id, target)
-                await self.insert_log(player_id, skill_id, 'private', target)
+                await self.update_skill(player_id, skill_id, target)
+                await self.insert_log(
+                    player_id, skill_id, 'private', target, comment
+                )
             case 'identify':
-                target = random.choice(targets)
-                await self.update_player_skill(player_id, skill_id, target)
-                await self.insert_log(player_id, skill_id, 'private', target)
+                await self.update_skill(player_id, skill_id, target)
+                await self.insert_log(
+                    player_id, skill_id, 'private', target, comment
+                )
             case 'heal':
-                target = random.choice(targets)
-                await self.update_player_skill(player_id, skill_id, target)
-                await self.insert_log(player_id, skill_id, 'private', target)
+                await self.update_skill(player_id, skill_id, target)
+                await self.insert_log(
+                    player_id, skill_id, 'private', target, comment
+                )
             case 'poison':
-                target = random.choice(targets)
-                await self.update_player_skill(player_id, skill_id, target)
-                await self.insert_log(player_id, skill_id, 'private', target)
+                await self.update_skill(player_id, skill_id, target)
+                await self.insert_log(
+                    player_id, skill_id, 'private', target, comment
+                )
             case 'shoot':
                 pass
             case 'shield':
-                target = random.choice(targets)
-                await self.update_player_skill(player_id, skill_id, target)
-                await self.insert_log(player_id, skill_id, 'private', target)
+                await self.update_skill(player_id, skill_id, target)
+                await self.insert_log(
+                    player_id, skill_id, 'private', target, comment
+                )
             case _:
                 raise NotImplementedError
         return False
 
     async def verdict(self) -> None:
+        skills = await self.select_skill_cycle()
+        while skills:
+            player_id, skill_id, target_id = skills.pop()
+            match skill_id:
+                case 'vote':
+                    pass
+                case 'speak':
+                    pass
+                case 'kill':
+                    pass
+                case 'identify':
+                    pass
+                case 'heal':
+                    pass
+                case 'poison':
+                    pass
+                case 'shoot':
+                    pass
+                case 'shield':
+                    pass
+                case _:
+                    raise NotImplementedError
+
         SQL = """
         SELECT faction, COUNT(*) FROM attribute
         WHERE game_id = ?
@@ -435,15 +496,25 @@ class Game:
             fetch = await Database.fetchone(cursor)
             self.cycle, self.phase = fetch
 
-    async def select_player(self) -> list:
+    async def select_players(self) -> list:
         SQL = """
         SELECT u.name, a.seat, a.life FROM attribute a
         JOIN user u ON u.id = a.player_id
-        WHERE game_id = ?;
+        WHERE a.game_id = ?;
         """
         async with Database.get_conn() as conn:
             cursor = await conn.execute(SQL, (self.id,))
             return await Database.fetchall(cursor)
+
+    async def select_player(self, player_id: int) -> tuple:
+        SQL = """
+        SELECT u.name, u.controller, a.seat, a.role_id FROM attribute a
+        JOIN user u ON u.id = a.player_id
+        WHERE a.game_id = ? AND a.player_id = ?;
+        """
+        async with Database.get_conn() as conn:
+            cursor = await conn.execute(SQL, (self.id, player_id))
+            return await Database.fetchone(cursor)
 
     async def select_skill(self) -> list:
         SQL = """
@@ -453,16 +524,26 @@ class Game:
             cursor = await conn.execute(SQL, (self.id,))
             return await Database.fetchall(cursor)
 
-    async def update_player_skill(
+    async def update_skill(
         self, player_id: int, skill_id: str, target_id: int = 0
     ) -> None:
         SQL = """
-        UPDATE player_skill SET target_id = ?, cycle = ? WHERE game_id = ? AND player_id = ? AND skill_id = ?;
+        UPDATE player_skill SET target_id = ?, cycle = ?
+        WHERE game_id = ? AND player_id = ? AND skill_id = ?;
         """
         async with Database.get_conn() as conn:
             await conn.execute(
                 SQL, (target_id, self.cycle, self.id, player_id, skill_id)
             )
+
+    async def select_skill_cycle(self) -> list:
+        SQL = """
+        SELECT player_id, skill_id, target_id FROM player_skill
+        WHERE game_id = ? AND cycle = ?;
+        """
+        async with Database.get_conn() as conn:
+            cursor = await conn.execute(SQL, (self.id, self.cycle))
+            return await Database.fetchall(cursor)
 
     async def insert_log(
         self,
@@ -482,7 +563,7 @@ class Game:
                 SQL, (type_, target_id, comment, self.id, player_id, skill_id)
             )
 
-    async def select_log(self, player_id: int, condition: bool = True) -> str:
+    async def select_log(self, player_id: int) -> str:
         SQL_WHERE = """
         AND (
             up.controller = 'system'
@@ -504,7 +585,7 @@ class Game:
         LEFT JOIN attribute ap ON ap.game_id = :gid AND ap.player_id = ps.player_id
         LEFT JOIN user ut ON ut.id = l.target_id
         LEFT JOIN attribute at ON at.game_id = :gid AND at.player_id = l.target_id
-        WHERE ps.game_id = :gid {SQL_WHERE if condition else ''};
+        WHERE ps.game_id = :gid {SQL_WHERE if player_id != 0 else ''};
         """
         async with Database.get_conn() as conn:
             cursor = await conn.execute(
@@ -551,6 +632,7 @@ class Games(collections.UserDict[int, Game]):
         game = self[game_id]
         game.started = True
         await game.init_db()
+        await game.loop()
 
     async def gather_loop(self):
         coros = [game.loop() for game in self.values()]
@@ -564,7 +646,7 @@ class Games(collections.UserDict[int, Game]):
         await asyncio.gather(*coros)
 
     async def gather_log(self):
-        coros = [game.select_log(1, False) for game in self.values()]
+        coros = [game.select_log(0) for game in self.values()]
         results = await asyncio.gather(*coros)
         for result in results:
             print(result)
@@ -660,11 +742,11 @@ async def start(game_id: int) -> responses.JSONResponse:
         )
 
 
-@app.get('/games/{game_id}/stats/players')
-async def stats_players(game_id: int) -> responses.JSONResponse:
+@app.get('/games/{game_id}/stats/player')
+async def stats_player(game_id: int) -> responses.JSONResponse:
     if games.get(game_id):
         if games[game_id].started:
-            players = await games[game_id].select_player()
+            players = await games[game_id].select_players()
             return responses.JSONResponse(
                 {'stats': players, 'message': 'Start game successfully'},
                 status_code=status.HTTP_200_OK,
@@ -672,6 +754,25 @@ async def stats_players(game_id: int) -> responses.JSONResponse:
         else:
             return responses.JSONResponse(
                 'NotImplemented', status_code=status.HTTP_501_NOT_IMPLEMENTED
+            )
+    else:
+        return responses.JSONResponse(
+            'Game do not exists', status_code=status.HTTP_404_NOT_FOUND
+        )
+
+
+@app.get('/games/{game_id}/stats/log/players/{player_id}')
+async def stats_log(game_id: int, player_id: int) -> responses.JSONResponse:
+    if games.get(game_id):
+        if games[game_id].started:
+            log = await games[game_id].select_log(player_id)
+            return responses.JSONResponse(
+                {'stats': log, 'message': 'Start game successfully'},
+                status_code=status.HTTP_200_OK,
+            )
+        else:
+            return responses.JSONResponse(
+                'Game do not started', status_code=status.HTTP_409_CONFLICT
             )
     else:
         return responses.JSONResponse(

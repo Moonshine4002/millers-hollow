@@ -18,6 +18,7 @@ class MainWidget(QtWidgets.QWidget):
         SPACING = 10
         MINIMUM_WIDTH = 100
 
+        # user
         self.user_input_name = QtWidgets.QLineEdit()
         self.user_input_name.setPlaceholderText('name')
         self.user_input_controller = QtWidgets.QLineEdit()
@@ -58,12 +59,13 @@ class MainWidget(QtWidgets.QWidget):
         self.user = QtWidgets.QGroupBox('user')
         self.user.setLayout(self.user_form)
 
+        # player
         self.player_table = QtWidgets.QTableWidget()
         self.player_table.setRowCount(9)
         self.player_table.setColumnCount(3)
         self.player_table.setHorizontalHeaderLabels(['Name', 'Seat', 'Life'])
         self.player_button = QtWidgets.QPushButton('refresh')
-        self.player_button.clicked.connect(self.button_refresh)
+        self.player_button.clicked.connect(self.button_stats_player)
         self.player_button.setEnabled(False)
 
         self.player_form = QtWidgets.QFormLayout()
@@ -77,18 +79,33 @@ class MainWidget(QtWidgets.QWidget):
         self.l_layout.addWidget(self.user)
         self.l_layout.addWidget(self.player)
 
+        # log
+        self.log_text = QtWidgets.QLabel('')
+        self.log_button = QtWidgets.QPushButton('refresh')
+        self.log_button.clicked.connect(self.button_stats_log)
+        self.log_button.setEnabled(False)
+
+        self.log_layout = QtWidgets.QVBoxLayout()
+        self.log_layout.addWidget(self.log_text)
+        self.log_layout.addWidget(self.log_button)
+
+        self.log = QtWidgets.QGroupBox('log')
+        self.log.setLayout(self.log_layout)
+
+        # action
         self.question = QtWidgets.QLabel('question')
         self.answer = QtWidgets.QTextEdit('answer')
 
-        self.game_layout = QtWidgets.QVBoxLayout()
-        self.game_layout.addWidget(self.question)
-        self.game_layout.addWidget(self.answer)
+        self.action_layout = QtWidgets.QVBoxLayout()
+        self.action_layout.addWidget(self.question)
+        self.action_layout.addWidget(self.answer)
 
-        self.game = QtWidgets.QGroupBox('game')
-        self.game.setLayout(self.game_layout)
+        self.action = QtWidgets.QGroupBox('action')
+        self.action.setLayout(self.action_layout)
 
         self.r_layout = QtWidgets.QVBoxLayout()
-        self.r_layout.addWidget(self.game)
+        self.r_layout.addWidget(self.log)
+        self.r_layout.addWidget(self.action)
 
         self.h_layout = QtWidgets.QHBoxLayout(self)
         self.h_layout.addLayout(self.l_layout)
@@ -217,6 +234,7 @@ class MainWidget(QtWidgets.QWidget):
             text = f'Error: {e}'
         if success:
             sytle_sheet_key = 'success'
+            self.log_button.setEnabled(True)
         else:
             sytle_sheet_key = 'error'
             self.user_button_start.setEnabled(True)
@@ -224,11 +242,11 @@ class MainWidget(QtWidgets.QWidget):
         self.user_game_status.setText(text)
 
     @QtCore.Slot()
-    def button_refresh(self) -> None:
-        self.user_button_start.setEnabled(False)
+    def button_stats_player(self) -> None:
+        self.player_button.setEnabled(False)
         try:
             response = httpx.get(
-                f'http://localhost:8000/games/{self.room}/stats/players'
+                f'http://localhost:8000/games/{self.room}/stats/player'
             )
             response.raise_for_status()
             for name, seat, life in response.json()['stats']:
@@ -242,28 +260,58 @@ class MainWidget(QtWidgets.QWidget):
             print(response.json())
         except Exception as e:
             print(f'Error: {e}')
-        self.user_button_start.setEnabled(True)
+        self.player_button.setEnabled(True)
+
+    @QtCore.Slot()
+    def button_stats_log(self) -> None:
+        self.log_button.setEnabled(False)
+        try:
+            response = httpx.get(
+                f'http://localhost:8000/games/{self.room}/stats/log/players/{self.player_id}'
+            )
+            response.raise_for_status()
+            self.log_text.setText(response.json()['stats'])
+        except httpx.HTTPStatusError as e:
+            print(response.json())
+        except Exception as e:
+            print(f'Error: {e}')
+        self.log_button.setEnabled(True)
+
+    def hd_refresh(self) -> None:
+        if self.player_button.isEnabled():
+            self.button_stats_player()
+        if self.log_button.isEnabled():
+            self.button_stats_log()
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, widget: QtWidgets.QWidget):
+    def __init__(self, widget: MainWidget):
         super().__init__()
         self.setWindowTitle("Miller's Hollow")
 
         # Menu
         self.menu = self.menuBar()
         self.file_menu = self.menu.addMenu('File')
+        self.status_menu = self.menu.addMenu('Status')
 
         # Exit
         exit_action = self.file_menu.addAction('Exit', self.close)
         exit_action.setShortcut('Ctrl+Q')
+
+        # Refresh
+        refresh_action = self.status_menu.addAction('Refresh', self.hd_refresh)
+        refresh_action.setShortcut('Ctrl+R')
 
         # Status Bar
         self.status = self.statusBar()
         self.status.showMessage('Status Bar')
 
         # Widget
+        self.main_widget = widget
         self.setCentralWidget(widget)
+
+    def hd_refresh(self) -> None:
+        self.main_widget.hd_refresh()
 
 
 if __name__ == '__main__':
