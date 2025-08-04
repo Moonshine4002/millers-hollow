@@ -21,7 +21,7 @@ from fastapi import FastAPI, BackgroundTasks, responses, status
 from pydantic import BaseModel
 import uvicorn
 
-from ai import input_ai
+from ai import JsonFormat, input_ai
 
 
 print(pathlib.Path.cwd())
@@ -229,6 +229,10 @@ class Game:
         self.system_speak_id = 0
         self.player_ids: list[int] = []
         self.started = False
+        self.player_started: dict[int, bool] = {}
+        self.player_finished: dict[int, bool] = {}
+        self.player_input: dict[int, dict[str, Any]] = {}
+        self.player_output: dict[int, dict[str, Any]] = {}
 
     async def get_id(self) -> int:
         async with Database.get_conn() as conn:
@@ -242,6 +246,10 @@ class Game:
             return self.id
 
     async def init_db(self) -> None:
+        for player_id in self.player_ids:
+            self.player_started[player_id] = False
+            self.player_finished[player_id] = False
+
         async with Database.get_conn() as conn:
             SQL = """
             SELECT id FROM user WHERE controller = 'ai';
@@ -358,57 +366,62 @@ class Game:
 
         await self.update_game()
 
-    async def player(self, self_id: int, skill_ids: list[str]) -> None:
-        player_dict = await self.select_players(self_id)
-        (
-            self_name,
-            self_controller,
-            self_seat,
-            self_role,
-            self_life,
-        ) = player_dict[self_id]
-        async with Database.get_conn() as conn:
-            while skill_ids:
-                if self_controller == 'ai':
-                    log = await self.select_log(self_id)
-                    player_infos = ''
-                    for id_, (
-                        name,
-                        controller,
-                        seat,
-                        role,
-                        life,
-                    ) in player_dict.items():
-                        player_infos += f'id: {id_}, name: {name}, seat: {seat}, role: {role}, life: {life}'
-                    output = await input_ai(
-                        'deepseek-chat',
-                        player_infos,
-                        skill_ids,
-                        list(range(0, 10)),  # TODO: valid targets
-                        log,
-                    )
-                    if await self.player_skill(
-                        conn,
-                        self_id,
-                        skill_ids,
-                        output['skill'],
-                        output['target'],
-                        output['speech'],
-                    ):
-                        break
-                elif self_controller == 'random':
-                    skill_id = random.choice(skill_ids)
-                    target = random.randrange(0, 10)
-                    if await self.player_skill(
-                        conn, self_id, skill_ids, skill_id, target
-                    ):
-                        break
-                else:
-                    await asyncio.Event().wait()
+    async def player(self, p_id: int, skill_ids: list[str]) -> None:
+        p_info = await self.select_players(p_id)
+        p_name, p_controller, p_seat, p_role, p_life = p_info[p_id]
+
+        targets = []
+        for id_, (name, controller, seat, role, life) in p_info.items():
+            if life:
+                targets.append(seat)
+        targets.append(0)
+        targets.sort()
+        self.player_input[p_id] = {'skill': skill_ids, 'target': targets}
+        self.player_started[p_id] = True
+
+        while skill_ids:
+            self.player_finished[p_id] = False
+            if p_controller == 'ai':
+                async with Database.get_conn() as conn:
+                    log = await self.select_log(p_id)
+                p_text = f'You are {p_name}, a {p_role} in seat {p_seat}'
+                text = ''
+                for id_, (
+                    name,
+                    controller,
+                    seat,
+                    role,
+                    life,
+                ) in p_info.items():
+                    text += f'id: {id_}, name: {name}, seat: {seat}, role: {role}, life: {life}\n'
+                self.player_output[p_id] = await input_ai(
+                    'deepseek-chat', p_text, text, skill_ids, targets, log
+                )
+                self.player_finished[p_id] = True
+            elif p_controller == 'random':
+                self.player_output[p_id] = {
+                    'skill': random.choice(skill_ids),
+                    'target': random.randrange(0, 10),
+                    'speech': '',
+                    'reason': '',
+                }
+                self.player_finished[p_id] = True
+            else:
+                while not self.player_finished[p_id]:
+                    await asyncio.sleep(1)
+
+            output = self.player_output[p_id]
+            if await self.player_skill(
+                p_id,
+                skill_ids,
+                output['skill'],
+                output['target'],
+                output['speech'],
+            ):
+                break
 
     async def player_skill(
         self,
-        conn: aiosqlite.Connection,
         player_id: int,
         skill_ids: list[str],
         skill_id: str,
@@ -416,47 +429,48 @@ class Game:
         comment: str = '',
     ) -> bool:
         skill_ids.remove(skill_id)
-        match skill_id:
-            case 'vote':
-                await self.update_skill(player_id, skill_id, target)
-                await self.insert_log(
-                    player_id, skill_id, 'private', target, comment
-                )
-            case 'speak':
-                await self.insert_log(
-                    player_id, skill_id, 'public', 0, comment
-                )
-            case 'kill':
-                await self.update_skill(player_id, skill_id, target)
-                await self.insert_log(
-                    player_id, skill_id, 'private', target, comment
-                )
-            case 'identify':
-                await self.update_skill(player_id, skill_id, target)
-                await self.insert_log(
-                    player_id, skill_id, 'private', target, comment
-                )
-            case 'heal':
-                await self.update_skill(player_id, skill_id, target)
-                await self.insert_log(
-                    player_id, skill_id, 'private', target, comment
-                )
-                return True   # TODO: use link
-            case 'poison':
-                await self.update_skill(player_id, skill_id, target)
-                await self.insert_log(
-                    player_id, skill_id, 'private', target, comment
-                )
-                return True
-            case 'shoot':
-                pass
-            case 'shield':
-                await self.update_skill(player_id, skill_id, target)
-                await self.insert_log(
-                    player_id, skill_id, 'private', target, comment
-                )
-            case _:
-                raise NotImplementedError
+        async with Database.get_conn() as conn:
+            match skill_id:
+                case 'vote':
+                    await self.update_skill(player_id, skill_id, target)
+                    await self.insert_log(
+                        player_id, skill_id, 'private', target, comment
+                    )
+                case 'speak':
+                    await self.insert_log(
+                        player_id, skill_id, 'public', 0, comment
+                    )
+                case 'kill':
+                    await self.update_skill(player_id, skill_id, target)
+                    await self.insert_log(
+                        player_id, skill_id, 'private', target, comment
+                    )
+                case 'identify':
+                    await self.update_skill(player_id, skill_id, target)
+                    await self.insert_log(
+                        player_id, skill_id, 'private', target, comment
+                    )
+                case 'heal':
+                    await self.update_skill(player_id, skill_id, target)
+                    await self.insert_log(
+                        player_id, skill_id, 'private', target, comment
+                    )
+                    return True   # TODO: use link
+                case 'poison':
+                    await self.update_skill(player_id, skill_id, target)
+                    await self.insert_log(
+                        player_id, skill_id, 'private', target, comment
+                    )
+                    return True
+                case 'shoot':
+                    pass
+                case 'shield':
+                    await self.update_skill(player_id, skill_id, target)
+                    await self.insert_log(
+                        player_id, skill_id, 'private', target, comment
+                    )
+                case _:
+                    raise NotImplementedError
         return False
 
     async def verdict(self) -> None:
@@ -529,7 +543,7 @@ class Game:
         for id_, name, controller, seat, role, life in players:
             player_dict[id_] = (name, controller, seat, role, life)
         for id_, (name, controller, seat, role, life) in player_dict.items():
-            if role != player_dict[player_id]:
+            if role != player_dict[player_id][3]:
                 role = 'unknown'
                 life = 'unknown'
                 player_dict[id_] = (name, controller, seat, role, life)
@@ -770,8 +784,9 @@ async def start(
 @app.get('/games/{game_id}/players/{player_id}/stats/player')
 async def stats_player(game_id: int, player_id: int) -> responses.JSONResponse:
     if games.get(game_id):
-        if games[game_id].started:
-            players = await games[game_id].select_players(player_id)
+        game = games[game_id]
+        if game.started:
+            players = await game.select_players(player_id)
             return responses.JSONResponse(
                 {'stats': players, 'message': 'Start game successfully'},
                 status_code=status.HTTP_200_OK,
@@ -789,8 +804,9 @@ async def stats_player(game_id: int, player_id: int) -> responses.JSONResponse:
 @app.get('/games/{game_id}/players/{player_id}/stats/log')
 async def stats_log(game_id: int, player_id: int) -> responses.JSONResponse:
     if games.get(game_id):
-        if games[game_id].started:
-            log = await games[game_id].select_log(player_id)
+        game = games[game_id]
+        if game.started:
+            log = await game.select_log(player_id)
             return responses.JSONResponse(
                 {'stats': log, 'message': 'Start game successfully'},
                 status_code=status.HTTP_200_OK,
@@ -798,6 +814,63 @@ async def stats_log(game_id: int, player_id: int) -> responses.JSONResponse:
         else:
             return responses.JSONResponse(
                 'Game do not started', status_code=status.HTTP_409_CONFLICT
+            )
+    else:
+        return responses.JSONResponse(
+            'Game do not exists', status_code=status.HTTP_404_NOT_FOUND
+        )
+
+
+@app.get('/games/{game_id}/players/{player_id}/stats/action')
+async def stats_action(game_id: int, player_id: int) -> responses.JSONResponse:
+    if games.get(game_id):
+        game = games[game_id]
+        if game.player_started[player_id]:
+            cond = game.player_input[player_id]
+            info = f'Available skills: {cond["skill"]}\nValid targets: {cond["target"]}'
+            return responses.JSONResponse(
+                {
+                    'stats': info,
+                    'message': 'Start game successfully',
+                },
+                status_code=status.HTTP_200_OK,
+            )
+        else:
+            return responses.JSONResponse(
+                'Action do not started', status_code=status.HTTP_409_CONFLICT
+            )
+    else:
+        return responses.JSONResponse(
+            'Game do not exists', status_code=status.HTTP_404_NOT_FOUND
+        )
+
+
+@app.post('/games/{game_id}/players/{player_id}/stats/action')
+async def send_action(
+    game_id: int, player_id: int, json_format: JsonFormat
+) -> responses.JSONResponse:
+    if games.get(game_id):
+        game = games[game_id]
+        if game.player_started[player_id]:
+            cond = game.player_input[player_id]
+            if (
+                json_format.skill not in cond['skill']
+                or json_format.target not in cond['target']
+            ):
+                return responses.JSONResponse(
+                    'Invalid action',
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+            game.player_output[player_id] = json_format.model_dump()
+            game.player_finished[player_id] = True
+            game.player_started[player_id] = False
+            return responses.JSONResponse(
+                'Action sent',
+                status_code=status.HTTP_201_CREATED,
+            )
+        else:
+            return responses.JSONResponse(
+                'Action do not started', status_code=status.HTTP_409_CONFLICT
             )
     else:
         return responses.JSONResponse(

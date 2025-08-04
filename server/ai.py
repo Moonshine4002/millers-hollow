@@ -58,23 +58,34 @@ Output format:
 - Output using "{language}".
 - Please reply strictly according to this JSON format:
 {json_format}
+Your info:
+{me}
 Players:
 {players}
 Available skills:
 {skills}
+Valid targets:
+{targets}
 Game log:
 {log}
 """
 
 
 async def input_ai(
-    model: str, players: str, skills: list[str], targets: list[int], log: str
+    model: str,
+    me: str,
+    players: str,
+    skills: list[str],
+    targets: list[int],
+    log: str,
 ) -> dict:
     input_ = frame.format(
         language=language,
         json_format=json_format,
+        me=me,
         players=players,
         skills=skills,
+        targets=targets,
         log=log,
     )
     messages: list[ChatCompletionMessageParam] = []

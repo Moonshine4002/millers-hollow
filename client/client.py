@@ -95,12 +95,30 @@ class MainWidget(QtWidgets.QWidget):
         self.log.setLayout(self.log_layout)
 
         # action
-        self.question = QtWidgets.QLabel('question')
-        self.answer = QtWidgets.QTextEdit('answer')
+        self.action_status = QtWidgets.QLabel('Please wait...')
+        self.action_refresh = QtWidgets.QPushButton('refresh')
+        self.action_refresh.clicked.connect(self.button_stats_action)
+        self.action_refresh.setEnabled(False)
+        self.action_skill = QtWidgets.QLineEdit('')
+        self.action_skill.setPlaceholderText('skill')
+        self.action_target = QtWidgets.QLineEdit('')
+        self.action_target.setPlaceholderText('target')
+        self.action_speech = QtWidgets.QTextEdit('')
+        self.action_speech.setPlaceholderText('speech')
+        self.action_reason = QtWidgets.QTextEdit('')
+        self.action_reason.setPlaceholderText('reason')
+        self.action_send = QtWidgets.QPushButton('send')
+        self.action_send.clicked.connect(self.button_send)
+        self.action_send.setEnabled(False)
 
         self.action_layout = QtWidgets.QVBoxLayout()
-        self.action_layout.addWidget(self.question)
-        self.action_layout.addWidget(self.answer)
+        self.action_layout.addWidget(self.action_status)
+        self.action_layout.addWidget(self.action_refresh)
+        self.action_layout.addWidget(self.action_skill)
+        self.action_layout.addWidget(self.action_target)
+        self.action_layout.addWidget(self.action_speech)
+        self.action_layout.addWidget(self.action_reason)
+        self.action_layout.addWidget(self.action_send)
 
         self.action = QtWidgets.QGroupBox('action')
         self.action.setLayout(self.action_layout)
@@ -237,6 +255,8 @@ class MainWidget(QtWidgets.QWidget):
         if success:
             sytle_sheet_key = 'success'
             self.log_button.setEnabled(True)
+            self.action_refresh.setEnabled(True)
+            self.action_send.setEnabled(True)
         else:
             sytle_sheet_key = 'error'
             self.user_button_start.setEnabled(True)
@@ -283,11 +303,52 @@ class MainWidget(QtWidgets.QWidget):
             print(f'Error: {e}')
         self.log_button.setEnabled(True)
 
+    @QtCore.Slot()
+    def button_stats_action(self) -> None:
+        self.action_refresh.setEnabled(False)
+        try:
+            response = httpx.get(
+                f'http://localhost:8000/games/{self.room}/players/{self.player_id}/stats/action'
+            )
+            response.raise_for_status()
+            text = response.json()['stats']
+        except httpx.HTTPStatusError as e:
+            text = response.json()
+        except Exception as e:
+            text = f'Error: {e}'
+        self.action_status.setText(text)
+        self.action_refresh.setEnabled(True)
+
+    @QtCore.Slot()
+    def button_send(self) -> None:
+        self.action_send.setEnabled(False)
+        try:
+            data = {
+                'skill': self.action_skill.text(),
+                'target': int(self.action_target.text()),
+                'speech': self.action_speech.toPlainText(),
+                'reason': self.action_reason.toPlainText(),
+            }
+            response = httpx.post(
+                f'http://localhost:8000/games/{self.room}/players/{self.player_id}/stats/action',
+                json=data,
+            )
+            response.raise_for_status()
+            text = response.json()
+        except httpx.HTTPStatusError as e:
+            text = response.json()
+        except Exception as e:
+            text = f'Error: {e}'
+        self.action_status.setText(text)
+        self.action_send.setEnabled(True)
+
     def hd_refresh(self) -> None:
         if self.player_button.isEnabled():
             self.button_stats_player()
         if self.log_button.isEnabled():
             self.button_stats_log()
+        if self.action_refresh.isEnabled():
+            self.button_stats_action()
 
 
 class MainWindow(QtWidgets.QMainWindow):
