@@ -17,7 +17,7 @@ from typing import final, runtime_checkable
 
 
 import aiosqlite
-from fastapi import FastAPI, BackgroundTasks, responses, status
+from fastapi import FastAPI, BackgroundTasks, HTTPException, responses, status
 from pydantic import BaseModel
 import uvicorn
 
@@ -181,18 +181,19 @@ class Database:
                 await conn.execute(SQL)
 
     @staticmethod
-    async def insert_user(name: str, controller: str, silent=False) -> None:
+    async def insert_user(name: str, controller: str) -> int:
         SQL = """
         INSERT INTO user (name, controller) VALUES (?, ?);
         """
-        try:
-            async with Database.get_conn() as conn:
+        async with Database.get_conn() as conn:
+            try:
                 await conn.execute(SQL, (name, controller))
-        except Exception as e:
-            if silent:
-                pass
+            except Exception as e:
+                return 0
             else:
-                raise
+                cursor = await conn.execute('SELECT last_insert_rowid()')
+                fetch = await Database.fetchone(cursor)
+                return fetch[0]
 
     @staticmethod
     async def delete_user(name: str) -> None:
@@ -205,11 +206,12 @@ class Database:
     @staticmethod
     async def select_user(name: str) -> tuple:
         SQL = """
-        SELECT id, name, controller FROM user WHERE name = ?;
+        SELECT id, controller FROM user WHERE name = ?;
         """
         async with Database.get_conn() as conn:
             cursor = await conn.execute(SQL, (name,))
-            return await Database.fetchone(cursor)
+            fetch = await Database.fetchone(cursor)
+            return fetch if fetch else (0, '')
 
     @staticmethod
     async def update_user(name: str, win: bool) -> None:
@@ -234,7 +236,7 @@ class Game:
         self.player_input: dict[int, dict[str, Any]] = {}
         self.player_output: dict[int, dict[str, Any]] = {}
 
-    async def get_id(self) -> int:
+    async def insert(self) -> int:
         async with Database.get_conn() as conn:
             SQL = """
             INSERT INTO game DEFAULT VALUES;
@@ -648,44 +650,15 @@ class Games(collections.UserDict[int, Game]):
 
     async def add_game(self) -> int:
         game = Game()
-        game_id = await game.get_id()
+        game_id = await game.insert()
         self[game_id] = game
         return game_id
 
-    async def add_player(self, game_id: int, player_id: int) -> bool:
-        game = self[game_id]
-        if game.started:
-            return False
-        if player_id in game.player_ids:
-            return True
-        game.player_ids.append(player_id)
-        return True
-
-    async def start_game(self, game_id: int) -> None:
-        game = self[game_id]
-        game.started = True
-        await game.init_db()
-
-    async def start_game_loop(self, game_id: int) -> None:
-        game = self[game_id]
-        await game.loop()
-
-    async def gather_loop(self) -> None:
-        coros = [game.loop() for game in self.values()]
-        await asyncio.gather(*coros)
-
-    async def gather_add_ai(self) -> None:
+    async def add_ai(self) -> None:
         coros = [
-            Database.insert_user(name, 'ai', silent=True)
-            for name in string.ascii_uppercase
+            Database.insert_user(name, 'ai') for name in string.ascii_uppercase
         ]
         await asyncio.gather(*coros)
-
-    async def gather_log(self) -> None:
-        coros = [game.select_log(0) for game in self.values()]
-        results = await asyncio.gather(*coros)
-        for result in results:
-            print(result)
 
 
 games = Games()
@@ -704,7 +677,7 @@ class Player(BaseModel):
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     await Database.init_db()
-    await games.gather_add_ai()
+    await games.add_ai()
     yield
 
 
@@ -713,29 +686,42 @@ app = FastAPI(lifespan=lifespan)
 
 @app.post('/register')
 async def register(user: User) -> responses.JSONResponse:
-    try:
-        id_, name, controller = await Database.select_user(user.name)
-        if controller == user.controller:
-            return responses.JSONResponse(
-                {'id': id_, 'message': 'Login successful'}, status.HTTP_200_OK
-            )
-        else:
-            return responses.JSONResponse(
-                {'id': 0, 'message': f'User {user.name} already exists'},
-                status.HTTP_401_UNAUTHORIZED,
-            )
-    except Exception as e:
-        await Database.insert_user(user.name, user.controller)
-        id_, name, controller = await Database.select_user(user.name)
+    id_ = await Database.insert_user(user.name, user.controller)
+    if id_:
         return responses.JSONResponse(
-            {'id': id_, 'message': 'Registration successful'},
+            {'id': id_, 'message': 'Sign up successfully'},
             status.HTTP_201_CREATED,
         )
+    return await login(user)
 
 
 @app.post('/login')
-async def login(user: User) -> responses.RedirectResponse:
-    return responses.RedirectResponse(url='/register')
+async def login(user: User) -> responses.JSONResponse:
+    id_, controller = await Database.select_user(user.name)
+    if not id_:
+        return await register(user)
+    if controller != user.controller:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, 'User exists')
+    return responses.JSONResponse(
+        {'id': id_, 'message': 'Sign in successfully'}, status.HTTP_200_OK
+    )
+
+
+def game_exist(game_id: int) -> None:
+    if not games.get(game_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, 'Game do not exists')
+
+
+def game_start(game_id: int) -> None:
+    game = games[game_id]
+    if not game.started:
+        raise HTTPException(status.HTTP_409_CONFLICT, 'Game do not started')
+
+
+def player_start(game_id: int, player_id: int) -> None:
+    game = games[game_id]
+    if not game.player_started[player_id]:
+        raise HTTPException(status.HTTP_409_CONFLICT, 'Action do not started')
 
 
 @app.post('/games')
@@ -749,133 +735,103 @@ async def create() -> responses.JSONResponse:
 
 @app.post('/games/{game_id}/players/{player_id}')
 async def join(game_id: int, player_id: int) -> responses.JSONResponse:
-    if games.get(game_id):
-        success = await games.add_player(game_id, player_id)
-        if success:
-            return responses.JSONResponse(
-                'Join game successfully', status_code=status.HTTP_200_OK
-            )
-        else:
-            return responses.JSONResponse(
-                'Game started', status_code=status.HTTP_409_CONFLICT
-            )
-    else:
+    game_exist(game_id)
+    game = games[game_id]
+    if player_id in game.player_ids:
         return responses.JSONResponse(
-            'Game do not exists', status_code=status.HTTP_404_NOT_FOUND
+            'Rejoin game successfully', status_code=status.HTTP_200_OK
         )
+    game.player_ids.append(player_id)
+    return responses.JSONResponse(
+        'Join game successfully', status_code=status.HTTP_200_OK
+    )
 
 
 @app.post('/games/{game_id}/start')
-async def start(
+async def start_post(
     game_id: int, background_tasks: BackgroundTasks
 ) -> responses.JSONResponse:
-    if games.get(game_id):
-        await games.start_game(game_id)
-        background_tasks.add_task(games.start_game_loop, game_id)
-        return responses.JSONResponse(
-            'Start game successfully', status_code=status.HTTP_200_OK
-        )
-    else:
-        return responses.JSONResponse(
-            'Game do not exists', status_code=status.HTTP_404_NOT_FOUND
-        )
+    game_exist(game_id)
+    game = games[game_id]
+    await game.init_db()
+    background_tasks.add_task(game.loop)
+    game.started = True
+    return responses.JSONResponse(
+        'Start game successfully', status_code=status.HTTP_200_OK
+    )
+
+
+@app.get('/games/{game_id}/start')
+async def start_get(game_id: int) -> responses.JSONResponse:
+    game_exist(game_id)
+    game = games[game_id]
+    return responses.JSONResponse(game.started, status_code=status.HTTP_200_OK)
 
 
 @app.get('/games/{game_id}/players/{player_id}/stats/player')
 async def stats_player(game_id: int, player_id: int) -> responses.JSONResponse:
-    if games.get(game_id):
-        game = games[game_id]
-        if game.started:
-            players = await game.select_players(player_id)
-            return responses.JSONResponse(
-                {'stats': players, 'message': 'Start game successfully'},
-                status_code=status.HTTP_200_OK,
-            )
-        else:
-            return responses.JSONResponse(
-                'NotImplemented', status_code=status.HTTP_501_NOT_IMPLEMENTED
-            )
-    else:
-        return responses.JSONResponse(
-            'Game do not exists', status_code=status.HTTP_404_NOT_FOUND
-        )
+    game_exist(game_id)
+    game = games[game_id]
+    if not game.started:
+        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, 'NotImplemented')
+    players = await game.select_players(player_id)
+    return responses.JSONResponse(
+        {'stats': players, 'message': 'Stats received'},
+        status_code=status.HTTP_200_OK,
+    )
 
 
 @app.get('/games/{game_id}/players/{player_id}/stats/log')
 async def stats_log(game_id: int, player_id: int) -> responses.JSONResponse:
-    if games.get(game_id):
-        game = games[game_id]
-        if game.started:
-            log = await game.select_log(player_id)
-            return responses.JSONResponse(
-                {'stats': log, 'message': 'Start game successfully'},
-                status_code=status.HTTP_200_OK,
-            )
-        else:
-            return responses.JSONResponse(
-                'Game do not started', status_code=status.HTTP_409_CONFLICT
-            )
-    else:
-        return responses.JSONResponse(
-            'Game do not exists', status_code=status.HTTP_404_NOT_FOUND
-        )
+    game_exist(game_id)
+    game = games[game_id]
+    game_start(game_id)
+    log = await game.select_log(player_id)
+    return responses.JSONResponse(
+        {'stats': log, 'message': 'Stats received'},
+        status_code=status.HTTP_200_OK,
+    )
 
 
 @app.get('/games/{game_id}/players/{player_id}/stats/action')
-async def stats_action(game_id: int, player_id: int) -> responses.JSONResponse:
-    if games.get(game_id):
-        game = games[game_id]
-        if game.player_started[player_id]:
-            cond = game.player_input[player_id]
-            info = f'Available skills: {cond["skill"]}\nValid targets: {cond["target"]}'
-            return responses.JSONResponse(
-                {
-                    'stats': info,
-                    'message': 'Start game successfully',
-                },
-                status_code=status.HTTP_200_OK,
-            )
-        else:
-            return responses.JSONResponse(
-                'Action do not started', status_code=status.HTTP_409_CONFLICT
-            )
-    else:
-        return responses.JSONResponse(
-            'Game do not exists', status_code=status.HTTP_404_NOT_FOUND
-        )
+async def stats_action_get(
+    game_id: int, player_id: int
+) -> responses.JSONResponse:
+    game_exist(game_id)
+    game = games[game_id]
+    game_start(game_id)
+    player_start(game_id, player_id)
+    cond = game.player_input[player_id]
+    info = (
+        f'Available skills: {cond["skill"]}\nValid targets: {cond["target"]}'
+    )
+    return responses.JSONResponse(
+        {'stats': info, 'message': 'Stats received'},
+        status_code=status.HTTP_200_OK,
+    )
 
 
 @app.post('/games/{game_id}/players/{player_id}/stats/action')
-async def send_action(
+async def stats_action_post(
     game_id: int, player_id: int, json_format: JsonFormat
 ) -> responses.JSONResponse:
-    if games.get(game_id):
-        game = games[game_id]
-        if game.player_started[player_id]:
-            cond = game.player_input[player_id]
-            if (
-                json_format.skill not in cond['skill']
-                or json_format.target not in cond['target']
-            ):
-                return responses.JSONResponse(
-                    'Invalid action',
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
-            game.player_output[player_id] = json_format.model_dump()
-            game.player_finished[player_id] = True
-            game.player_started[player_id] = False
-            return responses.JSONResponse(
-                'Action sent',
-                status_code=status.HTTP_201_CREATED,
-            )
-        else:
-            return responses.JSONResponse(
-                'Action do not started', status_code=status.HTTP_409_CONFLICT
-            )
-    else:
-        return responses.JSONResponse(
-            'Game do not exists', status_code=status.HTTP_404_NOT_FOUND
-        )
+    game_exist(game_id)
+    game = games[game_id]
+    game_start(game_id)
+    player_start(game_id, player_id)
+    cond = game.player_input[player_id]
+    if (
+        json_format.skill not in cond['skill']
+        or json_format.target not in cond['target']
+    ):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, 'Invalid action')
+    game.player_output[player_id] = json_format.model_dump()
+    game.player_finished[player_id] = True
+    game.player_started[player_id] = False
+    return responses.JSONResponse(
+        'Action sent',
+        status_code=status.HTTP_201_CREATED,
+    )
 
 
 if __name__ == '__main__':

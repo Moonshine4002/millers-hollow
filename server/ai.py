@@ -94,7 +94,7 @@ async def input_ai(
         chat_completion = await async_client.chat.completions.create(
             messages=messages,
             model=model,
-        )   # type: ignore
+        )
         content = chat_completion.choices[0].message.content
         try:
             if not content:

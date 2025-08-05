@@ -1,325 +1,334 @@
 import sys
 
-from PySide6 import QtCore, QtWidgets, QtGui
+from PySide6.QtCore import Slot
+from PySide6.QtWidgets import (
+    QApplication,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 import httpx
 
+ORIGIN = 'http://localhost:8000'
 
-class MainWidget(QtWidgets.QWidget):
+
+class MainWidget(QWidget):
     STYLE_SHEET = {
+        'info': 'color: #000000;',
         'success': 'color: #00dd00;',
         'error': 'color: #dd0000;',
     }
 
     def __init__(self):
         super().__init__()
+        self.user_name = ''
+        self.user_controller = ''
         self.player_id = 0
-        self.room = 0
+        self.room = 0   # game_id
+        self.started = False
 
         SPACING = 10
         MINIMUM_WIDTH = 100
 
         # user
-        self.user_input_name = QtWidgets.QLineEdit()
+        self.user_input_name = QLineEdit()
         self.user_input_name.setPlaceholderText('name')
-        self.user_input_controller = QtWidgets.QLineEdit()
-        self.user_input_controller.setPlaceholderText('controller')
-        self.user_verification = QtWidgets.QPushButton('login/register')
+        self.user_input_ctrl = QLineEdit()
+        self.user_input_ctrl.setPlaceholderText('controller')
+        self.user_verification = QPushButton('login/register')
         self.user_verification.clicked.connect(self.button_register)
-        self.user_status = QtWidgets.QLabel('')
 
-        self.user_input_room = QtWidgets.QLineEdit()
+        self.user_input_room = QLineEdit()
         self.user_input_room.setEnabled(False)
-        self.user_button_join = QtWidgets.QPushButton('join')
-        self.user_button_join.clicked.connect(self.button_join)
-        self.user_button_join.setEnabled(False)
-        self.user_button_create = QtWidgets.QPushButton('create')
-        self.user_button_create.clicked.connect(self.button_create)
-        self.user_button_create.setEnabled(False)
-        self.user_button_start = QtWidgets.QPushButton('start')
-        self.user_button_start.clicked.connect(self.button_start)
-        self.user_button_start.setEnabled(False)
-        self.user_game_status = QtWidgets.QLabel('')
+        self.user_join = QPushButton('join')
+        self.user_join.clicked.connect(self.button_join)
+        self.user_join.setEnabled(False)
+        self.user_create = QPushButton('create')
+        self.user_create.clicked.connect(self.button_create)
+        self.user_create.setEnabled(False)
+        self.user_start = QPushButton('start')
+        self.user_start.clicked.connect(self.button_start)
+        self.user_start.setEnabled(False)
 
-        self.user_room = QtWidgets.QHBoxLayout()
-        self.user_room.addWidget(self.user_button_join)
-        self.user_room.addWidget(self.user_button_create)
+        self.user_room = QHBoxLayout()
+        self.user_room.addWidget(self.user_join)
+        self.user_room.addWidget(self.user_create)
 
-        self.user_form = QtWidgets.QFormLayout()
-        self.user_form.addRow(QtWidgets.QLabel('name: '), self.user_input_name)
-        self.user_form.addRow(
-            QtWidgets.QLabel('controller: '), self.user_input_controller
-        )
+        self.user_form = QFormLayout()
+        self.user_form.addRow(QLabel('name: '), self.user_input_name)
+        self.user_form.addRow(QLabel('controller: '), self.user_input_ctrl)
         self.user_form.addRow(self.user_verification)
-        self.user_form.addRow(self.user_status)
-        self.user_form.addRow(QtWidgets.QLabel('room: '), self.user_input_room)
+        self.user_form.addRow(QLabel('room: '), self.user_input_room)
         self.user_form.addRow(self.user_room)
-        self.user_form.addRow(self.user_button_start)
-        self.user_form.addRow(self.user_game_status)
+        self.user_form.addRow(self.user_start)
 
-        self.user = QtWidgets.QGroupBox('user')
+        self.user = QGroupBox('user')
         self.user.setLayout(self.user_form)
 
         # player
-        self.player_table = QtWidgets.QTableWidget()
+        self.player_table = QTableWidget()
         self.player_table.setRowCount(9)
         self.player_table.setColumnCount(4)
         self.player_table.setHorizontalHeaderLabels(
             ['ID', 'Name', 'Role', 'Life']
         )
-        self.player_button = QtWidgets.QPushButton('refresh')
-        self.player_button.clicked.connect(self.button_stats_player)
-        self.player_button.setEnabled(False)
+        self.player_refresh = QPushButton('refresh')
+        self.player_refresh.clicked.connect(self.button_stats_player)
+        self.player_refresh.setEnabled(False)
 
-        self.player_form = QtWidgets.QFormLayout()
+        self.player_form = QFormLayout()
         self.player_form.addRow(self.player_table)
-        self.player_form.addRow(self.player_button)
+        self.player_form.addRow(self.player_refresh)
 
-        self.player = QtWidgets.QGroupBox('player')
+        self.player = QGroupBox('player')
         self.player.setLayout(self.player_form)
 
-        self.l_layout = QtWidgets.QVBoxLayout()
-        self.l_layout.addWidget(self.user)
-        self.l_layout.addWidget(self.player)
+        self.left_box = QVBoxLayout()
+        self.left_box.addWidget(self.user)
+        self.left_box.addWidget(self.player)
 
         # log
-        self.log_text = QtWidgets.QLabel('')
-        self.log_button = QtWidgets.QPushButton('refresh')
-        self.log_button.clicked.connect(self.button_stats_log)
-        self.log_button.setEnabled(False)
+        self.log_text = QLabel('')
+        self.log_refresh = QPushButton('refresh')
+        self.log_refresh.clicked.connect(self.button_stats_log)
+        self.log_refresh.setEnabled(False)
 
-        self.log_layout = QtWidgets.QVBoxLayout()
-        self.log_layout.addWidget(self.log_text)
-        self.log_layout.addWidget(self.log_button)
+        self.log_box = QVBoxLayout()
+        self.log_box.addWidget(self.log_text)
+        self.log_box.addWidget(self.log_refresh)
 
-        self.log = QtWidgets.QGroupBox('log')
-        self.log.setLayout(self.log_layout)
+        self.log = QGroupBox('log')
+        self.log.setLayout(self.log_box)
 
         # action
-        self.action_status = QtWidgets.QLabel('Please wait...')
-        self.action_refresh = QtWidgets.QPushButton('refresh')
+        self.action_status = QLabel('Please wait...')
+        self.action_refresh = QPushButton('refresh')
         self.action_refresh.clicked.connect(self.button_stats_action)
         self.action_refresh.setEnabled(False)
-        self.action_skill = QtWidgets.QLineEdit('')
+        self.action_skill = QLineEdit('')
         self.action_skill.setPlaceholderText('skill')
-        self.action_target = QtWidgets.QLineEdit('')
+        self.action_target = QLineEdit('')
         self.action_target.setPlaceholderText('target')
-        self.action_speech = QtWidgets.QTextEdit('')
+        self.action_speech = QTextEdit('')
         self.action_speech.setPlaceholderText('speech')
-        self.action_reason = QtWidgets.QTextEdit('')
+        self.action_reason = QTextEdit('')
         self.action_reason.setPlaceholderText('reason')
-        self.action_send = QtWidgets.QPushButton('send')
+        self.action_send = QPushButton('send')
         self.action_send.clicked.connect(self.button_send)
         self.action_send.setEnabled(False)
 
-        self.action_layout = QtWidgets.QVBoxLayout()
-        self.action_layout.addWidget(self.action_status)
-        self.action_layout.addWidget(self.action_refresh)
-        self.action_layout.addWidget(self.action_skill)
-        self.action_layout.addWidget(self.action_target)
-        self.action_layout.addWidget(self.action_speech)
-        self.action_layout.addWidget(self.action_reason)
-        self.action_layout.addWidget(self.action_send)
+        self.action_box = QVBoxLayout()
+        self.action_box.addWidget(self.action_status)
+        self.action_box.addWidget(self.action_refresh)
+        self.action_box.addWidget(self.action_skill)
+        self.action_box.addWidget(self.action_target)
+        self.action_box.addWidget(self.action_speech)
+        self.action_box.addWidget(self.action_reason)
+        self.action_box.addWidget(self.action_send)
 
-        self.action = QtWidgets.QGroupBox('action')
-        self.action.setLayout(self.action_layout)
+        self.action = QGroupBox('action')
+        self.action.setLayout(self.action_box)
 
-        self.r_layout = QtWidgets.QVBoxLayout()
-        self.r_layout.addWidget(self.log)
-        self.r_layout.addWidget(self.action)
+        self.right_box = QVBoxLayout()
+        self.right_box.addWidget(self.log)
+        self.right_box.addWidget(self.action)
 
-        self.h_layout = QtWidgets.QHBoxLayout(self)
-        self.h_layout.addLayout(self.l_layout)
-        self.h_layout.addLayout(self.r_layout)
+        self.main_box = QHBoxLayout(self)
+        self.main_box.addLayout(self.left_box)
+        self.main_box.addLayout(self.right_box)
 
-    @QtCore.Slot()
+    def post(self, path: str, json: dict | None = None) -> httpx.Response:
+        try:
+            response = httpx.post(f'{ORIGIN}{path}', json=json)
+        except Exception as e:
+            response = httpx.Response(
+                status_code=500,
+                json={'detail': str(e)},
+                request=httpx.Request('POST', f'{ORIGIN}{path}', json=json),
+            )
+        return response
+
+    def get(self, path: str) -> httpx.Response:
+        try:
+            response = httpx.get(f'{ORIGIN}{path}')
+        except Exception as e:
+            response = httpx.Response(
+                status_code=500,
+                json={'detail': str(e)},
+                request=httpx.Request('GET', f'{ORIGIN}{path}'),
+            )
+        return response
+
+    def status_message(self, message: str, style: str = 'info') -> None:
+        status: QLabel = self.window().status_message   # type: ignore
+        status.setStyleSheet(self.STYLE_SHEET[style])
+        status.setText(message)
+
+    @Slot()
     def button_login(self) -> None:
         self.user_verification.setEnabled(False)
         self.user_input_name.setEnabled(False)
-        self.user_input_controller.setEnabled(False)
+        self.user_input_ctrl.setEnabled(False)
+
         self.user_name = self.user_input_name.text()
-        self.user_controller = self.user_input_controller.text()
+        self.user_controller = self.user_input_ctrl.text()
         data = {'name': self.user_name, 'controller': self.user_controller}
         try:
-            response = httpx.post(
-                'http://localhost:8000/login', json=data, follow_redirects=True
-            )
+            response = self.post('/login', data)
             response.raise_for_status()
-            success = True
-            self.player_id = response.json()['id']
-            text = response.json()['message']
         except httpx.HTTPStatusError as e:
-            success = False
-            text = response.json()['message']
-        except Exception as e:
-            success = False
-            text = f'Error: {e}'
-        if success:
-            sytle_sheet_key = 'success'
-            self.user_input_room.setEnabled(True)
-            self.user_button_join.setEnabled(True)
-            self.user_button_create.setEnabled(True)
-        else:
-            sytle_sheet_key = 'error'
+            self.status_message(response.json()['detail'], 'error')
             self.user_verification.setEnabled(True)
             self.user_input_name.setEnabled(True)
-            self.user_input_controller.setEnabled(True)
-        self.user_status.setStyleSheet(self.STYLE_SHEET[sytle_sheet_key])
-        self.user_status.setText(text)
+            self.user_input_ctrl.setEnabled(True)
+        except Exception as e:
+            self.status_message(str(e), 'error')
+        else:
+            self.status_message(response.json()['message'], 'success')
+            self.player_id = response.json()['id']
+            self.user_input_room.setEnabled(True)
+            self.user_join.setEnabled(True)
+            self.user_create.setEnabled(True)
 
-    @QtCore.Slot()
+    @Slot()
     def button_register(self) -> None:
         self.button_login()
 
-    @QtCore.Slot()
-    def button_join(self) -> None:
-        self.user_input_room.setEnabled(False)
-        self.user_button_join.setEnabled(False)
-        self.user_button_create.setEnabled(False)
-        try:
-            self.room = int(self.user_input_room.text())
-            if self.room < 1:
-                raise ValueError('Wrong room number')
-            response = httpx.post(
-                f'http://localhost:8000/games/{self.room}/players/{self.player_id}'
-            )
-            response.raise_for_status()
-            success = True
-            text = response.json()
-        except httpx.HTTPStatusError as e:
-            success = False
-            text = response.json()
-        except Exception as e:
-            success = False
-            text = f'Error: {e}'
-        if success:
-            sytle_sheet_key = 'success'
-            self.player_button.setEnabled(True)
-        else:
-            sytle_sheet_key = 'error'
-            self.user_input_room.setEnabled(True)
-            self.user_button_join.setEnabled(True)
-            self.user_button_create.setEnabled(True)
-        self.user_game_status.setStyleSheet(self.STYLE_SHEET[sytle_sheet_key])
-        self.user_game_status.setText(text)
-
-    @QtCore.Slot()
+    @Slot()
     def button_create(self) -> None:
         self.user_input_room.setEnabled(False)
-        self.user_button_join.setEnabled(False)
-        self.user_button_create.setEnabled(False)
+        self.user_join.setEnabled(False)
+        self.user_create.setEnabled(False)
         try:
-            response = httpx.post(f'http://localhost:8000/games')
+            response = self.post(f'/games')
             response.raise_for_status()
-            self.room = response.json()['game_id']
-            success = True
-            text = 'success'
         except httpx.HTTPStatusError as e:
-            success = False
-            text = response.json()['message']
-        except Exception as e:
-            success = False
-            text = f'Error: {e}'
-        if success:
-            sytle_sheet_key = 'success'
-            self.user_input_room.setText(str(self.room))
-            self.user_button_start.setEnabled(True)
-        else:
-            sytle_sheet_key = 'error'
+            self.status_message(response.json()['detail'], 'error')
             self.user_input_room.setEnabled(True)
-            self.user_button_join.setEnabled(True)
-            self.user_button_create.setEnabled(True)
-        self.user_game_status.setStyleSheet(self.STYLE_SHEET[sytle_sheet_key])
-        self.user_game_status.setText(text)
-        if success:
+            self.user_join.setEnabled(True)
+            self.user_create.setEnabled(True)
+        except Exception as e:
+            self.status_message(str(e), 'error')
+        else:
+            self.status_message(response.json()['message'], 'success')
+            self.room = response.json()['game_id']
+            self.user_input_room.setText(str(self.room))
             self.button_join()
+            self.user_start.setEnabled(True)
 
-    @QtCore.Slot()
-    def button_start(self) -> None:
-        self.user_button_start.setEnabled(False)
+    @Slot()
+    def button_join(self) -> None:
+        self.user_input_room.setEnabled(False)
+        self.user_join.setEnabled(False)
+        self.user_create.setEnabled(False)
         try:
             self.room = int(self.user_input_room.text())
             if self.room < 1:
                 raise ValueError('Wrong room number')
-            response = httpx.post(
-                f'http://localhost:8000/games/{self.room}/start'
+            response = self.post(
+                f'/games/{self.room}/players/{self.player_id}'
             )
             response.raise_for_status()
-            success = True
-            text = response.json()
         except httpx.HTTPStatusError as e:
-            success = False
-            text = response.json()
+            self.status_message(response.json()['detail'], 'error')
+            self.user_input_room.setEnabled(True)
+            self.user_join.setEnabled(True)
+            self.user_create.setEnabled(True)
         except Exception as e:
-            success = False
-            text = f'Error: {e}'
-        if success:
-            sytle_sheet_key = 'success'
-            self.log_button.setEnabled(True)
+            self.status_message(str(e), 'error')
+        else:
+            self.status_message(response.json(), 'success')
+            self.player_refresh.setEnabled(True)
+
+    @Slot()
+    def button_start(self) -> None:
+        self.user_start.setEnabled(False)
+        try:
+            response = self.post(f'/games/{self.room}/start')
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            self.status_message(response.json()['detail'], 'error')
+            self.user_start.setEnabled(True)
+        except Exception as e:
+            self.status_message(str(e), 'error')
+        else:
+            self.status_message(response.json(), 'success')
+            self.started = True
+            self.log_refresh.setEnabled(True)
             self.action_refresh.setEnabled(True)
             self.action_send.setEnabled(True)
-        else:
-            sytle_sheet_key = 'error'
-            self.user_button_start.setEnabled(True)
-        self.user_game_status.setStyleSheet(self.STYLE_SHEET[sytle_sheet_key])
-        self.user_game_status.setText(text)
 
-    @QtCore.Slot()
+    @Slot()
     def button_stats_player(self) -> None:
-        self.player_button.setEnabled(False)
+        self.player_refresh.setEnabled(False)
         try:
-            response = httpx.get(
-                f'http://localhost:8000/games/{self.room}/players/{self.player_id}/stats/player'
+            response = self.get(
+                f'/games/{self.room}/players/{self.player_id}/stats/player'
             )
             response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            self.status_message(response.json()['detail'], 'error')
+        except Exception as e:
+            self.status_message(str(e), 'error')
+        else:
+            self.status_message(response.json()['message'], 'success')
             for id_, (name, controller, seat, role, life) in response.json()[
                 'stats'
             ].items():
-                item_id = QtWidgets.QTableWidgetItem(str(id_))
-                item_name = QtWidgets.QTableWidgetItem(name)
-                item_role = QtWidgets.QTableWidgetItem(role)
-                item_life = QtWidgets.QTableWidgetItem(str(life))
+                item_id = QTableWidgetItem(str(id_))
+                item_name = QTableWidgetItem(name)
+                item_role = QTableWidgetItem(role)
+                item_life = QTableWidgetItem(str(life))
                 self.player_table.setItem(seat - 1, 0, item_id)
                 self.player_table.setItem(seat - 1, 1, item_name)
                 self.player_table.setItem(seat - 1, 2, item_role)
                 self.player_table.setItem(seat - 1, 3, item_life)
-        except httpx.HTTPStatusError as e:
-            print(response.json())
-        except Exception as e:
-            print(f'Error: {e}')
-        self.player_button.setEnabled(True)
+        self.player_refresh.setEnabled(True)
 
-    @QtCore.Slot()
+    @Slot()
     def button_stats_log(self) -> None:
-        self.log_button.setEnabled(False)
+        self.log_refresh.setEnabled(False)
         try:
-            response = httpx.get(
-                f'http://localhost:8000/games/{self.room}/players/{self.player_id}/stats/log'
+            response = self.get(
+                f'/games/{self.room}/players/{self.player_id}/stats/log'
             )
             response.raise_for_status()
-            self.log_text.setText(response.json()['stats'])
         except httpx.HTTPStatusError as e:
-            print(response.json())
+            self.status_message(response.json()['detail'], 'error')
         except Exception as e:
-            print(f'Error: {e}')
-        self.log_button.setEnabled(True)
+            self.status_message(str(e), 'error')
+        else:
+            self.status_message(response.json()['message'], 'success')
+            self.log_text.setText(response.json()['stats'])
+        self.log_refresh.setEnabled(True)
 
-    @QtCore.Slot()
+    @Slot()
     def button_stats_action(self) -> None:
         self.action_refresh.setEnabled(False)
         try:
-            response = httpx.get(
-                f'http://localhost:8000/games/{self.room}/players/{self.player_id}/stats/action'
+            response = self.get(
+                f'/games/{self.room}/players/{self.player_id}/stats/action'
             )
             response.raise_for_status()
-            text = response.json()['stats']
         except httpx.HTTPStatusError as e:
-            text = response.json()
+            self.status_message(response.json()['detail'], 'error')
         except Exception as e:
-            text = f'Error: {e}'
-        self.action_status.setText(text)
+            self.status_message(str(e), 'error')
+        else:
+            self.status_message(response.json()['message'], 'success')
+            self.action_status.setText(response.json()['stats'])
         self.action_refresh.setEnabled(True)
 
-    @QtCore.Slot()
+    @Slot()
     def button_send(self) -> None:
         self.action_send.setEnabled(False)
         try:
@@ -329,29 +338,36 @@ class MainWidget(QtWidgets.QWidget):
                 'speech': self.action_speech.toPlainText(),
                 'reason': self.action_reason.toPlainText(),
             }
-            response = httpx.post(
-                f'http://localhost:8000/games/{self.room}/players/{self.player_id}/stats/action',
-                json=data,
+            response = self.post(
+                f'/games/{self.room}/players/{self.player_id}/stats/action',
+                data,
             )
             response.raise_for_status()
-            text = response.json()
         except httpx.HTTPStatusError as e:
-            text = response.json()
+            self.status_message(response.json()['detail'], 'error')
         except Exception as e:
-            text = f'Error: {e}'
-        self.action_status.setText(text)
+            self.status_message(str(e), 'error')
+        else:
+            self.status_message(response.json(), 'success')
         self.action_send.setEnabled(True)
 
     def hd_refresh(self) -> None:
-        if self.player_button.isEnabled():
+        if self.player_refresh.isEnabled() and not self.started:
+            response = self.get(f'/games/{self.room}/start')
+            self.started = response.json()
+            if self.started:
+                self.log_refresh.setEnabled(True)
+                self.action_refresh.setEnabled(True)
+                self.action_send.setEnabled(True)
+        if self.player_refresh.isEnabled():
             self.button_stats_player()
-        if self.log_button.isEnabled():
+        if self.log_refresh.isEnabled():
             self.button_stats_log()
         if self.action_refresh.isEnabled():
             self.button_stats_action()
 
 
-class MainWindow(QtWidgets.QMainWindow):
+class MainWindow(QMainWindow):
     def __init__(self, widget: MainWidget):
         super().__init__()
         self.setWindowTitle("Miller's Hollow")
@@ -372,6 +388,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # Status Bar
         self.status = self.statusBar()
         self.status.showMessage('Status Bar')
+        self.status_message = QLabel('')
+        self.status.addPermanentWidget(self.status_message)
 
         # Widget
         self.main_widget = widget
@@ -382,7 +400,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 if __name__ == '__main__':
-    app = QtWidgets.QApplication(sys.argv)
+    app = QApplication(sys.argv)
     widget = MainWidget()
     window = MainWindow(widget)
     window.resize(800, 600)
