@@ -79,6 +79,7 @@ class Database:
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
         controller TEXT NOT NULL,
+        kind TEXT DEFALUT '',
         total_games INTEGER DEFAULT 0,
         wins INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -181,13 +182,13 @@ class Database:
                 await conn.execute(SQL)
 
     @staticmethod
-    async def insert_user(name: str, controller: str) -> int:
+    async def insert_user(name: str, controller: str, kind: str = '') -> int:
         SQL = """
-        INSERT INTO user (name, controller) VALUES (?, ?);
+        INSERT INTO user (name, controller, kind) VALUES (?, ?, ?);
         """
         async with Database.get_conn() as conn:
             try:
-                await conn.execute(SQL, (name, controller))
+                await conn.execute(SQL, (name, controller, kind))
             except Exception as e:
                 return 0
             else:
@@ -206,12 +207,12 @@ class Database:
     @staticmethod
     async def select_user(name: str) -> tuple:
         SQL = """
-        SELECT id, controller FROM user WHERE name = ?;
+        SELECT id, controller, kind FROM user WHERE name = ?;
         """
         async with Database.get_conn() as conn:
             cursor = await conn.execute(SQL, (name,))
             fetch = await Database.fetchone(cursor)
-            return fetch if fetch else (0, '')
+            return fetch if fetch else (0, '', '')
 
     @staticmethod
     async def update_user(name: str, win: bool) -> None:
@@ -370,10 +371,10 @@ class Game:
 
     async def player(self, p_id: int, skill_ids: list[str]) -> None:
         p_info = await self.select_players(p_id)
-        p_name, p_controller, p_seat, p_role, p_life = p_info[p_id]
+        p_name, p_controller, p_kind, p_seat, p_role, p_life = p_info[p_id]
 
         targets = []
-        for id_, (name, controller, seat, role, life) in p_info.items():
+        for id_, (name, *others, seat, role, life) in p_info.items():
             if life:
                 targets.append(seat)
         targets.append(0)
@@ -388,16 +389,10 @@ class Game:
                     log = await self.select_log(p_id)
                 p_text = f'You are {p_name}, a {p_role} in seat {p_seat}'
                 text = ''
-                for id_, (
-                    name,
-                    controller,
-                    seat,
-                    role,
-                    life,
-                ) in p_info.items():
+                for id_, (name, *others, seat, role, life) in p_info.items():
                     text += f'id: {id_}, name: {name}, seat: {seat}, role: {role}, life: {life}\n'
                 self.player_output[p_id] = await input_ai(
-                    'deepseek-chat', p_text, text, skill_ids, targets, log
+                    p_kind, p_text, text, skill_ids, targets, log
                 )
                 self.player_finished[p_id] = True
             elif p_controller == 'random':
@@ -532,7 +527,7 @@ class Game:
 
     async def select_players(self, player_id: int) -> dict:
         SQL = """
-        SELECT a.player_id, u.name, u.controller, a.seat, a.role_id, a.life FROM attribute a
+        SELECT a.player_id, u.name, u.controller, u.kind, a.seat, a.role_id, a.life FROM attribute a
         JOIN user u ON u.id = a.player_id
         WHERE a.game_id = ?;
         """
@@ -541,14 +536,14 @@ class Game:
             players = await Database.fetchall(cursor)
 
         # TODO: filter known info
-        player_dict = {}
-        for id_, name, controller, seat, role, life in players:
-            player_dict[id_] = (name, controller, seat, role, life)
-        for id_, (name, controller, seat, role, life) in player_dict.items():
-            if role != player_dict[player_id][3]:
+        player_dict: dict[int, list] = {}
+        for id_, *others in players:
+            player_dict[id_] = others
+        for id_, (*others, role, life) in player_dict.items():
+            if role != player_dict[player_id][-2]:
                 role = 'unknown'
                 life = 'unknown'
-                player_dict[id_] = (name, controller, seat, role, life)
+                player_dict[id_] = [*others, role, life]
         return player_dict
 
     async def select_skill(self) -> list:
@@ -656,7 +651,8 @@ class Games(collections.UserDict[int, Game]):
 
     async def add_ai(self) -> None:
         coros = [
-            Database.insert_user(name, 'ai') for name in string.ascii_uppercase
+            Database.insert_user(name, 'ai', 'deepseek_chat')
+            for name in string.ascii_uppercase
         ]
         await asyncio.gather(*coros)
 
@@ -697,7 +693,7 @@ async def register(user: User) -> responses.JSONResponse:
 
 @app.post('/login')
 async def login(user: User) -> responses.JSONResponse:
-    id_, controller = await Database.select_user(user.name)
+    id_, controller, _ = await Database.select_user(user.name)
     if not id_:
         return await register(user)
     if controller != user.controller:

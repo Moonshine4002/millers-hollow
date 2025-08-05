@@ -281,9 +281,8 @@ class MainWidget(QWidget):
             self.status_message(str(e), 'error')
         else:
             self.status_message(response.json()['message'], 'success')
-            for id_, (name, controller, seat, role, life) in response.json()[
-                'stats'
-            ].items():
+            stats: dict[int, list] = response.json()['stats']
+            for id_, (name, *others, seat, role, life) in stats.items():
                 item_id = QTableWidgetItem(str(id_))
                 item_name = QTableWidgetItem(name)
                 item_role = QTableWidgetItem(role)
