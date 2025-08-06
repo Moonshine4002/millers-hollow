@@ -123,7 +123,5 @@ async def parse(content: str, skills: list[str], targets: list[int]) -> dict:
     if output['skill'] not in skills:
         raise ValueError(f'Invalid JSON format: chosen skill beyond {skills}')
     if output['target'] not in targets:
-        raise ValueError(
-            f'Invalid JSON format: chosen target beyond {targets}'
-        )
+        raise ValueError(f'Invalid JSON format: chosen target beyond {targets}')
     return output

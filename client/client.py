@@ -76,11 +76,6 @@ class MainWidget(QWidget):
 
         # player
         self.player_table = QTableWidget()
-        self.player_table.setRowCount(9)
-        self.player_table.setColumnCount(4)
-        self.player_table.setHorizontalHeaderLabels(
-            ['ID', 'Name', 'Role', 'Life']
-        )
         self.player_refresh = QPushButton('refresh')
         self.player_refresh.clicked.connect(self.button_stats_player)
         self.player_refresh.setEnabled(False)
@@ -234,9 +229,7 @@ class MainWidget(QWidget):
             self.room = int(self.user_input_room.text())
             if self.room < 1:
                 raise ValueError('Wrong room number')
-            response = self.post(
-                f'/games/{self.room}/players/{self.player_id}'
-            )
+            response = self.post(f'/games/{self.room}/players/{self.player_id}')
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self.status_message(response.json()['detail'], 'error')
@@ -271,9 +264,7 @@ class MainWidget(QWidget):
     def button_stats_player(self) -> None:
         self.player_refresh.setEnabled(False)
         try:
-            response = self.get(
-                f'/games/{self.room}/players/{self.player_id}/stats/player'
-            )
+            response = self.get(f'/games/{self.room}/players/{self.player_id}/stats/player')
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self.status_message(response.json()['detail'], 'error')
@@ -282,6 +273,9 @@ class MainWidget(QWidget):
         else:
             self.status_message(response.json()['message'], 'success')
             stats: dict[int, list] = response.json()['stats']
+            self.player_table.setRowCount(len(stats))
+            self.player_table.setColumnCount(4)
+            self.player_table.setHorizontalHeaderLabels(['ID', 'Name', 'Role', 'Life'])
             for id_, (name, *others, seat, role, life) in stats.items():
                 item_id = QTableWidgetItem(str(id_))
                 item_name = QTableWidgetItem(name)
@@ -297,9 +291,7 @@ class MainWidget(QWidget):
     def button_stats_log(self) -> None:
         self.log_refresh.setEnabled(False)
         try:
-            response = self.get(
-                f'/games/{self.room}/players/{self.player_id}/stats/log'
-            )
+            response = self.get(f'/games/{self.room}/players/{self.player_id}/stats/log')
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self.status_message(response.json()['detail'], 'error')
@@ -314,9 +306,7 @@ class MainWidget(QWidget):
     def button_stats_action(self) -> None:
         self.action_refresh.setEnabled(False)
         try:
-            response = self.get(
-                f'/games/{self.room}/players/{self.player_id}/stats/action'
-            )
+            response = self.get(f'/games/{self.room}/players/{self.player_id}/stats/action')
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self.status_message(response.json()['detail'], 'error')
