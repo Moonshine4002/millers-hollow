@@ -78,7 +78,7 @@ async def input_ai(
     skills: list[str],
     targets: list[int],
     log: str,
-) -> dict:
+) -> JsonFormat:
     input_ = frame.format(
         language=language,
         json_format=json_format,
@@ -100,7 +100,8 @@ async def input_ai(
             if not content:
                 content = ''
                 raise ValueError('empty output')
-            output = await parse(content, skills, targets)
+            output = parse(content)
+            logic(output, skills, targets)
         except Exception as e:
             print(f'Error: {e}')
             messages.append({'role': 'assistant', 'content': content})
@@ -115,13 +116,15 @@ async def input_ai(
     return output
 
 
-async def parse(content: str, skills: list[str], targets: list[int]) -> dict:
+def parse(content: str) -> JsonFormat:
     matches: list[str] = re.findall(r'\{.*\}', content, re.DOTALL)
     if len(matches) != 1:
         raise ValueError(f'Got {len(matches)} matches')
-    output: dict = JsonFormat.model_validate_json(matches[0]).model_dump()
-    if output['skill'] not in skills:
+    return JsonFormat.model_validate_json(matches[0])
+
+
+def logic(output: JsonFormat, skills: list[str], targets: list[int]) -> None:
+    if output.skill not in skills:
         raise ValueError(f'Invalid JSON format: chosen skill beyond {skills}')
-    if output['target'] not in targets:
+    if output.target not in targets:
         raise ValueError(f'Invalid JSON format: chosen target beyond {targets}')
-    return output

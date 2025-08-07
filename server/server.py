@@ -21,7 +21,7 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException, responses, status
 from pydantic import BaseModel
 import uvicorn
 
-from ai import JsonFormat, input_ai
+from ai import JsonFormat, input_ai, logic
 
 
 print(pathlib.Path.cwd())
@@ -235,7 +235,7 @@ class Game:
         self.player_started: dict[int, bool] = {}
         self.player_finished: dict[int, bool] = {}
         self.player_input: dict[int, dict[str, Any]] = {}
-        self.player_output: dict[int, dict[str, Any]] = {}
+        self.player_output: dict[int, JsonFormat] = {}
 
     async def insert(self) -> int:
         async with Database.get_conn() as conn:
@@ -391,12 +391,12 @@ class Game:
                 self.player_finished[p_id] = True
                 self.player_started[p_id] = False
             elif p_controller == 'random':
-                self.player_output[p_id] = {
-                    'skill': random.choice(skill_ids),
-                    'target': random.choice(targets),
-                    'speech': '',
-                    'reason': '',
-                }
+                self.player_output[p_id] = JsonFormat(
+                    skill=random.choice(skill_ids),
+                    target=random.choice(targets),
+                    speech='',
+                    reason='',
+                )
                 self.player_finished[p_id] = True
                 self.player_started[p_id] = False
             else:
@@ -404,8 +404,8 @@ class Game:
                     await asyncio.sleep(1)
 
             output = self.player_output[p_id]
-            skill_ids.remove(output['skill'])
-            if await self.action(p_id, output['skill'], output['target'], output['speech']):
+            skill_ids.remove(output.skill)
+            if await self.action(p_id, output.skill, output.target, output.speech):
                 break
 
     async def action(
@@ -812,9 +812,11 @@ async def stats_action_post(
     game_start(game_id)
     player_start(game_id, player_id)
     options = game.player_input[player_id]
-    if json_format.skill not in options['skill'] or json_format.target not in options['target']:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, 'Invalid action')
-    game.player_output[player_id] = json_format.model_dump()
+    try:
+        logic(json_format, options['skill'], options['target'])
+    except Exception as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+    game.player_output[player_id] = json_format
     game.player_finished[player_id] = True
     game.player_started[player_id] = False
     return responses.JSONResponse('Action sent', status.HTTP_201_CREATED)
