@@ -132,6 +132,7 @@ class Database:
         player_skill_id INTEGER NOT NULL,
         target_id INTEGER DEFAULT 0,
         type TEXT NOT NULL,
+        speech TEXT DEFAULT '',
         comment TEXT DEFAULT '');
         ---
         INSERT OR IGNORE INTO user (name, controller) VALUES
@@ -374,8 +375,7 @@ class Game:
             self.player_started[p_id] = True
             self.player_finished[p_id] = False
             if p_controller == 'ai':
-                async with Database.get_conn() as conn:
-                    log = await self.select_log(p_id)
+                log = await self.select_log(p_id)
                 p_text = f'You are {p_name}, a {p_role} in seat {p_seat}'
                 text = ''
                 for id_, (name, *others, seat, role, life) in p_info.items():
@@ -405,7 +405,7 @@ class Game:
 
             output = self.player_output[p_id]
             skill_ids.remove(output.skill)
-            if await self.action(p_id, output.skill, output.target, output.speech):
+            if await self.action(p_id, output.skill, output.target, output.speech, output.reason):
                 break
 
     async def action(
@@ -413,39 +413,44 @@ class Game:
         player_id: int,
         skill_id: str,
         seat: int = 0,
+        speech: str = '',
         comment: str = '',
     ) -> bool:
         async def skill_log(
-            player_id: int, skill_id: str, seat: int, comment: str = '', type_='private'
+            player_id: int,
+            skill_id: str,
+            seat: int,
+            speech: str = '',
+            comment: str = '',
+            type_='private',
         ) -> None:
             if seat != 0:
                 await self.update_skill(player_id, skill_id, seat)
-            await self.insert_log(player_id, skill_id, type_, seat, comment)
+            await self.insert_log(player_id, skill_id, type_, seat, speech, comment)
 
-        async with Database.get_conn() as conn:
-            match skill_id:
-                case 'vote':
-                    await skill_log(player_id, skill_id, seat, comment)
-                case 'speak':
-                    await skill_log(player_id, skill_id, seat, comment, 'public')
-                case 'kill':
-                    await skill_log(player_id, skill_id, seat, comment)
-                case 'team_chat':
-                    await skill_log(player_id, skill_id, seat, comment, 'team')
-                case 'identify':
-                    await skill_log(player_id, skill_id, seat, comment)
-                case 'heal':
-                    await skill_log(player_id, skill_id, seat, comment)
-                    return True   # TODO: use link
-                case 'poison':
-                    await skill_log(player_id, skill_id, seat, comment)
-                    return True
-                case 'shoot':
-                    await skill_log(player_id, skill_id, seat, comment)
-                case 'shield':
-                    await skill_log(player_id, skill_id, seat, comment)
-                case _:
-                    raise NotImplementedError
+        match skill_id:
+            case 'vote':
+                await skill_log(player_id, skill_id, seat, speech, comment)
+            case 'speak':
+                await skill_log(player_id, skill_id, seat, speech, comment, 'public')
+            case 'kill':
+                await skill_log(player_id, skill_id, seat, speech, comment)
+            case 'team_chat':
+                await skill_log(player_id, skill_id, seat, speech, comment, 'team')
+            case 'identify':
+                await skill_log(player_id, skill_id, seat, speech, comment)
+            case 'heal':
+                await skill_log(player_id, skill_id, seat, speech, comment)
+                return True   # TODO: use link
+            case 'poison':
+                await skill_log(player_id, skill_id, seat, speech, comment)
+                return True
+            case 'shoot':
+                await skill_log(player_id, skill_id, seat, speech, comment)
+            case 'shield':
+                await skill_log(player_id, skill_id, seat, speech, comment)
+            case _:
+                raise NotImplementedError
         return False
 
     async def verdict(self) -> None:
@@ -597,18 +602,19 @@ class Game:
         skill_id: str,
         type_: str,
         seat: int = 0,
+        speech: str = '',
         comment: str = '',
     ) -> None:
         SQL = """
-        INSERT INTO log (player_skill_id, type, comment, target_id)
-        SELECT ps.id, ?1, ?2,
-        CASE WHEN ?3 = 0 THEN 0 ELSE a.player_id END
+        INSERT INTO log (player_skill_id, type, speech, comment, target_id)
+        SELECT ps.id, ?1, ?2, ?3,
+        CASE WHEN ?4 = 0 THEN 0 ELSE a.player_id END
         FROM player_skill ps
-        LEFT JOIN attribute a ON a.game_id = ps.game_id AND a.seat = ?3
-        WHERE ps.game_id = ?4 AND ps.player_id = ?5 AND ps.skill_id = ?6;
+        LEFT JOIN attribute a ON a.game_id = ps.game_id AND a.seat = ?4
+        WHERE ps.game_id = ?5 AND ps.player_id = ?6 AND ps.skill_id = ?7;
         """
         async with Database.get_conn() as conn:
-            await conn.execute(SQL, (type_, comment, seat, self.id, player_id, skill_id))
+            await conn.execute(SQL, (type_, speech, comment, seat, self.id, player_id, skill_id))
 
     async def select_log(self, player_id: int) -> str:
         SQL_WHERE = """
@@ -625,7 +631,7 @@ class Game:
         """
 
         SQL = f"""
-        SELECT up.name, ap.seat, ps.skill_id, ut.name, at.seat, l.comment
+        SELECT up.name, ap.seat, ps.skill_id, ut.name, at.seat, l.speech
         FROM log l
         JOIN player_skill ps ON ps.id = l.player_skill_id
         LEFT JOIN user up ON up.id = ps.player_id
@@ -645,12 +651,12 @@ class Game:
             skill_id,
             target_name,
             target_seat,
-            comment,
+            speech,
         ) in logs:
             if player_name == 'Moderator':   # TODO: use id
-                text += f'[system] {comment}\n'
+                text += f'[system] {speech}\n'
             elif skill_id in ['speak', 'team_chat']:
-                text += f'{player_name}({player_seat}) said: {comment}\n'
+                text += f'{player_name}({player_seat}) said: {speech}\n'
             else:
                 text += f'{player_name}({player_seat}) {skill_id} {target_name}({target_seat}).\n'
         return text.strip()
@@ -668,7 +674,7 @@ class Games(collections.UserDict[int, Game]):
 
     async def add_ai(self) -> None:
         coros = [
-            Database.insert_user(name, 'ai', 'deepseek_chat') for name in string.ascii_uppercase
+            Database.insert_user(name, 'ai', 'deepseek-chat') for name in string.ascii_uppercase
         ]
         await asyncio.gather(*coros)
 

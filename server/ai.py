@@ -37,7 +37,7 @@ json_format = """
 {
     "skill": "Your chosen skill",
     "target": An integer seat number if needed (input 0 if ignored),
-    "speech": "A public speech if needed (input "" if ignored)",
+    "speech": "Public or private according to the skill (input "" if ignored)",
     "reason": "Your reasoning (which will not be public)"
 }
 """
