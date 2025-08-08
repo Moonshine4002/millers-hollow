@@ -32,7 +32,8 @@ class MainWidget(QWidget):
         super().__init__()
         self.user_name = ''
         self.user_controller = ''
-        self.player_id = 0
+        self.user_id = 0
+        self.seat = 0
         self.room = 0   # game_id
         self.started = False
 
@@ -189,7 +190,7 @@ class MainWidget(QWidget):
             self.status_message(str(e), 'error')
         else:
             self.status_message(response.json()['message'], 'success')
-            self.player_id = response.json()['id']
+            self.user_id = response.json()['id']
             self.user_input_room.setEnabled(True)
             self.user_join.setEnabled(True)
             self.user_create.setEnabled(True)
@@ -229,7 +230,7 @@ class MainWidget(QWidget):
             self.room = int(self.user_input_room.text())
             if self.room < 1:
                 raise ValueError('Wrong room number')
-            response = self.post(f'/games/{self.room}/players/{self.player_id}')
+            response = self.post(f'/games/{self.room}/users/{self.user_id}')
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self.status_message(response.json()['detail'], 'error')
@@ -246,7 +247,7 @@ class MainWidget(QWidget):
     def button_start(self) -> None:
         self.user_start.setEnabled(False)
         try:
-            response = self.post(f'/games/{self.room}/start')
+            response = self.post(f'/games/{self.room}/users/{self.user_id}/start')
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self.status_message(response.json()['detail'], 'error')
@@ -254,8 +255,9 @@ class MainWidget(QWidget):
         except Exception as e:
             self.status_message(str(e), 'error')
         else:
-            self.status_message(response.json(), 'success')
+            self.status_message(response.json()['message'], 'success')
             self.started = True
+            self.seat = response.json()['seat']
             self.log_refresh.setEnabled(True)
             self.action_refresh.setEnabled(True)
             self.action_send.setEnabled(True)
@@ -264,7 +266,7 @@ class MainWidget(QWidget):
     def button_stats_player(self) -> None:
         self.player_refresh.setEnabled(False)
         try:
-            response = self.get(f'/games/{self.room}/players/{self.player_id}/stats/player')
+            response = self.get(f'/games/{self.room}/seats/{self.seat}/stats/player')
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self.status_message(response.json()['detail'], 'error')
@@ -274,26 +276,25 @@ class MainWidget(QWidget):
             self.status_message(response.json()['message'], 'success')
             stats: dict[int, list] = response.json()['stats']
             self.player_table.setRowCount(len(stats))
-            self.player_table.setColumnCount(5)
-            self.player_table.setHorizontalHeaderLabels(['ID', 'Name', 'Role', 'Faction', 'Life'])
-            for id_, (name, *others, seat, role, faction, life) in stats.items():
-                item_id = QTableWidgetItem(str(id_))
+            self.player_table.setColumnCount(4)
+            self.player_table.setHorizontalHeaderLabels(['Name', 'Role', 'Faction', 'Life'])
+            for seat_str, (name, *others, role, faction, life) in stats.items():
+                seat = int(seat_str) - 1
                 item_name = QTableWidgetItem(name)
                 item_role = QTableWidgetItem(role)
                 item_faction = QTableWidgetItem(faction)
                 item_life = QTableWidgetItem(str(life))
-                self.player_table.setItem(seat - 1, 0, item_id)
-                self.player_table.setItem(seat - 1, 1, item_name)
-                self.player_table.setItem(seat - 1, 2, item_role)
-                self.player_table.setItem(seat - 1, 3, item_faction)
-                self.player_table.setItem(seat - 1, 4, item_life)
+                self.player_table.setItem(seat, 0, item_name)
+                self.player_table.setItem(seat, 1, item_role)
+                self.player_table.setItem(seat, 2, item_faction)
+                self.player_table.setItem(seat, 3, item_life)
         self.player_refresh.setEnabled(True)
 
     @Slot()
     def button_stats_log(self) -> None:
         self.log_refresh.setEnabled(False)
         try:
-            response = self.get(f'/games/{self.room}/players/{self.player_id}/stats/log')
+            response = self.get(f'/games/{self.room}/seats/{self.seat}/stats/log')
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self.status_message(response.json()['detail'], 'error')
@@ -308,7 +309,7 @@ class MainWidget(QWidget):
     def button_stats_action(self) -> None:
         self.action_refresh.setEnabled(False)
         try:
-            response = self.get(f'/games/{self.room}/players/{self.player_id}/stats/action')
+            response = self.get(f'/games/{self.room}/seats/{self.seat}/stats/action')
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self.status_message(response.json()['detail'], 'error')
@@ -330,7 +331,7 @@ class MainWidget(QWidget):
                 'reason': self.action_reason.toPlainText(),
             }
             response = self.post(
-                f'/games/{self.room}/players/{self.player_id}/stats/action',
+                f'/games/{self.room}/seats/{self.seat}/stats/action',
                 data,
             )
             response.raise_for_status()
@@ -344,12 +345,14 @@ class MainWidget(QWidget):
 
     def hd_refresh(self) -> None:
         if self.player_refresh.isEnabled() and not self.started:
-            response = self.get(f'/games/{self.room}/start')
-            self.started = response.json()
-            if self.started:
-                self.log_refresh.setEnabled(True)
-                self.action_refresh.setEnabled(True)
-                self.action_send.setEnabled(True)
+            if not self.started:
+                response = self.get(f'/games/{self.room}/users/{self.user_id}/start')
+                self.seat = response.json()
+                if self.seat:
+                    self.started = True
+                    self.log_refresh.setEnabled(True)
+                    self.action_refresh.setEnabled(True)
+                    self.action_send.setEnabled(True)
         if self.player_refresh.isEnabled():
             self.button_stats_player()
         if self.log_refresh.isEnabled():

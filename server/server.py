@@ -120,18 +120,17 @@ class Database:
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         link_id INTEGER DEFAULT 0,
         game_id INTEGER NOT NULL,
-        player_id INTEGER NOT NULL,
+        seat INTEGER NOT NULL,
         skill_id TEXT NOT NULL,
         quantity REAL DEFAULT 1,
-        target_id INTEGER DEFAULT 0,
-        cycle INTEGER DEFAULT 0,
-        UNIQUE (game_id, player_id, skill_id));
+        UNIQUE (game_id, seat, skill_id));
         ---
         CREATE TABLE IF NOT EXISTS log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        player_skill_id INTEGER NOT NULL,
-        target_id INTEGER DEFAULT 0,
+        ps_id INTEGER NOT NULL,
+        cycle INTEGER NOT NULL,
         type TEXT NOT NULL,
+        target INTEGER DEFAULT 0,
         speech TEXT DEFAULT '',
         comment TEXT DEFAULT '');
         ---
@@ -230,9 +229,11 @@ class Game:
         self.cycle = 1
         self.phase = 'night'
         self.id = 0
-        self.system_id = 1
-        self.player_ids: list[int] = []
+        self.system_seat = 0
+        self.users: list[int] = []
         self.started = False
+        self.seats: list[int] = []
+        self.user_seat: dict[int, int] = {}
         self.player_started: dict[int, bool] = {}
         self.player_finished: dict[int, bool] = {}
         self.player_input: dict[int, dict[str, Any]] = {}
@@ -250,86 +251,93 @@ class Game:
             return self.id
 
     async def init_db(self) -> None:
-        for player_id in self.player_ids:
-            self.player_started[player_id] = False
-            self.player_finished[player_id] = False
-
+        SQL = """
+        SELECT id FROM user WHERE controller = 'ai';
+        """
         async with Database.get_conn() as conn:
-            SQL = """
-            SELECT id FROM user WHERE controller = 'ai';
-            """
             cursor = await conn.execute(SQL)
             ais = await Database.fetchall(cursor)
-            ai_ids = [ai_id for (ai_id,) in ais if ai_id not in self.player_ids]
+        ai_ids = [ai_id for (ai_id,) in ais if ai_id not in self.users]
 
-            roles = [
-                'villager',
-                'villager',
-                'villager',
-                'werewolf',
-                'werewolf',
-                'werewolf',
-                'seer',
-                'witch',
-                'hunter',
-            ]
-            ai_num = len(roles) - len(self.player_ids)
-            if ai_num < 0:
-                raise ValueError('Too many user')
-            elif ai_num > len(ai_ids):
-                raise ValueError('Not enough user')
-            ai_ids = random.sample(ai_ids, ai_num)
-            for ai_id in ai_ids:
-                self.player_ids.append(ai_id)
+        roles = [
+            'villager',
+            'werewolf',
+            'seer',
+            'witch',
+            'witch',
+            'witch',
+            'witch',
+            'witch',
+            'witch',
+        ]
+        self.seats = list(range(1, len(roles) + 1))
+        ai_num = len(roles) - len(self.users)
+        if ai_num < 0:
+            raise ValueError('Too many user')
+        elif ai_num > len(ai_ids):
+            raise ValueError('Not enough user')
+        ai_ids = random.sample(ai_ids, ai_num)
+        for ai_id in ai_ids:
+            self.users.append(ai_id)
 
-            SQL = """
-            INSERT INTO attribute (game_id, player_id, seat, role_id, faction) VALUES
-            (?, ?, ?, ?, (SELECT faction FROM role WHERE id = ?));
-            """
-            random.shuffle(roles)
-            random.shuffle(self.player_ids)
-            for seat, (player_id, role_id) in enumerate(zip(self.player_ids, roles)):
-                await conn.execute(SQL, (self.id, player_id, seat + 1, role_id, role_id))
+        SQL = """
+        INSERT INTO attribute (game_id, player_id, seat, role_id, faction) VALUES
+        (?1, ?2, ?3, ?4, (SELECT faction FROM role WHERE id = ?4));
+        """
+        random.shuffle(roles)
+        random.shuffle(self.users)
+        async with Database.get_conn() as conn:
+            for player_id, seat, role_id in zip(self.users, self.seats, roles):
+                self.user_seat[player_id] = seat
+                await conn.execute(SQL, (self.id, player_id, seat, role_id))
 
-            SQL = """
-            INSERT OR IGNORE INTO player_skill (game_id, player_id, skill_id) VALUES
-            (?, 1, 'speak');
-            """   # TODO: find Moderator, set system_id
+        SQL = """
+        INSERT OR IGNORE INTO player_skill (game_id, seat, skill_id) VALUES
+        (?, 0, 'speak');
+        """   # TODO: find Moderator, set system_id
+        async with Database.get_conn() as conn:
             await conn.execute(SQL, (self.id,))
 
-            SQL = """
-            INSERT INTO player_skill (game_id, player_id, skill_id)
-            SELECT a.game_id, a.player_id, rs.skill_id FROM attribute a
-            JOIN role_skill rs ON rs.role_id = a.role_id
-            WHERE a.game_id = ?
-            """
+        SQL = """
+        INSERT INTO player_skill (game_id, seat, skill_id)
+        SELECT a.game_id, a.seat, rs.skill_id FROM attribute a
+        JOIN role_skill rs ON rs.role_id = a.role_id
+        WHERE a.game_id = ?
+        """
+        async with Database.get_conn() as conn:
             await conn.execute(SQL, (self.id,))
 
-            SQL = """
-            UPDATE player_skill AS ps1 SET link_id =
-            ps2.id FROM skill s, player_skill ps2
-            WHERE ps1.game_id = ? AND s.id = ps1.skill_id
-            AND ps2.game_id = ps1.game_id AND ps2.player_id = ps1.player_id
-            AND ps2.skill_id = s.link_id;
-            """
+        SQL = """
+        UPDATE player_skill AS ps1 SET link_id =
+        ps2.id FROM skill s, player_skill ps2
+        WHERE ps1.game_id = ? AND s.id = ps1.skill_id
+        AND ps2.game_id = ps1.game_id AND ps2.seat = ps1.seat
+        AND ps2.skill_id = s.link_id;
+        """
+        async with Database.get_conn() as conn:
             await conn.execute(SQL, (self.id,))
 
-        await self.insert_log(self.system_id, 'speak', 'public', 0, 'Game begin.')
+        await self.insert_log(self.system_seat, 'speak', 'public', 0, 'Game begin.')
 
     async def loops(self) -> None:
-        while True:
+        for seat in self.seats:
+            self.player_started[seat] = False
+            self.player_finished[seat] = False
+        self.started = True
+
+        while self.started:
             await self.loop()
 
     async def loop(self) -> None:
         def setdefault(
             d: dict[int, dict[int, list[str]]],
             seq: int,
-            player_id: int,
+            seat: int,
             skill_id: str,
         ):
             d.setdefault(seq, {})
-            d[seq].setdefault(player_id, [])
-            d[seq][player_id].append(skill_id)
+            d[seq].setdefault(seat, [])
+            d[seq][seat].append(skill_id)
 
         skills = await self.s_ps_player()
 
@@ -349,127 +357,126 @@ class Game:
             'day': {},
         }
 
-        for player_id, skill_id in skills:
-            setdefault(d, skill_seq[self.phase][skill_id], player_id, skill_id)
+        for seat, skill_id in skills:
+            setdefault(d, skill_seq[self.phase][skill_id], seat, skill_id)
 
         d = dict(sorted(d.items()))
         for seq, value in d.items():
             if seq == 0:
                 continue
-            coros = [self.player(player_id, skill_ids) for player_id, skill_ids in value.items()]
+            coros = [self.player(seat, skill_ids) for seat, skill_ids in value.items()]
             await asyncio.gather(*coros)
 
         await self.verdict()
 
         await self.update_game()
 
-    async def player(self, p_id: int, skill_ids: list[str]) -> None:
-        p_info = await self.s_a_player(p_id)
-        p_name, p_controller, p_kind, p_seat, p_role, p_faction, p_life = p_info[p_id]
+    async def player(self, p_seat: int, skill_ids: list[str]) -> None:
+        p_info = await self.s_a_player(p_seat)
+        p_name, p_controller, p_kind, p_role, p_faction, p_life = p_info[p_seat]
 
         targets = []
-        for id_, (name, *others, seat, role, faction, life) in p_info.items():
+        for seat, (name, *others, role, faction, life) in p_info.items():
             if life:
                 targets.append(seat)
         targets.append(0)
         targets.sort()
 
         while skill_ids:
-            self.player_input[p_id] = {'skill': skill_ids, 'target': targets}
-            self.player_started[p_id] = True
-            self.player_finished[p_id] = False
-            if await self.pre_action(p_id, skill_ids, targets):
+            self.player_input[p_seat] = {'skill': skill_ids, 'target': targets}
+            self.player_started[p_seat] = True
+            self.player_finished[p_seat] = False
+            if await self.pre_action(p_seat, skill_ids, targets):
                 break
             if p_controller == 'ai':
-                log = await self.select_log(p_id)
+                log = await self.select_log(p_seat)
                 p_text = f'You are {p_name}, a {p_role} in seat {p_seat}'
                 text = ''
-                for id_, (name, *others, seat, role, faction, life) in p_info.items():
-                    text += f'id: {id_}, name: {name}, seat: {seat}, role: {role}, faction: {faction}, life: {life}\n'
+                for seat, (name, *others, role, faction, life) in p_info.items():
+                    text += f'name: {name}, seat: {seat}, role: {role}, faction: {faction}, life: {life}\n'
                 try:
-                    self.player_output[p_id] = await input_ai(
+                    self.player_output[p_seat] = await input_ai(
                         p_kind, p_text, text, skill_ids, targets, log
                     )
                 except Exception as e:
                     print(f'Error: {e}')
                     p_controller = 'random'
                     continue
-                self.player_finished[p_id] = True
-                self.player_started[p_id] = False
+                self.player_finished[p_seat] = True
+                self.player_started[p_seat] = False
             elif p_controller == 'random':
-                self.player_output[p_id] = JsonFormat(
+                self.player_output[p_seat] = JsonFormat(
                     skill=random.choice(skill_ids),
                     target=random.choice(targets),
                     speech='',
                     reason='',
                 )
-                self.player_finished[p_id] = True
-                self.player_started[p_id] = False
+                self.player_finished[p_seat] = True
+                self.player_started[p_seat] = False
             else:
-                while not self.player_finished[p_id]:
+                while not self.player_finished[p_seat]:
                     await asyncio.sleep(1)
 
-            output = self.player_output[p_id]
+            output = self.player_output[p_seat]
             skill_ids.remove(output.skill)
-            if await self.action(p_id, output.skill, output.target, output.speech, output.reason):
+            if await self.action(
+                p_seat, output.skill, output.target, output.speech, output.reason
+            ):
                 break
 
-    async def pre_action(self, player_id: int, skill_ids: list[str], targets: list[int]) -> bool:
+    async def pre_action(self, seat: int, skill_ids: list[str], targets: list[int]) -> bool:
         if 'heal' in skill_ids:
-            kill_id = await self.verdict(predict=True)
-            # TODO: use seat
+            kill_seat = await self.verdict(predict=True)
             await self.insert_log(
-                self.system_id, 'speak', 'private', player_id, f'ID {kill_id} is killed.'
+                self.system_seat, 'speak', 'private', seat, f'Seat {kill_seat} is killed.'
             )
         return False
 
     async def action(
         self,
-        player_id: int,
+        seat: int,
         skill_id: str,
-        seat: int = 0,
+        target_seat: int = 0,
         speech: str = '',
         comment: str = '',
     ) -> bool:
         async def skill_log(
-            player_id: int,
-            skill_id: str,
             seat: int,
+            skill_id: str,
+            target_seat: int,
             speech: str = '',
             comment: str = '',
             type_='private',
         ) -> None:
-            if seat != 0:
-                await self.u_ps_player(player_id, skill_id, seat)
-            await self.insert_log(player_id, skill_id, type_, seat, speech, comment)
+            await self.insert_log(seat, skill_id, type_, target_seat, speech, comment)
 
         match skill_id:
             case 'vote':
-                await skill_log(player_id, skill_id, seat, speech, comment)
+                await skill_log(seat, skill_id, target_seat, speech, comment)
             case 'speak':
-                await skill_log(player_id, skill_id, seat, speech, comment, 'public')
+                await skill_log(seat, skill_id, target_seat, speech, comment, 'public')
             case 'kill':
-                await skill_log(player_id, skill_id, seat, speech, comment)
+                await skill_log(seat, skill_id, target_seat, speech, comment)
             case 'team_chat':
-                await skill_log(player_id, skill_id, seat, speech, comment, 'team')
+                await skill_log(seat, skill_id, target_seat, speech, comment, 'team')
             case 'identify':
-                await skill_log(player_id, skill_id, seat, speech, comment)
-                (faction,) = await self.s_a_faction(seat)
+                await skill_log(seat, skill_id, target_seat, speech, comment)
+                (faction,) = await self.s_a_faction(target_seat)
                 if faction != 'werewolf':
                     faction = 'good'
                 await self.insert_log(
-                    self.system_id, 'speak', 'private', player_id, f'Seat {seat} is {faction}.'
+                    self.system_seat, 'speak', 'private', seat, f'Seat {target_seat} is {faction}.'
                 )
             case 'heal':
-                await skill_log(player_id, skill_id, seat, speech, comment)
+                await skill_log(seat, skill_id, target_seat, speech, comment)
                 return True   # TODO: use link
             case 'poison':
-                await skill_log(player_id, skill_id, seat, speech, comment)
+                await skill_log(seat, skill_id, target_seat, speech, comment)
                 return True
             case 'shoot':
-                await skill_log(player_id, skill_id, seat, speech, comment)
+                await skill_log(seat, skill_id, target_seat, speech, comment)
             case 'shield':
-                await skill_log(player_id, skill_id, seat, speech, comment)
+                await skill_log(seat, skill_id, target_seat, speech, comment)
             case _:
                 raise NotImplementedError
         return False
@@ -478,12 +485,12 @@ class Game:
         def vote(skills: list[tuple], skill: str) -> tuple[list[tuple], list[int], str]:
             filtered_skills: list[tuple] = []
             votes: dict[int, list[int]] = {}
-            for player_id, skill_id, target_id in skills:
+            for seat, skill_id, target_seat in skills:
                 if skill_id != skill:
-                    filtered_skills.append((player_id, skill_id, target_id))
+                    filtered_skills.append((seat, skill_id, target_seat))
                     continue
-                votes.setdefault(target_id, [])
-                votes[target_id].append(player_id)
+                votes.setdefault(target_seat, [])
+                votes[target_seat].append(seat)
             for vote in votes:
                 votes[vote].sort()
             votes = dict(sorted(votes.items()))
@@ -496,7 +503,7 @@ class Game:
             elect = [k for k, v in votes.items() if len(v) == max_vote]
             return filtered_skills, elect, vote_text
 
-        skills = await self.s_ps_cycle()
+        skills = await self.s_log_cycle()
         skills, vote_elect, vote_text = vote(skills, 'vote')
         skills, kill_elect, kill_text = vote(skills, 'kill')
 
@@ -508,7 +515,7 @@ class Game:
             return kill_id
 
         while skills:
-            player_id, skill_id, target_id = skills.pop()
+            seat, skill_id, target_seat = skills.pop()
             match skill_id:
                 case 'speak':
                     pass
@@ -538,7 +545,9 @@ class Game:
             if faction != 'werewolf' and count == 0:
                 winner = 'werewolf'   # override
         print(factions)
-        print(f'winner: {winner if winner else "none"}.')
+        if winner:
+            self.started = False
+            print(f'winner: {winner}.')
 
     async def update_game(self) -> None:
         SQL = """
@@ -572,17 +581,17 @@ class Game:
             cursor = await conn.execute(SQL, (self.id, seat))
             return await Database.fetchone(cursor)
 
-    async def u_a_life(self, player_id: int) -> None:
+    async def u_a_life(self, seat: int) -> None:
         SQL = """
         UPDATE attribute SET life = FALSE
-        WHERE game_id = ? AND player_id = ?;
+        WHERE game_id = ? AND seat = ?;
         """
         async with Database.get_conn() as conn:
-            await conn.execute(SQL, (self.id, player_id))
+            await conn.execute(SQL, (self.id, seat))
 
-    async def s_a_player(self, player_id: int) -> dict[int, list]:
+    async def s_a_player(self, p_seat: int) -> dict[int, list]:
         SQL = """
-        SELECT a.player_id, u.name, u.controller, u.kind, a.seat, a.role_id, a.faction, a.life
+        SELECT a.seat, u.name, u.controller, u.kind, a.role_id, a.faction, a.life
         FROM attribute a
         JOIN user u ON u.id = a.player_id
         WHERE a.game_id = ?;
@@ -593,59 +602,45 @@ class Game:
 
         # TODO: filter known info, role/faction/side
         player_dict: dict[int, list] = {}
-        for id_, *others in players:
-            player_dict[id_] = others
-        for id_, (*others, role, faction, life) in player_dict.items():
-            targets = [target for target, in await self.s_l_skill(player_id, 'identify')]
+        for seat, *others in players:
+            player_dict[seat] = others
+        for seat, (*others, role, faction, life) in player_dict.items():
+            targets = [target for target, in await self.s_l_skill(seat, 'identify')]
             if self.phase == 'night':
                 life = 'unknown'
             if not (
-                id_ == player_id
-                or role == player_dict[player_id][-2] == 'werewolf'
-                or id_ in targets
+                seat == p_seat or role == player_dict[p_seat][-2] == 'werewolf' or seat in targets
             ):
                 role = 'unknown'
                 faction = 'unknown'
-            if id_ in targets and faction != 'werewolf':
+            if seat in targets and faction != 'werewolf':
                 faction = 'good'
-            player_dict[id_] = [*others, role, faction, life]
+            player_dict[seat] = [*others, role, faction, life]
         return player_dict
 
-    async def s_l_skill(self, player_id: int, skill_id: str) -> list[tuple]:
+    async def s_l_skill(self, seat: int, skill_id: str) -> list[tuple]:
         SQL = """
-        SELECT target_id FROM log WHERE player_skill_id = (
+        SELECT target FROM log WHERE ps_id = (
             SELECT id FROM player_skill
-            WHERE game_id = ? AND player_id = ? AND skill_id = ?
+            WHERE game_id = ? AND seat = ? AND skill_id = ?
         );
         """
         async with Database.get_conn() as conn:
-            cursor = await conn.execute(SQL, (self.id, player_id, skill_id))
+            cursor = await conn.execute(SQL, (self.id, seat, skill_id))
             return await Database.fetchall(cursor)
 
     async def s_ps_player(self) -> list[tuple]:
         SQL = """
-        SELECT player_id, skill_id FROM player_skill WHERE game_id = ?;
+        SELECT seat, skill_id FROM player_skill WHERE game_id = ?;
         """
         async with Database.get_conn() as conn:
             cursor = await conn.execute(SQL, (self.id,))
             return await Database.fetchall(cursor)
 
-    async def u_ps_player(self, player_id: int, skill_id: str, seat: int = 0) -> None:
+    async def s_log_cycle(self) -> list[tuple]:
         SQL = """
-        UPDATE player_skill
-        SET target_id = CASE WHEN ?1 = 0 THEN 0 ELSE (
-            SELECT a.player_id FROM attribute a
-            WHERE a.game_id = player_skill.game_id AND a.seat = ?1
-            ) END,
-            cycle = ?2
-        WHERE game_id = ?3 AND player_id = ?4 AND skill_id = ?5;
-        """
-        async with Database.get_conn() as conn:
-            await conn.execute(SQL, (seat, self.cycle, self.id, player_id, skill_id))
-
-    async def s_ps_cycle(self) -> list[tuple]:
-        SQL = """
-        SELECT player_id, skill_id, target_id FROM player_skill
+        SELECT ps.seat, ps.skill_id, l.target FROM log l
+        JOIN player_skill ps ON ps.id = l.ps_id
         WHERE game_id = ? AND cycle = ?;
         """
         async with Database.get_conn() as conn:
@@ -654,47 +649,47 @@ class Game:
 
     async def insert_log(
         self,
-        player_id: int,
+        seat: int,
         skill_id: str,
         type_: str,
-        seat: int = 0,
+        target: int = 0,
         speech: str = '',
         comment: str = '',
     ) -> None:
         SQL = """
-        INSERT INTO log (player_skill_id, type, speech, comment, target_id)
-        SELECT ps.id, ?1, ?2, ?3,
-        CASE WHEN ?4 = 0 THEN 0 ELSE a.player_id END
-        FROM player_skill ps
-        LEFT JOIN attribute a ON a.game_id = ps.game_id AND a.seat = ?4
-        WHERE ps.game_id = ?5 AND ps.player_id = ?6 AND ps.skill_id = ?7;
+        INSERT INTO log (ps_id, cycle, type, target, speech, comment)
+        SELECT ps.id, ?, ?, ?, ?, ? FROM player_skill ps
+        WHERE ps.game_id = ? AND ps.seat = ? AND ps.skill_id = ?;
         """
         async with Database.get_conn() as conn:
-            await conn.execute(SQL, (type_, speech, comment, seat, self.id, player_id, skill_id))
+            await conn.execute(
+                SQL, (self.cycle, type_, target, speech, comment, self.id, seat, skill_id)
+            )
 
-    async def select_log(self, player_id: int) -> str:
+    async def select_log(self, seat: int) -> str:
         SQL = f"""
-        SELECT up.name, ap.seat, ps.skill_id, ut.name, at.seat, l.speech
+        SELECT up.name, ps.seat, ps.skill_id, ut.name, l.target, l.speech
         FROM log l
-        JOIN player_skill ps ON ps.id = l.player_skill_id
-        LEFT JOIN user up ON up.id = ps.player_id
-        LEFT JOIN attribute ap ON ap.game_id = :gid AND ap.player_id = ps.player_id
-        LEFT JOIN user ut ON ut.id = l.target_id
-        LEFT JOIN attribute at ON at.game_id = :gid AND at.player_id = l.target_id
+        JOIN player_skill ps ON ps.id = l.ps_id
+        LEFT JOIN attribute ap ON ap.game_id = :gid AND ap.seat = ps.seat
+        LEFT JOIN user up ON up.id = ap.player_id
+        LEFT JOIN attribute at ON at.game_id = :gid AND at.seat = l.target
+        LEFT JOIN user ut ON ut.id = at.player_id
         WHERE ps.game_id = :gid AND (
-            :pid = 0
-            OR ps.player_id = :pid
+            :seat = :sys
+            OR ps.seat = :seat
             OR l.type = 'public'
-            OR up.controller = 'system' AND l.target_id = :pid
-            OR l.type = 'team' AND ps.player_id IN (
-                SELECT a2.player_id FROM attribute a1
-                JOIN attribute a2 ON a2.game_id = :gid AND a1.role_id = a2.role_id
-                WHERE a1.game_id = :gid AND a1.player_id = :pid
+            OR ps.seat = :sys AND l.target = :seat
+            OR l.type = 'team' AND ap.role_id = (
+                SELECT a.role_id FROM attribute a
+                WHERE a.game_id = :gid AND a.seat = :seat
             )
         );
         """
         async with Database.get_conn() as conn:
-            cursor = await conn.execute(SQL, {'gid': self.id, 'pid': player_id})
+            cursor = await conn.execute(
+                SQL, {'gid': self.id, 'seat': seat, 'sys': self.system_seat}
+            )
             logs = await Database.fetchall(cursor)
 
         text = ''
@@ -788,9 +783,9 @@ def game_start(game_id: int) -> None:
         raise HTTPException(status.HTTP_409_CONFLICT, 'Game do not started')
 
 
-def player_start(game_id: int, player_id: int) -> None:
+def player_start(game_id: int, seat: int) -> None:
     game = games[game_id]
-    if not game.player_started[player_id]:
+    if not game.player_started[seat]:
         raise HTTPException(status.HTTP_409_CONFLICT, 'Action do not started')
 
 
@@ -802,82 +797,87 @@ async def create() -> responses.JSONResponse:
     )
 
 
-@app.post('/games/{game_id}/players/{player_id}')
-async def join(game_id: int, player_id: int) -> responses.JSONResponse:
+@app.post('/games/{game_id}/users/{user_id}')
+async def join(game_id: int, user_id: int) -> responses.JSONResponse:
     game_exist(game_id)
     game = games[game_id]
-    if player_id in game.player_ids:
+    if user_id in game.users:
         return responses.JSONResponse('Rejoin game successfully', status.HTTP_200_OK)
-    game.player_ids.append(player_id)
+    game.users.append(user_id)
     return responses.JSONResponse('Join game successfully', status.HTTP_200_OK)
 
 
-@app.post('/games/{game_id}/start')
-async def start_post(game_id: int, background_tasks: BackgroundTasks) -> responses.JSONResponse:
+@app.post('/games/{game_id}/users/{user_id}/start')
+async def start_post(
+    game_id: int, user_id: int, background_tasks: BackgroundTasks
+) -> responses.JSONResponse:
     game_exist(game_id)
     game = games[game_id]
     await game.init_db()
+    seat = game.user_seat[user_id]
     background_tasks.add_task(game.loops)
-    game.started = True
-    return responses.JSONResponse('Start game successfully', status.HTTP_200_OK)
+    return responses.JSONResponse(
+        {'seat': seat, 'message': 'Start game successfully'}, status.HTTP_200_OK
+    )
 
 
-@app.get('/games/{game_id}/start')
-async def start_get(game_id: int) -> responses.JSONResponse:
+@app.get('/games/{game_id}/users/{user_id}/start')
+async def start_get(game_id: int, user_id: int) -> responses.JSONResponse:
     game_exist(game_id)
     game = games[game_id]
-    return responses.JSONResponse(game.started, status.HTTP_200_OK)
+    seat = game.user_seat[user_id]
+    return responses.JSONResponse(seat, status.HTTP_200_OK)
 
 
-@app.get('/games/{game_id}/players/{player_id}/stats/player')
-async def stats_player(game_id: int, player_id: int) -> responses.JSONResponse:
+@app.get('/games/{game_id}/seats/{seat}/stats/player')
+async def stats_player(game_id: int, seat: int) -> responses.JSONResponse:
     game_exist(game_id)
     game = games[game_id]
     if not game.started:
         raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, 'NotImplemented')
-    players = await game.s_a_player(player_id)
+    players = await game.s_a_player(seat)
     return responses.JSONResponse(
         {'stats': players, 'message': 'Stats received'},
         status.HTTP_200_OK,
     )
 
 
-@app.get('/games/{game_id}/players/{player_id}/stats/log')
-async def stats_log(game_id: int, player_id: int) -> responses.JSONResponse:
+@app.get('/games/{game_id}/seats/{seat}/stats/log')
+async def stats_log(game_id: int, seat: int) -> responses.JSONResponse:
     game_exist(game_id)
     game = games[game_id]
     game_start(game_id)
-    log = await game.select_log(player_id)
+    log = await game.select_log(seat)
     return responses.JSONResponse({'stats': log, 'message': 'Stats received'}, status.HTTP_200_OK)
 
 
-@app.get('/games/{game_id}/players/{player_id}/stats/action')
-async def stats_action_get(game_id: int, player_id: int) -> responses.JSONResponse:
+@app.get('/games/{game_id}/seats/{seat}/stats/action')
+async def stats_action_get(game_id: int, seat: int) -> responses.JSONResponse:
     game_exist(game_id)
     game = games[game_id]
     game_start(game_id)
-    player_start(game_id, player_id)
-    options = game.player_input[player_id]
+    player_start(game_id, seat)
+    options = game.player_input[seat]
     info = f'Available skills: {options["skill"]}\nValid targets: {options["target"]}'
     return responses.JSONResponse({'stats': info, 'message': 'Stats received'}, status.HTTP_200_OK)
 
 
-@app.post('/games/{game_id}/players/{player_id}/stats/action')
+@app.post('/games/{game_id}/seats/{seat}/stats/action')
 async def stats_action_post(
-    game_id: int, player_id: int, json_format: JsonFormat
+    game_id: int, seat: int, json_format: JsonFormat
 ) -> responses.JSONResponse:
     game_exist(game_id)
     game = games[game_id]
     game_start(game_id)
-    player_start(game_id, player_id)
-    options = game.player_input[player_id]
+    player_start(game_id, seat)
+    options = game.player_input[seat]
     try:
         logic(json_format, options['skill'], options['target'])
     except Exception as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
-    game.player_output[player_id] = json_format
-    game.player_finished[player_id] = True
-    game.player_started[player_id] = False
+    game.player_output[seat] = json_format
+    game.player_finished[seat] = True
+    game.player_started[seat] = False
     return responses.JSONResponse('Action sent', status.HTTP_201_CREATED)
 
 
