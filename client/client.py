@@ -274,17 +274,19 @@ class MainWidget(QWidget):
             self.status_message(response.json()['message'], 'success')
             stats: dict[int, list] = response.json()['stats']
             self.player_table.setRowCount(len(stats))
-            self.player_table.setColumnCount(4)
-            self.player_table.setHorizontalHeaderLabels(['ID', 'Name', 'Role', 'Life'])
-            for id_, (name, *others, seat, role, life) in stats.items():
+            self.player_table.setColumnCount(5)
+            self.player_table.setHorizontalHeaderLabels(['ID', 'Name', 'Role', 'Faction', 'Life'])
+            for id_, (name, *others, seat, role, faction, life) in stats.items():
                 item_id = QTableWidgetItem(str(id_))
                 item_name = QTableWidgetItem(name)
                 item_role = QTableWidgetItem(role)
+                item_faction = QTableWidgetItem(faction)
                 item_life = QTableWidgetItem(str(life))
                 self.player_table.setItem(seat - 1, 0, item_id)
                 self.player_table.setItem(seat - 1, 1, item_name)
                 self.player_table.setItem(seat - 1, 2, item_role)
-                self.player_table.setItem(seat - 1, 3, item_life)
+                self.player_table.setItem(seat - 1, 3, item_faction)
+                self.player_table.setItem(seat - 1, 4, item_life)
         self.player_refresh.setEnabled(True)
 
     @Slot()
