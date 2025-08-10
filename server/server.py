@@ -460,49 +460,36 @@ class Game:
         speech: str = '',
         comment: str = '',
     ) -> bool:
-        async def skill_log(
-            seat: int,
-            skill_id: str,
-            target_seat: int,
-            speech: str = '',
-            comment: str = '',
-            type_='private',
-        ) -> None:
-            await self.insert_log(seat, skill_id, type_, target_seat, speech, comment)
+        async def seer(target_seat: int) -> bool:
+            if target_seat == 0:
+                return True
+            (faction,) = await self.s_a_faction(target_seat)
+            if faction != 'werewolf':
+                faction = 'good'
+            await self.insert_log(
+                self.system_seat, 'speak', 'private', seat, f'Seat {target_seat} is {faction}.'
+            )
+            return True
 
+        skill_log = functools.partial(
+            self.insert_log, seat, skill_id, target=target_seat, speech=speech, comment=comment
+        )
         match skill_id:
-            case 'vote':
-                await skill_log(seat, skill_id, target_seat, speech, comment)
+            case 'vote' | 'shoot' | 'shield':
+                await skill_log('private')
             case 'speak':
-                await skill_log(seat, skill_id, target_seat, speech, comment, 'public')
+                await skill_log('public')
             case 'kill':
-                await skill_log(seat, skill_id, target_seat, speech, comment)
+                await skill_log('private')
                 return True
             case 'team_chat':
-                await skill_log(seat, skill_id, target_seat, speech, comment, 'team')
+                await skill_log('team')
             case 'identify':
-                await skill_log(seat, skill_id, target_seat, speech, comment)
-                if target_seat != 0:
-                    (faction,) = await self.s_a_faction(target_seat)
-                    if faction != 'werewolf':
-                        faction = 'good'
-                    await self.insert_log(
-                        self.system_seat,
-                        'speak',
-                        'private',
-                        seat,
-                        f'Seat {target_seat} is {faction}.',
-                    )
-            case 'heal':
-                await skill_log(seat, skill_id, target_seat, speech, comment)
+                await skill_log('private')
+                return await seer(target_seat)
+            case 'heal' | 'poison':
+                await skill_log('private')
                 return True   # TODO: use link
-            case 'poison':
-                await skill_log(seat, skill_id, target_seat, speech, comment)
-                return True
-            case 'shoot':
-                await skill_log(seat, skill_id, target_seat, speech, comment)
-            case 'shield':
-                await skill_log(seat, skill_id, target_seat, speech, comment)
             case _:
                 raise NotImplementedError
         return False
