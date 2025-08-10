@@ -261,14 +261,14 @@ class Game:
 
         roles = [
             'villager',
+            'villager',
+            'villager',
+            'werewolf',
+            'werewolf',
             'werewolf',
             'seer',
             'witch',
-            'witch',
-            'witch',
-            'witch',
-            'witch',
-            'witch',
+            'hunter',
         ]
         self.seats = list(range(1, len(roles) + 1))
         ai_num = len(roles) - len(self.users)
@@ -354,7 +354,17 @@ class Game:
                 'shoot': 0,
                 'shield': 1,
             },
-            'day': {},
+            'day': {
+                'vote': 0,
+                'speak': 0,
+                'kill': 0,
+                'team_chat': 0,
+                'identify': 0,
+                'heal': 0,
+                'poison': 0,
+                'shoot': 0,
+                'shield': 0,
+            },
         }
 
         for seat, skill_id in skills:
@@ -426,10 +436,20 @@ class Game:
 
     async def pre_action(self, seat: int, skill_ids: list[str], targets: list[int]) -> bool:
         if 'heal' in skill_ids:
-            kill_seat = await self.verdict(predict=True)
-            await self.insert_log(
-                self.system_seat, 'speak', 'private', seat, f'Seat {kill_seat} is killed.'
-            )
+            deaths = await self.verdict(predict=True)
+            kill_seats: list[int] = []
+            for key, value in deaths.items():
+                if 'kill' in value:
+                    kill_seats.append(key)
+            if not kill_seats:
+                await self.insert_log(
+                    self.system_seat, 'speak', 'private', seat, f'No one was killed.'
+                )
+            else:
+                kill_seat = kill_seats[0]
+                await self.insert_log(
+                    self.system_seat, 'speak', 'private', seat, f'Seat {kill_seat} was killed.'
+                )
         return False
 
     async def action(
@@ -457,16 +477,22 @@ class Game:
                 await skill_log(seat, skill_id, target_seat, speech, comment, 'public')
             case 'kill':
                 await skill_log(seat, skill_id, target_seat, speech, comment)
+                return True
             case 'team_chat':
                 await skill_log(seat, skill_id, target_seat, speech, comment, 'team')
             case 'identify':
                 await skill_log(seat, skill_id, target_seat, speech, comment)
-                (faction,) = await self.s_a_faction(target_seat)
-                if faction != 'werewolf':
-                    faction = 'good'
-                await self.insert_log(
-                    self.system_seat, 'speak', 'private', seat, f'Seat {target_seat} is {faction}.'
-                )
+                if target_seat != 0:
+                    (faction,) = await self.s_a_faction(target_seat)
+                    if faction != 'werewolf':
+                        faction = 'good'
+                    await self.insert_log(
+                        self.system_seat,
+                        'speak',
+                        'private',
+                        seat,
+                        f'Seat {target_seat} is {faction}.',
+                    )
             case 'heal':
                 await skill_log(seat, skill_id, target_seat, speech, comment)
                 return True   # TODO: use link
@@ -481,7 +507,7 @@ class Game:
                 raise NotImplementedError
         return False
 
-    async def verdict(self, predict: bool = False) -> Any:
+    async def verdict(self, predict: bool = False) -> dict[int, list[str]]:
         def vote(skills: list[tuple], skill: str) -> tuple[list[tuple], list[int], str]:
             filtered_skills: list[tuple] = []
             votes: dict[int, list[int]] = {}
@@ -503,38 +529,56 @@ class Game:
             elect = [k for k, v in votes.items() if len(v) == max_vote]
             return filtered_skills, elect, vote_text
 
+        deaths: dict[int, list[str]] = {}
         skills = await self.s_log_cycle()
-        skills, vote_elect, vote_text = vote(skills, 'vote')
-        skills, kill_elect, kill_text = vote(skills, 'kill')
 
-        deaths: list[int] = []
+        skills, vote_elect, vote_text = vote(skills, 'vote')
+        elect_id = vote_elect[0] if vote_elect else 0
+        if elect_id:
+            deaths.setdefault(elect_id, [])
+            deaths[elect_id].append('vote')
+
+        skills, kill_elect, kill_text = vote(skills, 'kill')
         kill_id = kill_elect[0] if kill_elect else 0
         if kill_id:
-            deaths.append(kill_id)
-        if predict:
-            return kill_id
+            deaths.setdefault(kill_id, [])
+            deaths[kill_id].append('kill')
 
-        while skills:
-            seat, skill_id, target_seat = skills.pop()
+        for seat, skill_id, target_seat in skills:
             match skill_id:
-                case 'speak':
-                    pass
-                case 'team_chat':
-                    pass
-                case 'identify':
+                case 'speak' | 'team_chat' | 'identify' | 'vote' | 'kill':
                     pass
                 case 'heal':
-                    pass
+                    deaths.setdefault(target_seat, [])
+                    deaths[target_seat].append('heal')
                 case 'poison':
-                    pass
+                    deaths.setdefault(target_seat, [])
+                    deaths[target_seat].append('poison')
                 case 'shoot':
-                    pass
+                    deaths.setdefault(target_seat, [])
+                    deaths[target_seat].append('shoot')
                 case 'shield':
-                    pass
+                    deaths.setdefault(target_seat, [])
+                    deaths[target_seat].append('shield')
                 case _:
                     raise NotImplementedError
-        for death in deaths:
-            await self.u_a_life(death)
+        deaths.pop(0, [])
+
+        if predict:
+            return deaths
+        for key, value in deaths.items():
+            if 'heal' in value and 'shield' in value:
+                value.remove('heal')
+                value.remove('shield')
+            if 'heal' in value and 'kill' in value:
+                value.remove('heal')
+                value.remove('kill')
+            if 'shield' in value and 'kill' in value:
+                value.remove('shield')
+                value.remove('kill')
+            if not value:
+                continue
+            await self.u_a_life(key)
 
         factions = await self.s_a_factions()
 
@@ -548,6 +592,8 @@ class Game:
         if winner:
             self.started = False
             print(f'winner: {winner}.')
+
+        return deaths
 
     async def update_game(self) -> None:
         SQL = """
@@ -565,7 +611,7 @@ class Game:
     async def s_a_factions(self) -> list[tuple]:
         SQL = """
         SELECT faction, COUNT(*) FROM attribute
-        WHERE game_id = ?
+        WHERE game_id = ? AND life = TRUE
         GROUP BY faction;
         """
         async with Database.get_conn() as conn:
