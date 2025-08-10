@@ -90,6 +90,7 @@ async def input_ai(
     )
     messages: list[ChatCompletionMessageParam] = []
     messages.append({'role': 'user', 'content': input_})
+    errors = 0
     while True:
         chat_completion = await async_client.chat.completions.create(
             messages=messages,
@@ -103,6 +104,9 @@ async def input_ai(
             output = parse(content)
             logic(output, skills, targets)
         except Exception as e:
+            errors += 1
+            if errors > 3:
+                raise
             print(f'Error: {e}')
             messages.append({'role': 'assistant', 'content': content})
             messages.append(
