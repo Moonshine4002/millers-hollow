@@ -355,8 +355,8 @@ class Game:
                 'shield': 1,
             },
             'day': {
-                'vote': 0,
-                'speak': 0,
+                'vote': 2,
+                'speak': 1,
                 'kill': 0,
                 'team_chat': 0,
                 'identify': 0,
@@ -368,6 +368,11 @@ class Game:
         }
 
         for seat, skill_id in skills:
+            if seat == 0:
+                continue
+            (quantity,) = await self.s_ps_quantity(seat, skill_id)
+            if quantity == 0:
+                continue
             setdefault(d, skill_seq[self.phase][skill_id], seat, skill_id)
 
         d = dict(sorted(d.items()))
@@ -475,7 +480,7 @@ class Game:
             self.insert_log, seat, skill_id, target=target_seat, speech=speech, comment=comment
         )
         match skill_id:
-            case 'vote' | 'shoot' | 'shield':
+            case 'vote':
                 await skill_log('private')
             case 'speak':
                 await skill_log('public')
@@ -488,8 +493,15 @@ class Game:
                 await skill_log('private')
                 return await seer(target_seat)
             case 'heal' | 'poison':
+                if target_seat == 0:
+                    return True
+                await self.u_ps_quantity(seat, skill_id)
                 await skill_log('private')
                 return True   # TODO: use link
+            case 'shoot' | 'shield':
+                if target_seat == 0:
+                    return False
+                await skill_log('private')
             case _:
                 raise NotImplementedError
         return False
@@ -670,6 +682,23 @@ class Game:
             cursor = await conn.execute(SQL, (self.id,))
             return await Database.fetchall(cursor)
 
+    async def s_ps_quantity(self, seat: int, skill_id: str) -> tuple:
+        SQL = """
+        SELECT quantity FROM player_skill
+        WHERE game_id = ? AND seat = ? AND skill_id = ?;
+        """
+        async with Database.get_conn() as conn:
+            cursor = await conn.execute(SQL, (self.id, seat, skill_id))
+            return await Database.fetchone(cursor)
+
+    async def u_ps_quantity(self, seat: int, skill_id: str, add: int = -1) -> None:
+        SQL = """
+        UPDATE player_skill SET quantity = quantity + ?
+        WHERE game_id = ? AND seat = ? AND skill_id = ?;
+        """
+        async with Database.get_conn() as conn:
+            await conn.execute(SQL, (add, self.id, seat, skill_id))
+
     async def s_log_cycle(self) -> list[tuple]:
         SQL = """
         SELECT ps.seat, ps.skill_id, l.target FROM log l
@@ -785,7 +814,7 @@ app = FastAPI(lifespan=lifespan)
 
 @app.post('/register')
 async def register(user: User) -> responses.JSONResponse:
-    id_ = await Database.insert_user(user.name, user.controller)
+    id_ = await Database.insert_user(user.name, user.controller, 'deepseek-chat')   # TODO
     if id_:
         return responses.JSONResponse(
             {'id': id_, 'message': 'Sign up successfully'}, status.HTTP_201_CREATED
