@@ -226,12 +226,14 @@ class Database:
 
 class Game:
     def __init__(self) -> None:
+        self.date = 1
         self.cycle = 1
         self.phase = 'night'
         self.id = 0
         self.system_seat = 0
         self.users: list[int] = []
         self.started = False
+        self.ended = False
         self.seats: list[int] = []
         self.user_seat: dict[int, int] = {}
         self.player_started: dict[int, bool] = {}
@@ -270,6 +272,9 @@ class Game:
             'witch',
             'hunter',
         ]
+        role_count = dict(collections.Counter(roles))
+        role_text = ', '.join(f'{value} {key}' for key, value in role_count.items())
+
         self.seats = list(range(1, len(roles) + 1))
         ai_num = len(roles) - len(self.users)
         if ai_num < 0:
@@ -294,7 +299,7 @@ class Game:
         SQL = """
         INSERT OR IGNORE INTO player_skill (game_id, seat, skill_id) VALUES
         (?, 0, 'speak');
-        """   # TODO: find Moderator, set system_id
+        """   # TODO: find Moderator, set system_seat
         async with Database.get_conn() as conn:
             await conn.execute(SQL, (self.id,))
 
@@ -317,7 +322,7 @@ class Game:
         async with Database.get_conn() as conn:
             await conn.execute(SQL, (self.id,))
 
-        await self.insert_log(self.system_seat, 'speak', 'public', 0, 'Game begin.')
+        await self.system_speak(f'Game begin. Game settings: {role_text}')
 
     async def loops(self) -> None:
         for seat in self.seats:
@@ -325,7 +330,7 @@ class Game:
             self.player_finished[seat] = False
         self.started = True
 
-        while self.started:
+        while not self.ended:
             await self.loop()
 
     async def loop(self) -> None:
@@ -339,6 +344,7 @@ class Game:
             d[seq].setdefault(seat, [])
             d[seq][seat].append(skill_id)
 
+        await self.system_speak(f"It's {self.phase} {self.date}.")
         skills = await self.s_ps_player()
 
         d: dict[int, dict[int, list[str]]] = {}
@@ -370,19 +376,26 @@ class Game:
         for seat, skill_id in skills:
             if seat == 0:
                 continue
+            (life,) = await self.s_a_life(seat)
+            if not life:
+                continue
             (quantity,) = await self.s_ps_quantity(seat, skill_id)
             if quantity == 0:
                 continue
             setdefault(d, skill_seq[self.phase][skill_id], seat, skill_id)
-
         d = dict(sorted(d.items()))
+
         for seq, value in d.items():
             if seq == 0:
                 continue
             coros = [self.player(seat, skill_ids) for seat, skill_ids in value.items()]
             await asyncio.gather(*coros)
 
-        await self.verdict()
+        deaths = await self.verdict()
+        if deaths:
+            await self.system_speak(f'Seat {list(deaths.keys())} was dead.')
+        else:
+            await self.system_speak(f'No one was dead.')
 
         await self.update_game()
 
@@ -447,14 +460,10 @@ class Game:
                 if 'kill' in value:
                     kill_seats.append(key)
             if not kill_seats:
-                await self.insert_log(
-                    self.system_seat, 'speak', 'private', seat, f'No one was killed.'
-                )
+                await self.system_speak(f'No one was killed.', seat)
             else:
                 kill_seat = kill_seats[0]
-                await self.insert_log(
-                    self.system_seat, 'speak', 'private', seat, f'Seat {kill_seat} was killed.'
-                )
+                await self.system_speak(f'Seat {kill_seat} was killed.', seat)
         return False
 
     async def action(
@@ -471,9 +480,7 @@ class Game:
             (faction,) = await self.s_a_faction(target_seat)
             if faction != 'werewolf':
                 faction = 'good'
-            await self.insert_log(
-                self.system_seat, 'speak', 'private', seat, f'Seat {target_seat} is {faction}.'
-            )
+            await self.system_speak(f'Seat {target_seat} is {faction}.', seat)
             return True
 
         skill_log = functools.partial(
@@ -536,12 +543,14 @@ class Game:
         if elect_id:
             deaths.setdefault(elect_id, [])
             deaths[elect_id].append('vote')
+            await self.system_speak(f'Vote result: {vote_text}')
 
         skills, kill_elect, kill_text = vote(skills, 'kill')
         kill_id = kill_elect[0] if kill_elect else 0
         if kill_id:
             deaths.setdefault(kill_id, [])
             deaths[kill_id].append('kill')
+            # TODO: show vote
 
         for seat, skill_id, target_seat in skills:
             match skill_id:
@@ -578,34 +587,38 @@ class Game:
             if not value:
                 continue
             await self.u_a_life(key)
+        deaths = {key: value for key, value in deaths.items() if value}
 
         factions = await self.s_a_factions()
+        f_dict = {faction: count for faction, count in factions}
+        f_keys = f_dict.keys()
 
         winner = ''
-        for faction, count in factions:
-            if faction == 'werewolf' and count == 0:
-                winner = 'human'
-            if faction != 'werewolf' and count == 0:
-                winner = 'werewolf'   # override
-        print(factions)
+        if 'werewolf' not in f_keys:
+            winner = 'human'
+        if 'human' not in f_keys or 'god' not in f_keys:
+            winner = 'werewolf'   # override
+        print(f_dict)
         if winner:
-            self.started = False
-            print(f'winner: {winner}.')
+            self.ended = True
+            await self.system_speak(f'Winner: {winner}.')
 
         return deaths
 
     async def update_game(self) -> None:
-        SQL = """
-        UPDATE game SET
-            cycle = CASE WHEN phase = 'night' THEN cycle + 1 ELSE cycle END,
-            phase = CASE WHEN phase = 'night' THEN 'day' ELSE 'night' END
-        WHERE id = ?
-        RETURNING cycle, phase;
-        """
-        async with Database.get_conn() as conn:
-            cursor = await conn.execute(SQL, (self.id,))
-            fetch = await Database.fetchone(cursor)
-            self.cycle, self.phase = fetch
+        self.cycle += 1
+        if self.phase == 'night':
+            self.phase = 'day'
+            self.date += 1
+        elif self.phase == 'day':
+            self.phase = 'night'
+
+    async def system_speak(self, speech: str, target: int = 0) -> None:
+        if target == 0:
+            type_ = 'public'
+        else:
+            type_ = 'private'
+        await self.insert_log(self.system_seat, 'speak', type_, target, speech)
 
     async def s_a_factions(self) -> list[tuple]:
         SQL = """
@@ -620,6 +633,15 @@ class Game:
     async def s_a_faction(self, seat: int) -> tuple:
         SQL = """
         SELECT faction FROM attribute
+        WHERE game_id = ? AND seat = ?;
+        """
+        async with Database.get_conn() as conn:
+            cursor = await conn.execute(SQL, (self.id, seat))
+            return await Database.fetchone(cursor)
+
+    async def s_a_life(self, seat: int) -> tuple:
+        SQL = """
+        SELECT life FROM attribute
         WHERE game_id = ? AND seat = ?;
         """
         async with Database.get_conn() as conn:
@@ -763,7 +785,7 @@ class Game:
             target_seat,
             speech,
         ) in logs:
-            if player_name == 'Moderator':   # TODO: use id
+            if player_seat == 0:
                 text += f'[system] {speech}\n'
             elif skill_id in ['speak', 'team_chat']:
                 text += f'{player_name}({player_seat}) said: {speech}\n'

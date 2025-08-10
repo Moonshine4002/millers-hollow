@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QPlainTextEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -37,8 +38,9 @@ class MainWidget(QWidget):
         self.room = 0   # game_id
         self.started = False
 
-        SPACING = 10
         MINIMUM_WIDTH = 100
+        MINIMUM_HEIGHT = 100
+        SPACING = 10
 
         # user
         self.user_input_name = QLineEdit()
@@ -93,7 +95,9 @@ class MainWidget(QWidget):
         self.left_box.addWidget(self.player)
 
         # log
-        self.log_text = QLabel('')
+        self.log_text = QPlainTextEdit('')
+        self.log_text.setReadOnly(True)
+        self.log_text.setMinimumSize(MINIMUM_WIDTH * 5, MINIMUM_HEIGHT * 3)
         self.log_refresh = QPushButton('refresh')
         self.log_refresh.clicked.connect(self.button_stats_log)
         self.log_refresh.setEnabled(False)
@@ -302,7 +306,7 @@ class MainWidget(QWidget):
             self.status_message(str(e), 'error')
         else:
             self.status_message(response.json()['message'], 'success')
-            self.log_text.setText(response.json()['stats'])
+            self.log_text.setPlainText(response.json()['stats'])
         self.log_refresh.setEnabled(True)
 
     @Slot()
