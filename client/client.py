@@ -4,6 +4,7 @@ from typing import cast
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -122,8 +123,7 @@ class MainWidget(QWidget):
         self.action_refresh = QPushButton('refresh')
         self.action_refresh.clicked.connect(self.button_stats_action)
         self.action_refresh.setEnabled(False)
-        self.action_skill = QLineEdit('')
-        self.action_skill.setPlaceholderText('skill')
+        self.action_skill = QComboBox(placeholderText='skill')
         self.action_target = QLineEdit('')
         self.action_target.setPlaceholderText('target')
         self.action_speech = QTextEdit('')
@@ -341,6 +341,8 @@ class MainWidget(QWidget):
         else:
             self.status_message(response.json()['message'], 'success')
             self.action_status.setPlainText(response.json()['stats'])
+            self.action_skill.clear()
+            self.action_skill.addItems(response.json()['skills'])
         self.action_refresh.setEnabled(True)
 
     @Slot()
@@ -348,7 +350,7 @@ class MainWidget(QWidget):
         self.action_send.setEnabled(False)
         try:
             data = {
-                'skill': self.action_skill.text(),
+                'skill': self.action_skill.currentText(),
                 'target': int(self.action_target.text()),
                 'speech': self.action_speech.toPlainText(),
                 'reason': self.action_reason.toPlainText(),

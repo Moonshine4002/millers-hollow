@@ -1042,7 +1042,10 @@ async def stats_action_get(game_id: int, seat: int) -> responses.JSONResponse:
     player_start(game_id, seat)
 
     info = f'Available skills:\n{ai.skill_text(game.player_input[seat])}'
-    return responses.JSONResponse({'stats': info, 'message': 'Stats received'}, status.HTTP_200_OK)
+    skills = list(game.player_input[seat].skills.keys())
+    return responses.JSONResponse(
+        {'stats': info, 'skills': skills, 'message': 'Stats received'}, status.HTTP_200_OK
+    )
 
 
 @app.post('/games/{game_id}/seats/{seat}/stats/action')
