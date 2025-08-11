@@ -471,6 +471,7 @@ class Game:
                 skill: ai.GuiInSkill(targets=targets, description=self.skill_info[skill])
                 for skill in skill_ids
             }
+            await self.pre_action(p_seat, skill_ids, skills)
             log = await self.select_log(p_seat)
             input_ = ai.GuiInput(
                 model=p_kind, me=p_text, players=players_text, skills=skills, log=log
@@ -478,8 +479,6 @@ class Game:
             self.player_input[p_seat] = input_
             self.player_started[p_seat] = True
             self.player_finished[p_seat] = False
-            if await self.pre_action(p_seat, skill_ids, targets):
-                break
             if p_controller == 'ai':
                 try:
                     self.player_output[p_seat] = await ai.input_ai(input_)
@@ -509,8 +508,11 @@ class Game:
             ):
                 break
 
-    async def pre_action(self, seat: int, skill_ids: list[str], targets: list[int]) -> bool:
+    async def pre_action(
+        self, seat: int, skill_ids: list[str], skills: dict[str, ai.GuiInSkill]
+    ) -> None:
         if 'heal' in skill_ids:
+            # targets = skills['heal'].targets
             deaths = await self.verdict(predict=True)
             kill_seats: list[int] = []
             for key, value in deaths.items():
@@ -518,13 +520,16 @@ class Game:
                     kill_seats.append(key)
             if not kill_seats:
                 await self.system_speak(f'No one was killed.', seat)
+                skills.pop('heal')
             else:
                 kill_seat = kill_seats[0]
                 await self.system_speak(f'Seat {kill_seat} was killed.', seat)
+                if kill_seat == seat and self.date != 1:
+                    skills.pop('heal')
+                else:
+                    skills['heal'].targets = [kill_seat]
         if 'shoot' in skill_ids:
             await self.system_speak(f'Seat {seat} is a hunter!')
-
-        return False
 
     async def action(
         self,
