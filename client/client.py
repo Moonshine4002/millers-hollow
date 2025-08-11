@@ -373,6 +373,7 @@ class MainWidget(QWidget):
     def hd_new(self) -> None:
         if not self.started:
             return
+        self.started = False
         self.user_input_room.setEnabled(True)
         self.user_join.setEnabled(True)
         self.user_create.setEnabled(True)
@@ -384,14 +385,13 @@ class MainWidget(QWidget):
 
     def hd_refresh(self) -> None:
         if self.player_refresh.isEnabled() and not self.started:
-            if not self.started:
-                response = self.get(f'/games/{self.room}/users/{self.user_id}/start')
-                self.seat = response.json()
-                if self.seat:
-                    self.started = True
-                    self.log_refresh.setEnabled(True)
-                    self.action_refresh.setEnabled(True)
-                    self.action_send.setEnabled(True)
+            response = self.get(f'/games/{self.room}/users/{self.user_id}/start')
+            self.seat = response.json()
+            if self.seat:
+                self.started = True
+                self.log_refresh.setEnabled(True)
+                self.action_refresh.setEnabled(True)
+                self.action_send.setEnabled(True)
         if self.player_refresh.isEnabled():
             self.button_stats_player()
         if self.log_refresh.isEnabled():
