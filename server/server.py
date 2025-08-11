@@ -21,7 +21,7 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException, responses, status
 from pydantic import BaseModel
 import uvicorn
 
-from ai import JsonFormat, input_ai, logic
+import ai
 
 
 print(pathlib.Path.cwd())
@@ -239,8 +239,8 @@ class Game:
         self.user_seat: dict[int, int] = {}
         self.player_started: dict[int, bool] = {}
         self.player_finished: dict[int, bool] = {}
-        self.player_input: dict[int, dict[str, Any]] = {}
-        self.player_output: dict[int, JsonFormat] = {}
+        self.player_input: dict[int, ai.GuiInput] = {}
+        self.player_output: dict[int, ai.GuiOutput] = {}
 
     async def insert(self) -> int:
         async with Database.get_conn() as conn:
@@ -449,8 +449,12 @@ class Game:
     async def player(self, p_seat: int, skill_ids: list[str]) -> None:
         p_info = await self.s_a_player(p_seat)
         p_name, p_controller, p_kind, p_role, p_faction, p_life = p_info[p_seat]
-
-        targets = []
+        p_text = f'\tYou are {p_name}, a {p_role} in seat {p_seat}.'
+        players_text = '\n'.join(
+            f'\tname: {name}, seat: {seat}, role: {role}, faction: {faction}, life: {life}'
+            for seat, (name, *others, role, faction, life) in p_info.items()
+        )
+        targets: list[int] = []
         for seat, (name, *others, role, faction, life) in p_info.items():
             if life:
                 targets.append(seat)
@@ -458,21 +462,19 @@ class Game:
         targets.sort()
 
         while skill_ids:
-            self.player_input[p_seat] = {'skill': skill_ids, 'target': targets}
+            skills = {skill: ai.GuiInSkill(targets=targets, description='') for skill in skill_ids}
+            log = await self.select_log(p_seat)
+            input_ = ai.GuiInput(
+                model=p_kind, me=p_text, players=players_text, skills=skills, log=log
+            )
+            self.player_input[p_seat] = input_
             self.player_started[p_seat] = True
             self.player_finished[p_seat] = False
             if await self.pre_action(p_seat, skill_ids, targets):
                 break
             if p_controller == 'ai':
-                log = await self.select_log(p_seat)
-                p_text = f'You are {p_name}, a {p_role} in seat {p_seat}'
-                text = ''
-                for seat, (name, *others, role, faction, life) in p_info.items():
-                    text += f'name: {name}, seat: {seat}, role: {role}, faction: {faction}, life: {life}\n'
                 try:
-                    self.player_output[p_seat] = await input_ai(
-                        p_kind, p_text, text, skill_ids, targets, log
-                    )
+                    self.player_output[p_seat] = await ai.input_ai(input_)
                 except Exception as e:
                     print(f'Error: {e}')
                     p_controller = 'random'
@@ -480,7 +482,7 @@ class Game:
                 self.player_finished[p_seat] = True
                 self.player_started[p_seat] = False
             elif p_controller == 'random':
-                self.player_output[p_seat] = JsonFormat(
+                self.player_output[p_seat] = ai.GuiOutput(
                     skill=random.choice(skill_ids),
                     target=random.choice(targets),
                     speech='',
@@ -865,7 +867,7 @@ class Game:
                 text += f'{player_name}({player_seat}) said: {speech}\n'
             else:
                 text += f'{player_name}({player_seat}) {skill_id} {target_name}({target_seat}).\n'
-        return text.strip()
+        return text.rstrip()
 
 
 class Games(collections.UserDict[int, Game]):
@@ -1015,25 +1017,25 @@ async def stats_action_get(game_id: int, seat: int) -> responses.JSONResponse:
     game = games[game_id]
     game_start(game_id)
     player_start(game_id, seat)
-    options = game.player_input[seat]
-    info = f'Available skills: {options["skill"]}\nValid targets: {options["target"]}'
+
+    info = f'Available skills:\n{ai.skill_text(game.player_input[seat])}'
     return responses.JSONResponse({'stats': info, 'message': 'Stats received'}, status.HTTP_200_OK)
 
 
 @app.post('/games/{game_id}/seats/{seat}/stats/action')
 async def stats_action_post(
-    game_id: int, seat: int, json_format: JsonFormat
+    game_id: int, seat: int, gui_output: ai.GuiOutput
 ) -> responses.JSONResponse:
     game_exist(game_id)
     game = games[game_id]
     game_start(game_id)
     player_start(game_id, seat)
-    options = game.player_input[seat]
+    skills = game.player_input[seat]
     try:
-        logic(json_format, options['skill'], options['target'])
+        ai.logic(gui_output, skills)
     except Exception as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
-    game.player_output[seat] = json_format
+    game.player_output[seat] = gui_output
     game.player_finished[seat] = True
     game.player_started[seat] = False
     return responses.JSONResponse('Action sent', status.HTTP_201_CREATED)

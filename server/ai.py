@@ -26,23 +26,36 @@ async_client = AsyncOpenAI(
 )
 
 
-class JsonFormat(BaseModel):
+class GuiInSkill(BaseModel):
+    targets: list[int]
+    description: str
+
+
+class GuiInput(BaseModel):
+    model: str
+    me: str
+    players: str
+    skills: dict[str, GuiInSkill]
+    log: str
+
+
+class GuiOutput(BaseModel):
     skill: str
     target: int
     speech: str
     reason: str
 
 
-json_format = """
+json_format = """\
 {
     "skill": "Your chosen skill",
     "target": An integer seat number if needed (input 0 if ignored),
     "speech": "Public or private according to the skill (input "" if ignored)",
     "reason": "Your reasoning (which will not be public)"
-}
+}\
 """
 
-frame = """
+frame = """\
 You are playing a game called The Werewolves of Miller's Hollow.
 Please be sure that you know the rules.
 You will be given a input describing the game scenario.
@@ -60,41 +73,33 @@ Output format:
 {json_format}
 Your info:
 {me}
-Players:
+Players info: information extracted from the game log that might be outdated.
 {players}
-Available skills:
+Available skills: choose only one, but if they are not contradictory, \
+you may be able to use the others simultaneously in the next question.
 {skills}
-Valid targets:
-{targets}
 Game log:
-{log}
+{log}\
 """
 
 
-async def input_ai(
-    model: str,
-    me: str,
-    players: str,
-    skills: list[str],
-    targets: list[int],
-    log: str,
-) -> JsonFormat:
-    input_ = frame.format(
+async def input_ai(input_: GuiInput) -> GuiOutput:
+
+    formated = frame.format(
         language=language,
         json_format=json_format,
-        me=me,
-        players=players,
-        skills=skills,
-        targets=targets,
-        log=log,
+        me=input_.me,
+        players=input_.players,
+        skills=skill_text(input_),
+        log=input_.log,
     )
     messages: list[ChatCompletionMessageParam] = []
-    messages.append({'role': 'user', 'content': input_})
+    messages.append({'role': 'user', 'content': formated})
     errors = 0
     while True:
         chat_completion = await async_client.chat.completions.create(
             messages=messages,
-            model=model,
+            model=input_.model,
         )
         content = chat_completion.choices[0].message.content
         try:
@@ -102,7 +107,7 @@ async def input_ai(
                 content = ''
                 raise ValueError('empty output')
             output = parse(content)
-            logic(output, skills, targets)
+            logic(output, input_)
         except Exception as e:
             errors += 1
             if errors > 3:
@@ -120,15 +125,24 @@ async def input_ai(
     return output
 
 
-def parse(content: str) -> JsonFormat:
+def skill_text(input_: GuiInput) -> str:
+    return '\n'.join(
+        f'\tSkill name: {skill}; Skill description: {skill_model.description}; Target options: {skill_model.targets}'
+        for skill, skill_model in input_.skills.items()
+    )
+
+
+def parse(content: str) -> GuiOutput:
     matches: list[str] = re.findall(r'\{.*\}', content, re.DOTALL)
     if len(matches) != 1:
         raise ValueError(f'Got {len(matches)} matches')
-    return JsonFormat.model_validate_json(matches[0])
+    return GuiOutput.model_validate_json(matches[0])
 
 
-def logic(output: JsonFormat, skills: list[str], targets: list[int]) -> None:
+def logic(output: GuiOutput, input_: GuiInput) -> None:
+    skills = list(input_.skills.keys())
     if output.skill not in skills:
         raise ValueError(f'Invalid JSON format: chosen skill beyond {skills}')
+    targets = input_.skills[output.skill].targets
     if output.target not in targets:
         raise ValueError(f'Invalid JSON format: chosen target beyond {targets}')
