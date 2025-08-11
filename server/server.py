@@ -263,22 +263,13 @@ class Game:
             ais = await Database.fetchall(cursor)
         ai_ids = [ai_id for (ai_id,) in ais if ai_id not in self.users]
 
-        roles = [
-            'villager',
-            'villager',
-            'villager',
-            'werewolf',
-            'werewolf',
-            'werewolf',
-            'seer',
-            'witch',
-            'hunter',
-        ]
-        role_count = dict(collections.Counter(roles))
+        role_setup = [role.strip() for role in ai.config.get('game', 'role_setup').split('|')]
+
+        role_count = dict(collections.Counter(role_setup))
         role_text = ', '.join(f'{value} {key}' for key, value in role_count.items())
 
-        self.seats = list(range(1, len(roles) + 1))
-        ai_num = len(roles) - len(self.users)
+        self.seats = list(range(1, len(role_setup) + 1))
+        ai_num = len(role_setup) - len(self.users)
         if ai_num < 0:
             raise ValueError('Too many user')
         elif ai_num > len(ai_ids):
@@ -291,10 +282,10 @@ class Game:
         INSERT INTO attribute (game_id, player_id, seat, role_id, faction) VALUES
         (?1, ?2, ?3, ?4, (SELECT faction FROM role WHERE id = ?4));
         """
-        random.shuffle(roles)
+        random.shuffle(role_setup)
         random.shuffle(self.users)
         async with Database.get_conn() as conn:
-            for player_id, seat, role_id in zip(self.users, self.seats, roles):
+            for player_id, seat, role_id in zip(self.users, self.seats, role_setup):
                 self.user_seat[player_id] = seat
                 await conn.execute(SQL, (self.id, player_id, seat, role_id))
 
