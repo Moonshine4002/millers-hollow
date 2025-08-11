@@ -146,16 +146,16 @@ class Database:
         ('hunter', 'god'),
         ('guard', 'god');
         ---
-        INSERT OR IGNORE INTO skill (id, link_id, link_type) VALUES
-        ('vote', '', ''),
-        ('speak', '', ''),
-        ('kill', '', ''),
-        ('team_chat', '', ''),
-        ('identify', '', ''),
-        ('heal', 'poison', 'constraint'),
-        ('poison', 'heal', 'constraint'),
-        ('shoot', '', ''),
-        ('shield', '', '');
+        INSERT OR IGNORE INTO skill (id, link_id, link_type, description) VALUES
+        ('vote', '', '', 'During the day phase, all players vote publicly to eliminate one player from the game.'),
+        ('speak', '', '', 'During the day phase, players take turns speaking publicly to discuss suspicions, share information, and debate who to eliminate.'),
+        ('kill', '', '', 'At night, the Werewolves secretly select one player to eliminate. If consensus cannot be reached, the option with the highest number of votes will be selected, or a random choice will be made among the candidates with the highest votes.'),
+        ('team_chat', '', '', 'At night, the Werewolf team privately communicates to strategize and decide whom to kill. Other roles cannot see these messages.'),
+        ('identify', '', '', 'At night, the Seer targets one player to secretly learn their faction (werewolf or human).'),
+        ('heal', 'poison', 'constraint', 'At night, the Witch knows who was killed by the werewolf and and decides whether to use a one-time antidote to heal that player. Cannot self-heal except for the first night. If the Witch choose to heal, then she cannot poison.'),
+        ('poison', 'heal', 'constraint', 'At night, the Witch uses a one-time poison potion to secretly eliminate any player. The targeted player will not be able to use any other special skills. If the Witch choose to poison, then she cannot heal.'),
+        ('shoot', '', '', 'When the Hunter is eliminated (day or night), he immediately shoot and kill one other player as a final revenge.'),
+        ('shield', '', '', 'At night, the Guard chooses a player to protect. Cannot protect the same player consecutively.');
         ---
         INSERT OR IGNORE INTO role_skill (role_id, skill_id) VALUES
         ('villager', 'vote'),
@@ -237,6 +237,7 @@ class Game:
         self.ended = False
         self.seats: list[int] = []
         self.user_seat: dict[int, int] = {}
+        self.skill_info: dict[str, str] = {}
         self.player_started: dict[int, bool] = {}
         self.player_finished: dict[int, bool] = {}
         self.player_input: dict[int, ai.GuiInput] = {}
@@ -322,6 +323,14 @@ class Game:
         """
         async with Database.get_conn() as conn:
             await conn.execute(SQL, (self.id,))
+
+        SQL = """
+        SELECT id, description FROM skill;
+        """
+        async with Database.get_conn() as conn:
+            cursor = await conn.execute(SQL)
+            skill_info = await Database.fetchall(cursor)
+        self.skill_info = {skill_id: des for skill_id, des in skill_info}
 
         await self.system_speak(f'Game begin. Game settings: {role_text}')
 
@@ -462,7 +471,10 @@ class Game:
         targets.sort()
 
         while skill_ids:
-            skills = {skill: ai.GuiInSkill(targets=targets, description='') for skill in skill_ids}
+            skills = {
+                skill: ai.GuiInSkill(targets=targets, description=self.skill_info[skill])
+                for skill in skill_ids
+            }
             log = await self.select_log(p_seat)
             input_ = ai.GuiInput(
                 model=p_kind, me=p_text, players=players_text, skills=skills, log=log

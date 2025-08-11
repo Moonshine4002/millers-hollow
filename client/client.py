@@ -103,7 +103,7 @@ class MainWidget(QWidget):
         # log
         self.log_text = QPlainTextEdit('')
         self.log_text.setReadOnly(True)
-        self.log_text.setMinimumSize(MINIMUM_WIDTH * 5, MINIMUM_HEIGHT * 3)
+        self.log_text.setMinimumSize(MINIMUM_WIDTH * 4, MINIMUM_HEIGHT * 2)
         self.log_refresh = QPushButton('refresh')
         self.log_refresh.clicked.connect(self.button_stats_log)
         self.log_refresh.setEnabled(False)
@@ -116,7 +116,9 @@ class MainWidget(QWidget):
         self.log.setLayout(self.log_box)
 
         # action
-        self.action_status = QLabel('Please wait...')
+        self.action_status = QPlainTextEdit('Please wait...')
+        self.action_status.setReadOnly(True)
+        self.action_status.setMinimumSize(MINIMUM_WIDTH * 4, MINIMUM_HEIGHT * 1)
         self.action_refresh = QPushButton('refresh')
         self.action_refresh.clicked.connect(self.button_stats_action)
         self.action_refresh.setEnabled(False)
@@ -334,9 +336,10 @@ class MainWidget(QWidget):
             self.status_message(response.json()['detail'], 'error')
         except Exception as e:
             self.status_message(str(e), 'error')
+            self.action_status.setPlainText('Please wait...')
         else:
             self.status_message(response.json()['message'], 'success')
-            self.action_status.setText(response.json()['stats'])
+            self.action_status.setPlainText(response.json()['stats'])
         self.action_refresh.setEnabled(True)
 
     @Slot()
