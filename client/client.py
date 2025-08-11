@@ -334,6 +334,7 @@ class MainWidget(QWidget):
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self.status_message(response.json()['detail'], 'error')
+            self.action_status.setPlainText('Please wait...')
         except Exception as e:
             self.status_message(str(e), 'error')
             self.action_status.setPlainText('Please wait...')

@@ -67,6 +67,10 @@ Game rules:
 - Werewolves can suicidally expose themselves, ending that day instantly."
 - The sheriff election continues for 2 rounds.
 - Players killed on the first night or eliminated by vote have a dying speech.
+Tips:
+- Avoid repeating others' statements.
+- You can reveal your true role or impersonate another role (regardless of your faction).
+- When impersonating, fully develop your thought process and reasoning.
 Output format:
 - Output using "{language}".
 - Please reply strictly according to this JSON format:
