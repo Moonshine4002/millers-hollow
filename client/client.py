@@ -1,4 +1,5 @@
 import sys
+from typing import cast
 
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
@@ -29,8 +30,13 @@ class MainWidget(QWidget):
         'error': 'color: #dd0000;',
     }
 
-    def __init__(self):
+    def __init__(self, window: 'MainWindow'):
         super().__init__()
+
+        MINIMUM_WIDTH = 100
+        MINIMUM_HEIGHT = 100
+        SPACING = 10
+
         self.user_name = ''
         self.user_controller = ''
         self.user_id = 0
@@ -38,9 +44,9 @@ class MainWidget(QWidget):
         self.room = 0   # game_id
         self.started = False
 
-        MINIMUM_WIDTH = 100
-        MINIMUM_HEIGHT = 100
-        SPACING = 10
+        # window
+        window.setCentralWidget(self)
+        self.window_init()
 
         # user
         self.user_input_name = QLineEdit()
@@ -146,6 +152,20 @@ class MainWidget(QWidget):
         self.main_box.addLayout(self.left_box)
         self.main_box.addLayout(self.right_box)
 
+    def window_init(self) -> None:
+        # Refresh
+        self.status_menu = self.window().status_menu
+        refresh_action = self.status_menu.addAction('New Game', self.hd_new)
+        refresh_action.setShortcut('Ctrl+N')
+        refresh_action = self.status_menu.addAction('Refresh', self.hd_refresh)
+        refresh_action.setShortcut('Ctrl+R')
+
+        # Status message
+        self.status = self.window().status_message
+
+    def window(self) -> 'MainWindow':
+        return cast(MainWindow, super().window())
+
     def post(self, path: str, json: dict | None = None) -> httpx.Response:
         try:
             response = httpx.post(f'{ORIGIN}{path}', json=json)
@@ -167,11 +187,6 @@ class MainWidget(QWidget):
                 request=httpx.Request('GET', f'{ORIGIN}{path}'),
             )
         return response
-
-    def status_message(self, message: str, style: str = 'info') -> None:
-        status: QLabel = self.window().status_message   # type: ignore
-        status.setStyleSheet(self.STYLE_SHEET[style])
-        status.setText(message)
 
     @Slot()
     def button_login(self) -> None:
@@ -347,6 +362,22 @@ class MainWidget(QWidget):
             self.status_message(response.json(), 'success')
         self.action_send.setEnabled(True)
 
+    def status_message(self, message: str, style: str = 'info') -> None:
+        self.status.setStyleSheet(self.STYLE_SHEET[style])
+        self.status.setText(message)
+
+    def hd_new(self) -> None:
+        if not self.started:
+            return
+        self.user_input_room.setEnabled(True)
+        self.user_join.setEnabled(True)
+        self.user_create.setEnabled(True)
+        self.user_start.setEnabled(False)
+        self.player_refresh.setEnabled(False)
+        self.log_refresh.setEnabled(False)
+        self.action_refresh.setEnabled(False)
+        self.action_send.setEnabled(False)
+
     def hd_refresh(self) -> None:
         if self.player_refresh.isEnabled() and not self.started:
             if not self.started:
@@ -366,8 +397,10 @@ class MainWidget(QWidget):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, widget: MainWidget):
+    def __init__(self):
         super().__init__()
+
+        # Title
         self.setWindowTitle("Miller's Hollow")
 
         # Menu
@@ -375,13 +408,9 @@ class MainWindow(QMainWindow):
         self.file_menu = self.menu.addMenu('File')
         self.status_menu = self.menu.addMenu('Status')
 
-        # Exit
+        # File
         exit_action = self.file_menu.addAction('Exit', self.close)
         exit_action.setShortcut('Ctrl+Q')
-
-        # Refresh
-        refresh_action = self.status_menu.addAction('Refresh', self.hd_refresh)
-        refresh_action.setShortcut('Ctrl+R')
 
         # Status Bar
         self.status = self.statusBar()
@@ -390,17 +419,12 @@ class MainWindow(QMainWindow):
         self.status.addPermanentWidget(self.status_message)
 
         # Widget
-        self.main_widget = widget
-        self.setCentralWidget(widget)
-
-    def hd_refresh(self) -> None:
-        self.main_widget.hd_refresh()
+        self.main_widget = MainWidget(self)
 
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    widget = MainWidget()
-    window = MainWindow(widget)
+    window = MainWindow()
     window.resize(800, 600)
     window.show()
     sys.exit(app.exec())
