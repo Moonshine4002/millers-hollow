@@ -550,6 +550,19 @@ class Game:
                     skills['heal'].targets = [kill_seat]
         if 'shoot' in skill_ids:
             await self.system_speak(f'Seat {seat} is a hunter!')
+        if 'shield' in skill_ids:
+            SQL = """
+            SELECT l.cycle, l.target FROM log l
+            JOIN player_skill ps ON ps.id = l.ps_id
+            WHERE ps.game_id = ? AND ps.seat = ? AND ps.skill_id = ? AND l.cycle = ?;
+            """
+            async with Database.get_conn() as conn:
+                cursor = await conn.execute(SQL, (self.id, seat, 'shield', self.cycle - 1))
+                shielded = await Database.fetchall(cursor)
+            if shielded:
+                last_shielded = max(shielded)[1]
+                if last_shielded in skills['shield'].targets:
+                    skills['shield'].targets.remove(last_shielded)
 
     async def action(
         self,
@@ -694,6 +707,10 @@ class Game:
             if 'shield' in value and 'kill' in value:
                 value.remove('shield')
                 value.remove('kill')
+            if 'heal' in value:
+                value.remove('heal')
+            if 'shield' in value:
+                value.remove('shield')
             if not value:
                 continue
             await self.u_a_life(key)
