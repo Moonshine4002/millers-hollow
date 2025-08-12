@@ -674,7 +674,7 @@ class Game:
             deaths[elect_id].append('vote')
 
         skills, kill_elect, kill_text = vote(skills, 'kill')
-        kill_id = kill_elect[0] if kill_elect else 0
+        kill_id = random.choice(kill_elect) if kill_elect else 0
         if kill_id:
             deaths.setdefault(kill_id, [])
             deaths[kill_id].append('kill')
@@ -710,10 +710,12 @@ class Game:
         for werewolf in werewolves:
             if kill_id:
                 await self.system_speak(
-                    f'Seat {kill_id} was killed, vote result: {kill_text}', werewolf
+                    f'Your team choose seat {kill_id}, vote result: {kill_text}', werewolf
                 )
             else:
-                await self.system_speak(f'No one was killed, vote result: {kill_text}', werewolf)
+                await self.system_speak(
+                    f'Your team choose no one, vote result: {kill_text}', werewolf
+                )
 
         for key, value in deaths.items():
             if 'heal' in value and 'shield' in value:

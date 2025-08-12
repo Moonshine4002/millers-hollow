@@ -48,10 +48,12 @@ class GuiOutput(BaseModel):
 
 json_format = """\
 {
+    "reason": "Your reasoning (which will not be public to any player): \
+analyze the current situation, infer player identities and credibility, \
+explain strategy choices, predict potential risks..."
     "skill": "Your chosen skill",
     "target": An integer seat number if needed (input 0 if ignored),
     "speech": "Public or private according to the skill (input "" if ignored)",
-    "reason": "Your reasoning (which will not be public)"
 }\
 """
 
@@ -68,8 +70,8 @@ Game rules:
 - Players killed on the first night or eliminated by vote have a dying speech.
 Tips:
 - Avoid repetitive or meaningless statements.
-- You can reveal your true role or impersonate another role (regardless of your faction).
-- When impersonating, fully develop your thought process and reasoning.
+- You can reveal your true role, conceal it, \
+or impersonate another role—regardless of your faction.
 Output format:
 - Output using "{language}".
 - Please reply strictly according to this JSON format:
@@ -87,7 +89,6 @@ Game log:
 
 
 async def input_ai(input_: GuiInput) -> GuiOutput:
-
     formated = frame.format(
         language=language,
         json_format=json_format,
