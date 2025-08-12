@@ -149,12 +149,12 @@ class Database:
         ('vote', '', '', 'During the day phase, all players vote publicly to eliminate one player from the game.'),
         ('speak', '', '', 'During the day phase, players take turns speaking publicly to discuss suspicions, share information, and debate who to eliminate.'),
         ('kill', '', '', 'At night, the Werewolves secretly select one player to eliminate. If consensus cannot be reached, the option with the highest number of votes will be selected, or a random choice will be made among the candidates with the highest votes.'),
-        ('team_chat', '', '', 'At night, the Werewolves privately communicates to strategize and decide whom to kill. Other roles cannot see these messages.'),
+        ('team_chat', '', '', 'At night, the Werewolves privately to decide whom to kill, which role to impersonate, and communicate to formulate strategies. Other roles cannot see these messages. After selecting a target to kill, you cannot discuss with your teammates anymore, so avoid deciding before everyone agrees.'),
         ('identify', '', '', 'At night, the Seer targets one player to secretly learn their faction (werewolf or human).'),
         ('heal', 'poison', 'constraint', 'At night, the Witch knows who was killed by the werewolf and decides whether to use a one-time antidote to heal that player. Cannot self-heal except for the first night. If the Witch choose to heal, then she cannot poison.'),
-        ('poison', 'heal', 'constraint', 'At night, the Witch uses a one-time poison potion to secretly eliminate any player. The targeted player will not be able to use any other special skills. If the Witch choose to poison, then she cannot heal.'),
+        ('poison', 'heal', 'constraint', 'At night, the Witch uses a one-time poison potion to secretly eliminate any player. The targeted player will not be able to use any other special skills. If the Witch choose to poison, then she cannot heal. If a player is both guarded by the Guard and healed by the Witch on the same night, the protections nullify each other, and the player still dies.'),
         ('shoot', '', '', 'When the Hunter is eliminated (day or night), he immediately shoot and kill one other player as a final revenge.'),
-        ('shield', '', '', 'At night, the Guard chooses a player to protect. Cannot protect the same player consecutively.');
+        ('shield', '', '', 'At night, the Guard chooses a player to protect. Cannot protect the same player consecutively. If a player is both guarded by the Guard and healed by the Witch on the same night, the protections nullify each other, and the player still dies.');
         ---
         INSERT OR IGNORE INTO role_skill (role_id, skill_id) VALUES
         ('villager', 'vote'),
@@ -522,10 +522,13 @@ class Game:
                     await asyncio.sleep(1)
 
             output = self.player_output[p_seat]
-            skill_ids.remove(output.skill)
-            if await self.action(
+
+            result = await self.action(
                 p_seat, output.skill, output.target, output.speech, output.reason
-            ):
+            )
+            if result is None:
+                skill_ids.remove(output.skill)
+            elif result:
                 break
 
     async def pre_action(
@@ -571,7 +574,7 @@ class Game:
         target_seat: int = 0,
         speech: str = '',
         comment: str = '',
-    ) -> bool:
+    ) -> bool | None:
         async def seer(target_seat: int) -> None:
             if target_seat == 0:
                 return
@@ -593,6 +596,7 @@ class Game:
                 return True
             case 'team_chat':
                 await skill_log('team')
+                return False
             case 'identify':
                 await skill_log('private')
                 await seer(target_seat)
@@ -602,15 +606,15 @@ class Game:
                     await self.u_ps_quantity(seat, skill_id)
                 return True   # TODO: use link
             case 'shoot':
-                await skill_log('public')
                 (quantity,) = await self.s_ps_quantity(seat, skill_id)
                 if not quantity:
-                    return False
+                    return None
+                await skill_log('public')
             case 'shield':
                 await skill_log('private')
             case _:
                 raise NotImplementedError
-        return False
+        return None
 
     async def verdict(self, predict: bool = False) -> dict[int, list[str]]:
         def vote(skills: list[tuple], skill: str) -> tuple[list[tuple], list[int], str]:
@@ -644,6 +648,11 @@ class Game:
 
         deaths: dict[int, list[str]] = {}
         skills = await self.s_log_cycle()
+
+        werewolves = []
+        for seat, skill_id, target_seat in skills:
+            if skill_id == 'kill':
+                werewolves.append(seat)
 
         skills, vote_elect, vote_text = vote(skills, 'vote')
         elect_id = vote_elect[0] if vote_elect else 0
@@ -685,10 +694,6 @@ class Game:
 
         if elect_id:
             await self.system_speak(f'Vote result: {vote_text}')
-        werewolves = []
-        for seat, skill_id, target_seat in skills:
-            if skill_id == 'kill':
-                werewolves.append(seat)
         for werewolf in werewolves:
             if kill_id:
                 await self.system_speak(
