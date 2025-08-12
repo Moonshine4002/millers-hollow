@@ -225,6 +225,15 @@ class Database:
 
 
 class Game:
+    names = [name.strip() for name in ai.config.get('database', 'names').split('|')]
+    models = [model.strip() for model in ai.config.get('client', 'models').split('|')]
+
+    @classmethod
+    async def add_ai(cls) -> int:
+        name = random.choice(cls.names)
+        model = random.choice(cls.models)
+        return await Database.insert_user(name, 'ai', model)
+
     def __init__(self) -> None:
         self.date = 1
         self.cycle = 1
@@ -256,12 +265,12 @@ class Game:
 
     async def init_db(self) -> None:
         SQL = """
-        SELECT id FROM user WHERE controller = 'ai';
+        SELECT id, kind FROM user WHERE controller = 'ai';
         """
         async with Database.get_conn() as conn:
             cursor = await conn.execute(SQL)
             ais = await Database.fetchall(cursor)
-        ai_ids = [ai_id for (ai_id,) in ais if ai_id not in self.users]
+        ai_ids = [id_ for (id_, kind) in ais if id_ not in self.users and kind in self.models]
 
         role_setup = [role.strip() for role in ai.config.get('game', 'role_setup').split('|')]
         self.player_num = len(role_setup)
@@ -273,8 +282,12 @@ class Game:
         ai_num = len(role_setup) - len(self.users)
         if ai_num < 0:
             raise ValueError('Too many user')
-        elif ai_num > len(ai_ids):
-            raise ValueError('Not enough user')
+        while ai_num > len(ai_ids):
+            id_ = await self.add_ai()
+            if not id_:
+                continue
+            ai_ids.append(id_)
+
         ai_ids = random.sample(ai_ids, ai_num)
         for ai_id in ai_ids:
             self.users.append(ai_id)
@@ -943,12 +956,6 @@ class Games(collections.UserDict[int, Game]):
         self[game_id] = game
         return game_id
 
-    async def add_ai(self) -> None:
-        coros = [
-            Database.insert_user(name, 'ai', 'deepseek-chat') for name in string.ascii_uppercase
-        ]
-        await asyncio.gather(*coros)
-
 
 games = Games()
 
@@ -966,7 +973,6 @@ class Player(BaseModel):
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     await Database.init_db()
-    await games.add_ai()
     yield
 
 
@@ -975,7 +981,7 @@ app = FastAPI(lifespan=lifespan)
 
 @app.post('/register')
 async def register(user: User) -> responses.JSONResponse:
-    id_ = await Database.insert_user(user.name, user.controller, 'deepseek-chat')   # TODO
+    id_ = await Database.insert_user(user.name, user.controller, ai.config.get('client', 'model'))
     if id_:
         return responses.JSONResponse(
             {'id': id_, 'message': 'Sign up successfully'}, status.HTTP_201_CREATED
