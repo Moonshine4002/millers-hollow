@@ -61,11 +61,10 @@ Please be sure that you know the rules.
 You will be given a input describing the game scenario.
 Try your best to win the game.
 Game rules:
-- The Moderator is always truthful.
-- You win if your team wins.
+- The [system] messages is always truthful.
+- You win if your team wins. Always act in the best interests of your team.
 - Werewolves win by eliminating either all villagers or all gods.
-- Werewolves can suicidally expose themselves, ending that day instantly."
-- The sheriff election continues for 2 rounds.
+- The identity of the deceased players remain hidden.
 - Players killed on the first night or eliminated by vote have a dying speech.
 Tips:
 - Avoid repetitive or meaningless statements.

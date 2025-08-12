@@ -114,7 +114,6 @@ class Database:
         role_id TEXT NOT NULL,
         faction TEXT NOT NULL,
         life BOOLEAN DEFAULT TRUE,
-        sequence INTEGER DEFAULT 0,
         PRIMARY KEY (game_id, player_id));
         ---
         CREATE TABLE IF NOT EXISTS player_skill (
@@ -150,9 +149,9 @@ class Database:
         ('vote', '', '', 'During the day phase, all players vote publicly to eliminate one player from the game.'),
         ('speak', '', '', 'During the day phase, players take turns speaking publicly to discuss suspicions, share information, and debate who to eliminate.'),
         ('kill', '', '', 'At night, the Werewolves secretly select one player to eliminate. If consensus cannot be reached, the option with the highest number of votes will be selected, or a random choice will be made among the candidates with the highest votes.'),
-        ('team_chat', '', '', 'At night, the Werewolf team privately communicates to strategize and decide whom to kill. Other roles cannot see these messages.'),
+        ('team_chat', '', '', 'At night, the Werewolves privately communicates to strategize and decide whom to kill. Other roles cannot see these messages.'),
         ('identify', '', '', 'At night, the Seer targets one player to secretly learn their faction (werewolf or human).'),
-        ('heal', 'poison', 'constraint', 'At night, the Witch knows who was killed by the werewolf and and decides whether to use a one-time antidote to heal that player. Cannot self-heal except for the first night. If the Witch choose to heal, then she cannot poison.'),
+        ('heal', 'poison', 'constraint', 'At night, the Witch knows who was killed by the werewolf and decides whether to use a one-time antidote to heal that player. Cannot self-heal except for the first night. If the Witch choose to heal, then she cannot poison.'),
         ('poison', 'heal', 'constraint', 'At night, the Witch uses a one-time poison potion to secretly eliminate any player. The targeted player will not be able to use any other special skills. If the Witch choose to poison, then she cannot heal.'),
         ('shoot', '', '', 'When the Hunter is eliminated (day or night), he immediately shoot and kill one other player as a final revenge.'),
         ('shield', '', '', 'At night, the Guard chooses a player to protect. Cannot protect the same player consecutively.');
@@ -235,6 +234,7 @@ class Game:
         self.users: list[int] = []
         self.started = False
         self.ended = False
+        self.player_num = 0
         self.seats: list[int] = []
         self.user_seat: dict[int, int] = {}
         self.skill_info: dict[str, str] = {}
@@ -264,11 +264,12 @@ class Game:
         ai_ids = [ai_id for (ai_id,) in ais if ai_id not in self.users]
 
         role_setup = [role.strip() for role in ai.config.get('game', 'role_setup').split('|')]
+        self.player_num = len(role_setup)
 
         role_count = dict(collections.Counter(role_setup))
         role_text = ', '.join(f'{value} {key}' for key, value in role_count.items())
 
-        self.seats = list(range(1, len(role_setup) + 1))
+        self.seats = list(range(1, self.player_num + 1))
         ai_num = len(role_setup) - len(self.users)
         if ai_num < 0:
             raise ValueError('Too many user')
@@ -361,6 +362,7 @@ class Game:
             },
         }
         skill_dict = await self.set_skill_dict(skill_seq)
+        skill_dict = await self.set_sheriff_dict(skill_dict)
         death_seats = await self.loop_action(skill_dict)
 
         if death_seats:
@@ -438,12 +440,30 @@ class Game:
             skill_dict.setdefault(seq, {})
             skill_dict[seq].setdefault(seat, [])
             skill_dict[seq][seat].append(skill_id)
+        skill_dict.pop(0, [])
         return dict(sorted(skill_dict.items()))
+
+    async def set_sheriff_dict(
+        self,
+        skill_dict: dict[int, dict[int, list[str]]],
+    ):
+        sheriff_seq = self.seats
+        new_dict: dict[int, dict[int, list[str]]] = {}
+        new_seq = 0
+        for seq, d in skill_dict.items():
+            new_seq += 1
+            if not any('speak' in skills for seat, skills in d.items()):
+                new_dict[new_seq] = d
+                continue
+            for seat in sheriff_seq:
+                new_seq += 1
+                if seat not in d.keys():
+                    continue
+                new_dict[new_seq] = {seat: d[seat]}
+        return new_dict
 
     async def loop_action(self, skill_dict: dict[int, dict[int, list[str]]]) -> list[int]:
         for seq, value in skill_dict.items():
-            if seq == 0:
-                continue
             coros = [self.player(seat, skill_ids) for seat, skill_ids in value.items()]
             await asyncio.gather(*coros)
 
@@ -772,8 +792,6 @@ class Game:
             player_dict[seat] = others
         for seat, (*others, role, faction, life) in player_dict.items():
             targets = [target for target, in await self.s_l_skill(seat, 'identify')]
-            if self.phase == 'night':
-                life = 'unknown'
             if not (
                 seat == p_seat or role == player_dict[p_seat][-2] == 'werewolf' or seat in targets
             ):
