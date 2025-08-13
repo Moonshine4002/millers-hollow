@@ -668,10 +668,12 @@ class Game:
                 werewolves.append(seat)
 
         skills, vote_elect, vote_text = vote(skills, 'vote')
-        elect_id = vote_elect[0] if vote_elect else 0
-        if elect_id:
+        if len(vote_elect) == 1:
+            elect_id = vote_elect[0]
             deaths.setdefault(elect_id, [])
             deaths[elect_id].append('vote')
+        elif len(vote_elect) > 1:
+            pass   # TODO: vote again
 
         skills, kill_elect, kill_text = vote(skills, 'kill')
         kill_id = random.choice(kill_elect) if kill_elect else 0
@@ -705,7 +707,7 @@ class Game:
         if predict:
             return deaths
 
-        if elect_id:
+        if vote_text:
             await self.system_speak(f'Vote result: {vote_text}')
         for werewolf in werewolves:
             if kill_id:
@@ -829,7 +831,7 @@ class Game:
             player_dict[seat] = others
         for seat, (*others, role, faction, life) in player_dict.items():
             targets = [target for target, in await self.s_l_skill(seat, 'identify')]
-            if not (
+            if not self.ended and not (
                 seat == p_seat or role == player_dict[p_seat][-2] == 'werewolf' or seat in targets
             ):
                 role = 'unknown'
@@ -906,7 +908,7 @@ class Game:
 
     async def select_log(self, seat: int) -> str:
         SQL = f"""
-        SELECT up.name, ps.seat, ps.skill_id, ut.name, l.target, l.speech
+        SELECT l.type, up.name, ps.seat, ps.skill_id, ut.name, l.target, l.speech
         FROM log l
         JOIN player_skill ps ON ps.id = l.ps_id
         LEFT JOIN attribute ap ON ap.game_id = :gid AND ap.seat = ps.seat
@@ -932,6 +934,7 @@ class Game:
 
         text = ''
         for (
+            type_,
             player_name,
             player_seat,
             skill_id,
@@ -940,11 +943,11 @@ class Game:
             speech,
         ) in logs:
             if player_seat == 0:
-                text += f'[system] {speech}\n'
+                text += f'[{type_}] Moderator: {speech}\n'
             elif skill_id in ['speak', 'team_chat']:
-                text += f'{player_name}({player_seat}) said: {speech}\n'
+                text += f'[{type_}] {player_name}({player_seat}) said: {speech}\n'
             else:
-                text += f'{player_name}({player_seat}) {skill_id} {target_name}({target_seat}).\n'
+                text += f'[{type_}] {player_name}({player_seat}) {skill_id} {target_name}({target_seat}).\n'
         return text.rstrip()
 
 

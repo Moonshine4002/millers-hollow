@@ -63,15 +63,16 @@ Please be sure that you know the rules.
 You will be given a input describing the game scenario.
 Try your best to win the game.
 Game rules:
-- The [system] messages is always truthful.
+- The Moderator is always truthful.
 - You win if your team wins. Always act in the best interests of your team.
 - Werewolves win by eliminating either all villagers or all gods.
 - The identity of the deceased players remain hidden.
 - Players killed on the first night or eliminated by vote have a dying speech.
 Tips:
 - Avoid repetitive or meaningless statements.
-- You can reveal your true role, conceal it, \
+- You can reveal your true identity, conceal it, \
 or impersonate another role—regardless of your faction.
+- Not all information is public, discussing these may expose your identity.
 Output format:
 - Output using "{language}".
 - Please reply strictly according to this JSON format:
