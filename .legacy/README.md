@@ -1,4 +1,5 @@
 # The Werewolves of Miller's Hollow
+**This branch is not under active development and marked deprecated.**
 
 This project is a simulation of the social deduction game **The Werewolves of Miller's Hollow**, where AI agents representing villagers, werewolves, seers and more to interact, make decisions, and vote to eliminate each other based on hidden roles and social reasoning.
 

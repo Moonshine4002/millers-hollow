@@ -119,7 +119,9 @@ class MainWidget(QWidget):
         # action
         self.action_status = QPlainTextEdit('Please wait...')
         self.action_status.setReadOnly(True)
-        self.action_status.setMinimumSize(MINIMUM_WIDTH * 4, MINIMUM_HEIGHT * 1)
+        self.action_status.setMinimumSize(
+            MINIMUM_WIDTH * 4, MINIMUM_HEIGHT * 1
+        )
         self.action_refresh = QPushButton('refresh')
         self.action_refresh.clicked.connect(self.button_stats_action)
         self.action_refresh.setEnabled(False)
@@ -268,7 +270,9 @@ class MainWidget(QWidget):
     def button_start(self) -> None:
         self.user_start.setEnabled(False)
         try:
-            response = self.post(f'/games/{self.room}/users/{self.user_id}/start')
+            response = self.post(
+                f'/games/{self.room}/users/{self.user_id}/start'
+            )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self.status_message(response.json()['detail'], 'error')
@@ -287,7 +291,9 @@ class MainWidget(QWidget):
     def button_stats_player(self) -> None:
         self.player_refresh.setEnabled(False)
         try:
-            response = self.get(f'/games/{self.room}/seats/{self.seat}/stats/player')
+            response = self.get(
+                f'/games/{self.room}/seats/{self.seat}/stats/player'
+            )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self.status_message(response.json()['detail'], 'error')
@@ -298,8 +304,16 @@ class MainWidget(QWidget):
             stats: dict[int, list] = response.json()['stats']
             self.player_table.setRowCount(len(stats))
             self.player_table.setColumnCount(4)
-            self.player_table.setHorizontalHeaderLabels(['Name', 'Role', 'Faction', 'Life'])
-            for seat_str, (name, *others, role, faction, life) in stats.items():
+            self.player_table.setHorizontalHeaderLabels(
+                ['Name', 'Role', 'Faction', 'Life']
+            )
+            for seat_str, (
+                name,
+                *others,
+                role,
+                faction,
+                life,
+            ) in stats.items():
                 seat = int(seat_str) - 1
                 item_name = QTableWidgetItem(name)
                 item_role = QTableWidgetItem(role)
@@ -315,7 +329,9 @@ class MainWidget(QWidget):
     def button_stats_log(self) -> None:
         self.log_refresh.setEnabled(False)
         try:
-            response = self.get(f'/games/{self.room}/seats/{self.seat}/stats/log')
+            response = self.get(
+                f'/games/{self.room}/seats/{self.seat}/stats/log'
+            )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self.status_message(response.json()['detail'], 'error')
@@ -330,7 +346,9 @@ class MainWidget(QWidget):
     def button_stats_action(self) -> None:
         self.action_refresh.setEnabled(False)
         try:
-            response = self.get(f'/games/{self.room}/seats/{self.seat}/stats/action')
+            response = self.get(
+                f'/games/{self.room}/seats/{self.seat}/stats/action'
+            )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self.status_message(response.json()['detail'], 'error')
@@ -387,7 +405,9 @@ class MainWidget(QWidget):
 
     def hd_refresh(self) -> None:
         if self.player_refresh.isEnabled() and not self.started:
-            response = self.get(f'/games/{self.room}/users/{self.user_id}/start')
+            response = self.get(
+                f'/games/{self.room}/users/{self.user_id}/start'
+            )
             self.seat = response.json()
             if self.seat:
                 self.started = True
@@ -428,9 +448,13 @@ class MainWindow(QMainWindow):
         self.main_widget = MainWidget(self)
 
 
-if __name__ == '__main__':
+def run_client() -> None:
     app = QApplication(sys.argv)
     window = MainWindow()
     window.resize(800, 600)
     window.show()
     sys.exit(app.exec())
+
+
+if __name__ == '__main__':
+    run_client()

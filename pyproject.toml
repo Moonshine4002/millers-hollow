@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "millers-hollow"
+version = "0.1.0"
+dependencies = [
+  "aiosqlite",
+  "fastapi",
+  "pydantic",
+  "uvicorn",
+  "openai",
+]
+requires-python = ">=3.12"
+authors = [
+  {name = "Moonshine4002", email = "moonshine2004@163.com"},
+]
+maintainers = [
+  {name = "Moonshine4002", email = "moonshine2004@163.com"},
+]
+description = "AI-powered simulation of The Werewolves of Miller's Hollow social deduction game"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+keywords = ["Game", "AIGC", "RESTful", "Database"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Programming Language :: Python",
+]
+
+[project.optional-dependencies]
+gui = [
+  "PySide6",
+  "httpx",
+]
+dev = [
+  "mypy",
+  "blue",
+]
+
+[project.urls]
+Homepage = "https://example.com"
+Documentation = "https://github.com/Moonshine4002/millers-hollow/wiki"
+Repository = "https://github.com/Moonshine4002/millers-hollow.git"
+"Bug Tracker" = "https://github.com/Moonshine4002/millers-hollow/issues"
+Changelog = "https://github.com/Moonshine4002/millers-hollow/blob/main/CHANGELOG.md"
+
+[project.scripts]
+millers-server = "millers_hollow.server.main:run_server"
+
+[project.gui-scripts]
+millers-client = "millers_hollow.client.main:run_client"

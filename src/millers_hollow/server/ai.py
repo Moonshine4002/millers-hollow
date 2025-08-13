@@ -150,4 +150,6 @@ def logic(output: GuiOutput, input_: GuiInput) -> None:
         raise ValueError(f'Invalid JSON format: chosen skill beyond {skills}')
     targets = input_.skills[output.skill].targets
     if output.target not in targets:
-        raise ValueError(f'Invalid JSON format: chosen target beyond {targets}')
+        raise ValueError(
+            f'Invalid JSON format: chosen target beyond {targets}'
+        )

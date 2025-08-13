@@ -21,7 +21,7 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException, responses, status
 from pydantic import BaseModel
 import uvicorn
 
-import ai
+from . import ai
 
 
 print(pathlib.Path.cwd())
@@ -45,7 +45,9 @@ class Database:
 
     @staticmethod
     @contextlib.asynccontextmanager
-    async def get_cursor(sql: str, para: tuple = ()) -> AsyncGenerator[aiosqlite.Cursor, None]:
+    async def get_cursor(
+        sql: str, para: tuple = ()
+    ) -> AsyncGenerator[aiosqlite.Cursor, None]:
         async with aiosqlite.connect('data.db') as conn:
             try:
                 async with conn.execute(sql, para) as cursor:
@@ -225,8 +227,12 @@ class Database:
 
 
 class Game:
-    names = [name.strip() for name in ai.config.get('database', 'names').split('|')]
-    models = [model.strip() for model in ai.config.get('client', 'models').split('|')]
+    names = [
+        name.strip() for name in ai.config.get('database', 'names').split('|')
+    ]
+    models = [
+        model.strip() for model in ai.config.get('client', 'models').split('|')
+    ]
 
     @classmethod
     async def add_ai(cls) -> int:
@@ -270,13 +276,22 @@ class Game:
         async with Database.get_conn() as conn:
             cursor = await conn.execute(SQL)
             ais = await Database.fetchall(cursor)
-        ai_ids = [id_ for (id_, kind) in ais if id_ not in self.users and kind in self.models]
+        ai_ids = [
+            id_
+            for (id_, kind) in ais
+            if id_ not in self.users and kind in self.models
+        ]
 
-        role_setup = [role.strip() for role in ai.config.get('game', 'role_setup').split('|')]
+        role_setup = [
+            role.strip()
+            for role in ai.config.get('game', 'role_setup').split('|')
+        ]
         self.player_num = len(role_setup)
 
         role_count = dict(collections.Counter(role_setup))
-        role_text = ', '.join(f'{value} {key}' for key, value in role_count.items())
+        role_text = ', '.join(
+            f'{value} {key}' for key, value in role_count.items()
+        )
 
         self.seats = list(range(1, self.player_num + 1))
         ai_num = len(role_setup) - len(self.users)
@@ -299,7 +314,9 @@ class Game:
         random.shuffle(role_setup)
         random.shuffle(self.users)
         async with Database.get_conn() as conn:
-            for player_id, seat, role_id in zip(self.users, self.seats, role_setup):
+            for player_id, seat, role_id in zip(
+                self.users, self.seats, role_setup
+            ):
                 self.user_seat[player_id] = seat
                 await conn.execute(SQL, (self.id, player_id, seat, role_id))
 
@@ -420,7 +437,10 @@ class Game:
             skill_seq['night']['speak'] = 0
 
         skill_dict = await self.set_skill_dict(
-            skill_seq, force_quantity=None, force_life=False, force_seats=death_seats
+            skill_seq,
+            force_quantity=None,
+            force_life=False,
+            force_seats=death_seats,
         )
         death_seats = await self.loop_action(skill_dict)
         if self.ended:
@@ -475,9 +495,14 @@ class Game:
                 new_dict[new_seq] = {seat: d[seat]}
         return new_dict
 
-    async def loop_action(self, skill_dict: dict[int, dict[int, list[str]]]) -> list[int]:
+    async def loop_action(
+        self, skill_dict: dict[int, dict[int, list[str]]]
+    ) -> list[int]:
         for seq, value in skill_dict.items():
-            coros = [self.player(seat, skill_ids) for seat, skill_ids in value.items()]
+            coros = [
+                self.player(seat, skill_ids)
+                for seat, skill_ids in value.items()
+            ]
             await asyncio.gather(*coros)
 
         deaths = await self.verdict()
@@ -486,7 +511,9 @@ class Game:
 
     async def player(self, p_seat: int, skill_ids: list[str]) -> None:
         p_info = await self.s_a_player(p_seat)
-        p_name, p_controller, p_kind, p_role, p_faction, p_life = p_info[p_seat]
+        p_name, p_controller, p_kind, p_role, p_faction, p_life = p_info[
+            p_seat
+        ]
         p_text = f'\tYou are {p_name}, a {p_role} in seat {p_seat}.'
         players_text = '\n'.join(
             f'\tname: {name}, seat: {seat}, role: {role}, faction: {faction}, life: {life}'
@@ -501,13 +528,19 @@ class Game:
 
         while skill_ids:
             skills = {
-                skill: ai.GuiInSkill(targets=targets, description=self.skill_info[skill])
+                skill: ai.GuiInSkill(
+                    targets=targets, description=self.skill_info[skill]
+                )
                 for skill in skill_ids
             }
             await self.pre_action(p_seat, skill_ids, skills)
             log = await self.select_log(p_seat)
             input_ = ai.GuiInput(
-                model=p_kind, me=p_text, players=players_text, skills=skills, log=log
+                model=p_kind,
+                me=p_text,
+                players=players_text,
+                skills=skills,
+                log=log,
             )
             self.player_input[p_seat] = input_
             self.player_started[p_seat] = True
@@ -537,7 +570,11 @@ class Game:
             output = self.player_output[p_seat]
 
             result = await self.action(
-                p_seat, output.skill, output.target, output.speech, output.reason
+                p_seat,
+                output.skill,
+                output.target,
+                output.speech,
+                output.reason,
             )
             if result is None:
                 skill_ids.remove(output.skill)
@@ -573,7 +610,9 @@ class Game:
             WHERE ps.game_id = ? AND ps.seat = ? AND ps.skill_id = ? AND l.cycle = ?;
             """
             async with Database.get_conn() as conn:
-                cursor = await conn.execute(SQL, (self.id, seat, 'shield', self.cycle - 1))
+                cursor = await conn.execute(
+                    SQL, (self.id, seat, 'shield', self.cycle - 1)
+                )
                 shielded = await Database.fetchall(cursor)
             if shielded:
                 last_shielded = max(shielded)[1]
@@ -597,7 +636,12 @@ class Game:
             await self.system_speak(f'Seat {target_seat} is {faction}.', seat)
 
         skill_log = functools.partial(
-            self.insert_log, seat, skill_id, target=target_seat, speech=speech, comment=comment
+            self.insert_log,
+            seat,
+            skill_id,
+            target=target_seat,
+            speech=speech,
+            comment=comment,
         )
         match skill_id:
             case 'vote':
@@ -630,7 +674,9 @@ class Game:
         return None
 
     async def verdict(self, predict: bool = False) -> dict[int, list[str]]:
-        def vote(skills: list[tuple], skill: str) -> tuple[list[tuple], list[int], str]:
+        def vote(
+            skills: list[tuple], skill: str
+        ) -> tuple[list[tuple], list[int], str]:
             filtered_skills: list[tuple] = []
             votes: dict[int, list[int]] = {}
             for seat, skill_id, target_seat in skills:
@@ -645,8 +691,12 @@ class Game:
             waivers = votes.pop(0, [])
             waiver_text = ', '.join(map(str, waivers))
             waiver_text = f'{waiver_text} -> abstain' if waiver_text else ''
-            vote_list = [f"{', '.join(map(str, v))} -> {k}" for k, v in votes.items()]
-            vote_text = '; '.join(vote_list + ([waiver_text] if waiver_text else []))
+            vote_list = [
+                f"{', '.join(map(str, v))} -> {k}" for k, v in votes.items()
+            ]
+            vote_text = '; '.join(
+                vote_list + ([waiver_text] if waiver_text else [])
+            )
             max_vote = max(len(v) for v in votes.values()) if votes else 0
             elect = [k for k, v in votes.items() if len(v) == max_vote]
             return filtered_skills, elect, vote_text
@@ -712,11 +762,13 @@ class Game:
         for werewolf in werewolves:
             if kill_id:
                 await self.system_speak(
-                    f'Your team choose seat {kill_id}, vote result: {kill_text}', werewolf
+                    f'Your team choose seat {kill_id}, vote result: {kill_text}',
+                    werewolf,
                 )
             else:
                 await self.system_speak(
-                    f'Your team choose no one, vote result: {kill_text}', werewolf
+                    f'Your team choose no one, vote result: {kill_text}',
+                    werewolf,
                 )
 
         for key, value in deaths.items():
@@ -754,7 +806,9 @@ class Game:
 
         return deaths
 
-    async def update_time(self, cycle: bool = True, phase: bool = True) -> None:
+    async def update_time(
+        self, cycle: bool = True, phase: bool = True
+    ) -> None:
         if cycle:
             self.cycle += 1
         if phase:
@@ -769,7 +823,9 @@ class Game:
         WHERE id = ?
         """
         async with Database.get_conn() as conn:
-            await conn.execute(SQL, (self.cycle, self.date, self.phase, self.id))
+            await conn.execute(
+                SQL, (self.cycle, self.date, self.phase, self.id)
+            )
 
     async def system_speak(self, speech: str, target: int = 0) -> None:
         if target == 0:
@@ -830,9 +886,13 @@ class Game:
         for seat, *others in players:
             player_dict[seat] = others
         for seat, (*others, role, faction, life) in player_dict.items():
-            targets = [target for target, in await self.s_l_skill(seat, 'identify')]
+            targets = [
+                target for target, in await self.s_l_skill(seat, 'identify')
+            ]
             if not self.ended and not (
-                seat == p_seat or role == player_dict[p_seat][-2] == 'werewolf' or seat in targets
+                seat == p_seat
+                or role == player_dict[p_seat][-2] == 'werewolf'
+                or seat in targets
             ):
                 role = 'unknown'
                 faction = 'unknown'
@@ -869,7 +929,9 @@ class Game:
             cursor = await conn.execute(SQL, (self.id, seat, skill_id))
             return await Database.fetchone(cursor)
 
-    async def u_ps_quantity(self, seat: int, skill_id: str, add: int = -1) -> None:
+    async def u_ps_quantity(
+        self, seat: int, skill_id: str, add: int = -1
+    ) -> None:
         SQL = """
         UPDATE player_skill SET quantity = quantity + ?
         WHERE game_id = ? AND seat = ? AND skill_id = ?;
@@ -903,7 +965,17 @@ class Game:
         """
         async with Database.get_conn() as conn:
             await conn.execute(
-                SQL, (self.cycle, type_, target, speech, comment, self.id, seat, skill_id)
+                SQL,
+                (
+                    self.cycle,
+                    type_,
+                    target,
+                    speech,
+                    comment,
+                    self.id,
+                    seat,
+                    skill_id,
+                ),
             )
 
     async def select_log(self, seat: int) -> str:
@@ -945,7 +1017,9 @@ class Game:
             if player_seat == 0:
                 text += f'[{type_}] Moderator: {speech}\n'
             elif skill_id in ['speak', 'team_chat']:
-                text += f'[{type_}] {player_name}({player_seat}) said: {speech}\n'
+                text += (
+                    f'[{type_}] {player_name}({player_seat}) said: {speech}\n'
+                )
             else:
                 text += f'[{type_}] {player_name}({player_seat}) {skill_id} {target_name}({target_seat}).\n'
         return text.rstrip()
@@ -986,10 +1060,13 @@ app = FastAPI(lifespan=lifespan)
 
 @app.post('/register')
 async def register(user: User) -> responses.JSONResponse:
-    id_ = await Database.insert_user(user.name, user.controller, ai.config.get('client', 'model'))
+    id_ = await Database.insert_user(
+        user.name, user.controller, ai.config.get('client', 'model')
+    )
     if id_:
         return responses.JSONResponse(
-            {'id': id_, 'message': 'Sign up successfully'}, status.HTTP_201_CREATED
+            {'id': id_, 'message': 'Sign up successfully'},
+            status.HTTP_201_CREATED,
         )
     return await login(user)
 
@@ -1027,7 +1104,8 @@ def player_start(game_id: int, seat: int) -> None:
 async def create() -> responses.JSONResponse:
     game_id = await games.add_game()
     return responses.JSONResponse(
-        {'game_id': game_id, 'message': 'Game created'}, status.HTTP_201_CREATED
+        {'game_id': game_id, 'message': 'Game created'},
+        status.HTTP_201_CREATED,
     )
 
 
@@ -1036,7 +1114,9 @@ async def join(game_id: int, user_id: int) -> responses.JSONResponse:
     game_exist(game_id)
     game = games[game_id]
     if user_id in game.users:
-        return responses.JSONResponse('Rejoin game successfully', status.HTTP_200_OK)
+        return responses.JSONResponse(
+            'Rejoin game successfully', status.HTTP_200_OK
+        )
     game.users.append(user_id)
     return responses.JSONResponse('Join game successfully', status.HTTP_200_OK)
 
@@ -1051,7 +1131,8 @@ async def start_post(
     seat = game.user_seat[user_id]
     background_tasks.add_task(game.loops)
     return responses.JSONResponse(
-        {'seat': seat, 'message': 'Start game successfully'}, status.HTTP_200_OK
+        {'seat': seat, 'message': 'Start game successfully'},
+        status.HTTP_200_OK,
     )
 
 
@@ -1082,7 +1163,9 @@ async def stats_log(game_id: int, seat: int) -> responses.JSONResponse:
     game = games[game_id]
     game_start(game_id)
     log = await game.select_log(seat)
-    return responses.JSONResponse({'stats': log, 'message': 'Stats received'}, status.HTTP_200_OK)
+    return responses.JSONResponse(
+        {'stats': log, 'message': 'Stats received'}, status.HTTP_200_OK
+    )
 
 
 @app.get('/games/{game_id}/seats/{seat}/stats/action')
@@ -1095,7 +1178,8 @@ async def stats_action_get(game_id: int, seat: int) -> responses.JSONResponse:
     info = f'Available skills:\n{ai.skill_text(game.player_input[seat])}'
     skills = list(game.player_input[seat].skills.keys())
     return responses.JSONResponse(
-        {'stats': info, 'skills': skills, 'message': 'Stats received'}, status.HTTP_200_OK
+        {'stats': info, 'skills': skills, 'message': 'Stats received'},
+        status.HTTP_200_OK,
     )
 
 
@@ -1118,5 +1202,9 @@ async def stats_action_post(
     return responses.JSONResponse('Action sent', status.HTTP_201_CREATED)
 
 
-if __name__ == '__main__':
+def run_server() -> None:
     uvicorn.run(app)
+
+
+if __name__ == '__main__':
+    run_server()

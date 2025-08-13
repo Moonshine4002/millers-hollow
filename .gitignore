@@ -1,0 +1,9 @@
+# cache
+__pycache__/
+dist/
+
+# database
+data.db
+
+# config
+config.ini
