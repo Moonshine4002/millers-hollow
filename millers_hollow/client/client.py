@@ -1,3 +1,4 @@
+from configparser import ConfigParser
 import sys
 from typing import cast
 
@@ -21,10 +22,11 @@ from PySide6.QtWidgets import (
 )
 import httpx
 
-ORIGIN = 'http://localhost:8000'
-
 
 class MainWidget(QWidget):
+    MIN_WIDTH = 100
+    MIN_HEIGHT = 100
+    SPACING = 10
     STYLE_SHEET = {
         'info': 'color: #000000;',
         'success': 'color: #00dd00;',
@@ -33,11 +35,6 @@ class MainWidget(QWidget):
 
     def __init__(self, window: 'MainWindow'):
         super().__init__()
-
-        MINIMUM_WIDTH = 100
-        MINIMUM_HEIGHT = 100
-        SPACING = 10
-
         self.user_name = ''
         self.user_controller = ''
         self.user_id = 0
@@ -104,7 +101,7 @@ class MainWidget(QWidget):
         # log
         self.log_text = QPlainTextEdit('')
         self.log_text.setReadOnly(True)
-        self.log_text.setMinimumSize(MINIMUM_WIDTH * 4, MINIMUM_HEIGHT * 2)
+        self.log_text.setMinimumSize(self.MIN_WIDTH * 4, self.MIN_HEIGHT * 2)
         self.log_refresh = QPushButton('refresh')
         self.log_refresh.clicked.connect(self.button_stats_log)
         self.log_refresh.setEnabled(False)
@@ -119,7 +116,7 @@ class MainWidget(QWidget):
         # action
         self.action_status = QPlainTextEdit('Please wait...')
         self.action_status.setReadOnly(True)
-        self.action_status.setMinimumSize(MINIMUM_WIDTH * 4, MINIMUM_HEIGHT * 1)
+        self.action_status.setMinimumSize(self.MIN_WIDTH * 4, self.MIN_HEIGHT * 1)
         self.action_refresh = QPushButton('refresh')
         self.action_refresh.clicked.connect(self.button_stats_action)
         self.action_refresh.setEnabled(False)
@@ -155,14 +152,17 @@ class MainWidget(QWidget):
         self.main_box.addLayout(self.right_box)
 
     def window_init(self) -> None:
-        # Refresh
+        # var
+        self.origin = self.window().origin
+
+        # refresh
         self.status_menu = self.window().status_menu
         refresh_action = self.status_menu.addAction('New Game', self.hd_new)
         refresh_action.setShortcut('Ctrl+N')
         refresh_action = self.status_menu.addAction('Refresh', self.hd_refresh)
         refresh_action.setShortcut('Ctrl+R')
 
-        # Status message
+        # status message
         self.status = self.window().status_message
 
     def window(self) -> 'MainWindow':
@@ -170,23 +170,23 @@ class MainWidget(QWidget):
 
     def post(self, path: str, json: dict | None = None) -> httpx.Response:
         try:
-            response = httpx.post(f'{ORIGIN}{path}', json=json)
+            response = httpx.post(f'{self.origin}{path}', json=json)
         except Exception as e:
             response = httpx.Response(
                 status_code=500,
                 json={'detail': str(e)},
-                request=httpx.Request('POST', f'{ORIGIN}{path}', json=json),
+                request=httpx.Request('POST', f'{self.origin}{path}', json=json),
             )
         return response
 
     def get(self, path: str) -> httpx.Response:
         try:
-            response = httpx.get(f'{ORIGIN}{path}')
+            response = httpx.get(f'{self.origin}{path}')
         except Exception as e:
             response = httpx.Response(
                 status_code=500,
                 json={'detail': str(e)},
-                request=httpx.Request('GET', f'{ORIGIN}{path}'),
+                request=httpx.Request('GET', f'{self.origin}{path}'),
             )
         return response
 
@@ -411,34 +411,40 @@ class MainWidget(QWidget):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, origin: str):
         super().__init__()
+        self.origin = origin
 
-        # Title
+        # title
         self.setWindowTitle("Miller's Hollow")
 
-        # Menu
+        # menu
         self.menu = self.menuBar()
         self.file_menu = self.menu.addMenu('File')
         self.status_menu = self.menu.addMenu('Status')
 
-        # File
+        # file
         exit_action = self.file_menu.addAction('Exit', self.close)
         exit_action.setShortcut('Ctrl+Q')
 
-        # Status Bar
+        # status bar
         self.status = self.statusBar()
         self.status.showMessage('Status Bar')
         self.status_message = QLabel('')
         self.status.addPermanentWidget(self.status_message)
 
-        # Widget
+        # widget
         self.main_widget = MainWidget(self)
+
+
+config = ConfigParser()
+config.read('./config.ini', encoding='utf-8')
+ORIGIN = config['client']['origin']
 
 
 def run_client() -> None:
     app = QApplication(sys.argv)
-    window = MainWindow()
+    window = MainWindow(ORIGIN)
     window.resize(800, 600)
     window.show()
     sys.exit(app.exec())

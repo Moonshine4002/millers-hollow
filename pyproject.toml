@@ -47,7 +47,7 @@ Repository = "https://github.com/Moonshine4002/millers-hollow.git"
 Changelog = "https://github.com/Moonshine4002/millers-hollow/blob/main/CHANGELOG.md"
 
 [project.scripts]
-millers-server = "millers_hollow.server.main:run_server"
+millers-server = "millers_hollow.server:run_server"
 
 [project.gui-scripts]
-millers-client = "millers_hollow.client.main:run_client"
+millers-client = "millers_hollow.client:run_client"
