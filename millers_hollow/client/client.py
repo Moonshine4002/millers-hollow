@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
 )
 import httpx
 
+from ..common import io
+
 
 class MainWidget(QWidget):
     MIN_WIDTH = 100
@@ -301,13 +303,7 @@ class MainWidget(QWidget):
             self.player_table.setHorizontalHeaderLabels(
                 ['Name', 'Role', 'Faction', 'Life']
             )
-            for seat_str, (
-                name,
-                *others,
-                role,
-                faction,
-                life,
-            ) in stats.items():
+            for seat_str, (name, *others, role, faction, life) in stats.items():
                 seat = int(seat_str) - 1
                 item_name = QTableWidgetItem(name)
                 item_role = QTableWidgetItem(role)
@@ -348,9 +344,12 @@ class MainWidget(QWidget):
             self.action_status.setPlainText('Please wait...')
         else:
             self.status_message(response.json()['message'], 'success')
-            self.action_status.setPlainText(response.json()['stats'])
+            input_: io.InputSkill = io.InputSkill.model_validate_json(
+                response.json()['stats']
+            )
+            self.action_status.setPlainText(input_.prompt)
             self.action_skill.clear()
-            self.action_skill.addItems(response.json()['skills'])
+            self.action_skill.addItems([skill.name for skill in input_.skills])
         self.action_refresh.setEnabled(True)
 
     @Slot()
@@ -360,12 +359,18 @@ class MainWidget(QWidget):
             data = {
                 'skill': self.action_skill.currentText(),
                 'target': int(self.action_target.text()),
-                'speech': self.action_speech.toPlainText(),
+                'dialogue': self.action_speech.toPlainText(),
                 'reason': self.action_reason.toPlainText(),
             }
+            # TODO
+            if not data['target']:
+                data['type'] = 'dialogue'
+                data.pop('target')
+            else:
+                data['type'] = 'seat'
+                data.pop('dialogue')
             response = self.post(
-                f'/games/{self.room}/seats/{self.seat}/stats/action',
-                data,
+                f'/games/{self.room}/seats/{self.seat}/stats/action', data
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:

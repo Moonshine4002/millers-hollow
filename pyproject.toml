@@ -21,7 +21,7 @@ maintainers = [
 ]
 description = "AI-powered simulation of The Werewolves of Miller's Hollow social deduction game"
 readme = "README.md"
-license = "MIT"
+license = { text = "MIT" }
 license-files = ["LICEN[CS]E*"]
 keywords = ["Game", "AIGC", "RESTful", "Database"]
 classifiers = [
@@ -35,8 +35,13 @@ gui = [
   "httpx",
 ]
 dev = [
+  "build",
   "mypy",
   "blue",
+]
+build-exe = [
+  "nuitka",
+  "hatch",
 ]
 
 [project.urls]
@@ -51,3 +56,24 @@ millers-server = "millers_hollow.server:run_server"
 
 [project.gui-scripts]
 millers-client = "millers_hollow.client:run_client"
+
+[tool.hatch.envs.build-exe]
+features = ["gui"]
+dependencies = [
+  "nuitka",
+]
+scripts.build-server = """python -m nuitka \
+  --standalone \
+  --onefile \
+  --include-package=millers_hollow.server \
+  --output-filename=millers-server.exe \
+  millers_hollow/server/server.py
+"""
+scripts.build-client = """python -m nuitka \
+  --standalone \
+  --onefile \
+  --include-package=millers_hollow.client \
+  --output-filename=millers-client.exe \
+  --enable-plugin=pyside6 \
+  millers_hollow/client/client.py
+"""

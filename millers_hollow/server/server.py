@@ -4,7 +4,8 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException, responses, status
 from pydantic import BaseModel
 import uvicorn
 
-from . import ai
+from ..common.config import config
+from ..common import io
 from .game import Database, Games
 
 games = Games()
@@ -32,12 +33,11 @@ app = FastAPI(lifespan=lifespan)
 @app.post('/register')
 async def register(user: User) -> responses.JSONResponse:
     id_ = await Database.insert_user(
-        user.name, user.controller, ai.config.get('client', 'model')
+        user.name, user.controller, config.get('client', 'model')
     )
     if id_:
         return responses.JSONResponse(
-            {'id': id_, 'message': 'Sign up successfully'},
-            status.HTTP_201_CREATED,
+            {'id': id_, 'message': 'Sign up successfully'}, status.HTTP_201_CREATED
         )
     return await login(user)
 
@@ -75,8 +75,7 @@ def player_start(game_id: int, seat: int) -> None:
 async def create() -> responses.JSONResponse:
     game_id = await games.add_game()
     return responses.JSONResponse(
-        {'game_id': game_id, 'message': 'Game created'},
-        status.HTTP_201_CREATED,
+        {'game_id': game_id, 'message': 'Game created'}, status.HTTP_201_CREATED
     )
 
 
@@ -100,8 +99,7 @@ async def start_post(
     seat = game.user_seat[user_id]
     background_tasks.add_task(game.loops)
     return responses.JSONResponse(
-        {'seat': seat, 'message': 'Start game successfully'},
-        status.HTTP_200_OK,
+        {'seat': seat, 'message': 'Start game successfully'}, status.HTTP_200_OK
     )
 
 
@@ -121,8 +119,7 @@ async def stats_player(game_id: int, seat: int) -> responses.JSONResponse:
         raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, 'NotImplemented')
     players = await game.s_a_player(seat)
     return responses.JSONResponse(
-        {'stats': players, 'message': 'Stats received'},
-        status.HTTP_200_OK,
+        {'stats': players, 'message': 'Stats received'}, status.HTTP_200_OK
     )
 
 
@@ -144,25 +141,25 @@ async def stats_action_get(game_id: int, seat: int) -> responses.JSONResponse:
     game_start(game_id)
     player_start(game_id, seat)
 
-    info = f'Available skills:\n{ai.skill_text(game.player_input[seat])}'
-    skills = list(game.player_input[seat].skills.keys())
     return responses.JSONResponse(
-        {'stats': info, 'skills': skills, 'message': 'Stats received'},
+        {
+            'stats': game.player_input[seat].model_dump_json(),
+            'message': 'Stats received',
+        },
         status.HTTP_200_OK,
     )
 
 
 @app.post('/games/{game_id}/seats/{seat}/stats/action')
 async def stats_action_post(
-    game_id: int, seat: int, gui_output: ai.GuiOutput
+    game_id: int, seat: int, gui_output: io.OutputSkill
 ) -> responses.JSONResponse:
     game_exist(game_id)
     game = games[game_id]
     game_start(game_id)
     player_start(game_id, seat)
-    skills = game.player_input[seat]
     try:
-        ai.logic(gui_output, skills)
+        io.IOValidator(input_=game.player_input[seat], output=gui_output)
     except Exception as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     game.player_output[seat] = gui_output

@@ -1,3 +1,3 @@
 from .server import run_server
 
-__all__ = []
+__all__: list[str] = []
