@@ -23,7 +23,7 @@ async def input_ai(input_: InputSkill) -> OutputSkill:
         try:
             if not content:
                 raise ValueError('empty output')
-            output = parse(content)
+            output = parse(input_, content)
         except Exception as e:
             errors += 1
             if errors == 3:

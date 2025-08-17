@@ -637,18 +637,14 @@ class Game:
                 action: io.ActionType   # TODO: type
                 if isinstance(input_skill, io.InputDialogue):
                     action = io.OutputDialogue(
-                        type='dialogue', reason='', skill=skill, dialogue=''
+                        type='dialogue', reason='', name=skill, dialogue=''
                     )
                 elif isinstance(input_skill, io.InputSeat):
                     seat = random.choice(input_skill.options)
-                    action = io.OutputSeat(
-                        type='seat', reason='', skill=skill, seat=seat
-                    )
+                    action = io.OutputSeat(type='seat', reason='', name=skill, seat=seat)
                 elif isinstance(input_skill, io.InputWord):
                     word = random.choice(input_skill.options)
-                    action = io.OutputWord(
-                        type='word', reason='', skill=skill, word=word
-                    )
+                    action = io.OutputWord(type='word', reason='', name=skill, word=word)
                 else:
                     raise RuntimeError('Wrong IO type')
                 self.player_output[p_seat] = io.OutputSkill(root=action)
@@ -662,13 +658,13 @@ class Game:
 
             result = await self.action(p_seat, output)
             if result is None:
-                skill_ids.remove(output.root.skill)
+                skill_ids.remove(output.root.name)
             elif result:
                 break
 
     async def action(self, p_seat: int, output: io.OutputSkill) -> bool | None:
         output_skill = output.root
-        skill_id = output_skill.skill
+        skill_id = output_skill.name
         if isinstance(output_skill, io.OutputDialogue):
             dialogue = output_skill.dialogue
             skill_log = functools.partial(

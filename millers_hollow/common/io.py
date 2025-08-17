@@ -38,23 +38,23 @@ class InputSkill(BaseModel):
 
 
 class OutputDialogue(BaseModel):
-    type: Literal['dialogue']
     reason: str
-    skill: str
+    type: Literal['dialogue']
+    name: str
     dialogue: str
 
 
 class OutputSeat(BaseModel):
-    type: Literal['seat']
     reason: str
-    skill: str
+    type: Literal['seat']
+    name: str
     seat: int
 
 
 class OutputWord(BaseModel):
-    type: Literal['word']
     reason: str
-    skill: str
+    type: Literal['word']
+    name: str
     word: str
 
 
@@ -75,14 +75,14 @@ class IOValidator(BaseModel):
     def validator(self) -> Self:
         skills_map = {s.name: s for s in self.input_.skills}
 
-        skill_name = self.output.root.skill
+        output_skill = self.output.root
+        skill_name = output_skill.name
         if skill_name not in skills_map:
             raise ValueError(
                 f"Invalid skill '{skill_name}', allowed: {list(skills_map.keys())}"
             )
 
         input_skill = skills_map[skill_name]
-        output_skill = self.output.root
 
         if isinstance(output_skill, OutputDialogue) and isinstance(
             input_skill, InputDialogue
@@ -120,32 +120,32 @@ Available skills:
 json = """\
 - Please choose one of the following JSON formats and reply strictly according to it:
     {
-        "type": Literal["dialogue"],
         "reason": str,
-        "skill": str,
+        "type": Literal["dialogue"],
+        "name": str,
         "dialogue": str,
     }
     {
-        "type": Literal["seat"],
         "reason": str,
-        "skill": str,
+        "type": Literal["seat"],
+        "name": str,
         "seat": int,
     }
     {
-        "type": Literal["word"],
         "reason": str,
-        "skill": str,
+        "type": Literal["word"],
+        "name": str,
         "word": str,
     }
-- Description of all fields:
-    type: do not change this field
-    reason: Your reasoning (which will not be public to any player): \
-analyze the current situation, infer player identities and credibility, \
-explain strategy choices, predict potential risks...
-    skill: Your chosen skill
-    dialogue: Public or private according to the skill
-    seat: An integer seat number (input 0 as PASS)
-    word: A string\
+    Description of all fields:
+        type: do not change this field
+        reason: Your reasoning (which will not be public to any player): \
+    analyze the current situation, infer player identities and credibility, \
+    explain strategy choices, predict potential risks...
+        skill: Your chosen skill name in "available skills".
+        dialogue: Public or private according to the skill.
+        seat: An integer seat number (input 0 as PASS).
+        word: A string, your choice.\
 """
 prompt_frame = """\
 You are playing a game called The Werewolves of Miller's Hollow.
@@ -172,11 +172,13 @@ you may be able to choose the others simultaneously in the next question.
 """
 
 
-def parse(content: str) -> OutputSkill:
+def parse(input_: InputSkill, content: str) -> OutputSkill:
     matches: list[str] = re.findall(r'\{.*\}', content, re.DOTALL)
     if len(matches) != 1:
         raise ValueError(f'Got {len(matches)} matches')
-    return OutputSkill.model_validate_json(matches[0])
+    output = OutputSkill.model_validate_json(matches[0])
+    IOValidator(input_=input_, output=output)
+    return output
 
 
 def get_skill_text(skills: list[SkillType]) -> str:
@@ -184,15 +186,15 @@ def get_skill_text(skills: list[SkillType]) -> str:
     for skill in skills:
         if isinstance(skill, InputDialogue):
             skills_list.append(
-                f'\tSkill name: {skill.name}; Skill description: {skill.description}'
+                f'\tSkill type: dialogue; Skill name: {skill.name}; Skill description: {skill.description}'
             )
         elif isinstance(skill, InputSeat):
             skills_list.append(
-                f'\tSkill name: {skill.name}; Skill description: {skill.description}; Options: {skill.options}'
+                f'\tSkill type: seat; Skill name: {skill.name}; Skill description: {skill.description}; Options: {skill.options}'
             )
         elif isinstance(skill, InputWord):
             skills_list.append(
-                f'\tSkill name: {skill.name}; Skill description: {skill.description}; Options: {skill.options}'
+                f'\tSkill type: word; Skill name: {skill.name}; Skill description: {skill.description}; Options: {skill.options}'
             )
     return '\n'.join(skills_list)
 
