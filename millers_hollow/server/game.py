@@ -255,6 +255,8 @@ class Game:
         self.player_input: dict[int, io.InputSkill] = {}
         self.player_output: dict[int, io.OutputSkill] = {}
 
+        self.vote_elect: list[int] = []
+
     async def insert(self) -> int:
         async with Database.get_conn() as conn:
             SQL = """
@@ -373,10 +375,6 @@ class Game:
 
         if self.date != 1:
             death_seats = await self.loop_action(night_actions)
-            if death_seats:
-                await self.system_speak(f'Seat {death_seats} was dead.')
-            else:
-                await self.system_speak(f'No one was dead.')
             if self.ended:
                 return
             await self.update_time(phase=False)
@@ -402,10 +400,6 @@ class Game:
 
         if self.date == 2:
             death_seats = await self.loop_action(night_actions)
-            if death_seats:
-                await self.system_speak(f'Seat {death_seats} was dead.')
-            else:
-                await self.system_speak(f'No one was dead.')
             if self.ended:
                 return
             await self.update_time(phase=False)
@@ -416,10 +410,12 @@ class Game:
         )
 
         death_seats = await self.loop_action(day_actions)
-        if death_seats:
-            await self.system_speak(f'Seat {death_seats} was dead.')
-        else:
-            await self.system_speak(f'No one was dead.')
+        if len(self.vote_elect) > 1:
+            await self.update_time(phase=False)
+            day_actions = await self.set_skill_dict(
+                skill_seq, force_seats=force_seats, force_skills=['speak']
+            )
+            death_seats = await self.loop_action(day_actions)
         if self.ended:
             return
         await self.update_time(phase=False)
@@ -446,7 +442,7 @@ class Game:
         dying_actions = await self.set_skill_dict(
             skill_seq, force_quantity=None, force_life=False, force_seats=death_seats
         )
-        death_seats = await self.loop_action(dying_actions)
+        death_seats = await self.loop_action(dying_actions, silent=True)
         if self.ended:
             return
         await self.update_time(phase=False)
@@ -522,7 +518,7 @@ class Game:
         return self.seats   # TODO: sheriff
 
     async def loop_action(
-        self, skill_dict: dict[int, dict[int, list[str]]]
+        self, skill_dict: dict[int, dict[int, list[str]]], silent=False
     ) -> list[int]:
         for seq, value in skill_dict.items():
             coros = [self.player(seat, skill_ids) for seat, skill_ids in value.items()]
@@ -531,6 +527,11 @@ class Game:
         deaths = await self.verdict()
         death_seats = list(deaths.keys())
         death_seats.sort()
+        if not silent:
+            if death_seats:
+                await self.system_speak(f'Seat {death_seats} was dead.')
+            else:
+                await self.system_speak(f'No one was dead.')
         return death_seats
 
     async def player(self, p_seat: int, skill_ids: list[str]) -> None:
@@ -549,6 +550,9 @@ class Game:
         options.sort()
 
         deaths = await self.verdict(predict=True)
+        if 'speak' in skill_ids and self.vote_elect:
+            if p_seat not in self.vote_elect:
+                skill_ids.remove('speak')
         if 'heal' in skill_ids:
             kill_seats = [key for key, value in deaths.items() if 'kill' in value]
             if not kill_seats:
@@ -566,6 +570,9 @@ class Game:
             skills: list[io.SkillType] = []
             for skill in skill_ids:
                 match skill:
+                    case 'vote':
+                        if self.vote_elect:
+                            options = self.vote_elect
                     case 'heal':
                         options = [
                             key for key, value in deaths.items() if 'kill' in value
@@ -764,8 +771,6 @@ class Game:
             elect_id = vote_elect[0]
             deaths.setdefault(elect_id, [])
             deaths[elect_id].append('vote')
-        elif len(vote_elect) > 1:
-            pass   # TODO: vote again
 
         skills, kill_elect, kill_text = vote(skills, 'kill')
         kill_id = random.choice(kill_elect) if kill_elect else 0
@@ -798,6 +803,11 @@ class Game:
 
         if predict:
             return deaths
+
+        if len(vote_elect) > 1:
+            self.vote_elect = vote_elect
+        else:
+            self.vote_elect = []
 
         if vote_text:
             await self.system_speak(f'Vote result: {vote_text}')
@@ -846,6 +856,29 @@ class Game:
             await self.system_speak(f'Winner: {winner}.')
 
         return deaths
+
+    def vote(
+        self, skills: list[tuple], skill: str
+    ) -> tuple[list[tuple], list[int], str]:
+        filtered_skills: list[tuple] = []
+        votes: dict[int, list[int]] = {}
+        for seat, skill_id, target_seat in skills:
+            if skill_id != skill:
+                filtered_skills.append((seat, skill_id, target_seat))
+                continue
+            votes.setdefault(target_seat, [])
+            votes[target_seat].append(seat)
+        for vote in votes:
+            votes[vote].sort()
+        votes = dict(sorted(votes.items()))
+        waivers = votes.pop(0, [])
+        waiver_text = ', '.join(map(str, waivers))
+        waiver_text = f'{waiver_text} -> abstain' if waiver_text else ''
+        vote_list = [f"{', '.join(map(str, v))} -> {k}" for k, v in votes.items()]
+        vote_text = '; '.join(vote_list + ([waiver_text] if waiver_text else []))
+        max_vote = max(len(v) for v in votes.values()) if votes else 0
+        elect = [k for k, v in votes.items() if len(v) == max_vote]
+        return filtered_skills, elect, vote_text
 
     async def system_speak(self, speech: str, seat: int = 0) -> None:
         if seat == 0:
