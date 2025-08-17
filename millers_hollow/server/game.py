@@ -128,9 +128,11 @@ class Database:
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ps_id INTEGER NOT NULL,
         cycle INTEGER NOT NULL,
+        audience TEXT NOT NULL,
         type TEXT NOT NULL,
-        target INTEGER DEFAULT 0,
         speech TEXT DEFAULT '',
+        seat INTEGER DEFAULT 0,
+        word TEXT DEFAULT '',
         comment TEXT DEFAULT '');
         ---
         INSERT OR IGNORE INTO user (name, controller) VALUES
@@ -234,18 +236,20 @@ class Game:
         return await Database.insert_user(name, 'ai', model)
 
     def __init__(self) -> None:
-        self.date = 1
-        self.cycle = 1
-        self.phase = 'night'
         self.id = 0
-        self.system_seat = 0
         self.users: list[int] = []
-        self.started = False
-        self.ended = False
         self.player_num = 0
+        self.system_seat = 0
         self.seats: list[int] = []
         self.user_seat: dict[int, int] = {}
         self.skill_info: dict[str, str] = {}
+
+        self.started = False
+        self.ended = False
+        self.cycle = 1
+        self.date = 1
+        self.phase = 'night'
+
         self.player_started: dict[int, bool] = {}
         self.player_finished: dict[int, bool] = {}
         self.player_input: dict[int, io.InputSkill] = {}
@@ -353,39 +357,69 @@ class Game:
 
     async def loop(self) -> None:
         await self.system_speak(f"It's {self.phase} {self.date}.")
-        skill_seq = {
-            'night': {
-                'vote': 0,
-                'speak': 0,
-                'kill': 1,
-                'team_chat': 1,
-                'identify': 1,
-                'heal': 2,
-                'poison': 2,
-                'shoot': 0,
-                'shield': 1,
-            },
-            'day': {
-                'vote': 2,
-                'speak': 1,
-                'kill': 0,
-                'team_chat': 0,
-                'identify': 0,
-                'heal': 0,
-                'poison': 0,
-                'shoot': 0,
-                'shield': 0,
-            },
-        }
-        skill_dict = await self.set_skill_dict(skill_seq)
-        skill_dict = await self.set_sheriff_dict(skill_dict)
-        death_seats = await self.loop_action(skill_dict)
 
+        skill_seq = {
+            'vote': 0,
+            'speak': 0,
+            'kill': 1,
+            'team_chat': 1,
+            'identify': 1,
+            'heal': 2,
+            'poison': 2,
+            'shoot': 0,
+            'shield': 1,
+        }
+        night_actions = await self.set_skill_dict(skill_seq)
+
+        if self.date != 1:
+            death_seats = await self.loop_action(night_actions)
+            if death_seats:
+                await self.system_speak(f'Seat {death_seats} was dead.')
+            else:
+                await self.system_speak(f'No one was dead.')
+            if self.ended:
+                return
+            await self.update_time(phase=False)
+            await self.loop_dying(death_seats)
+            await self.update_time(cycle=False)
+        else:
+            await self.update_time()
+
+        await self.system_speak(f"It's {self.phase} {self.date}.")
+
+        skill_seq = {
+            'vote': 2,
+            'speak': 1,
+            'kill': 0,
+            'team_chat': 0,
+            'identify': 0,
+            'heal': 0,
+            'poison': 0,
+            'shoot': 0,
+            'shield': 0,
+        }
+        force_seats = await self.loop_sheriff()
+
+        if self.date == 2:
+            death_seats = await self.loop_action(night_actions)
+            if death_seats:
+                await self.system_speak(f'Seat {death_seats} was dead.')
+            else:
+                await self.system_speak(f'No one was dead.')
+            if self.ended:
+                return
+            await self.update_time(phase=False)
+            await self.loop_dying(death_seats)
+
+        day_actions = await self.set_skill_dict(
+            skill_seq, force_seats=force_seats, force_skills=['speak']
+        )
+
+        death_seats = await self.loop_action(day_actions)
         if death_seats:
             await self.system_speak(f'Seat {death_seats} was dead.')
         else:
             await self.system_speak(f'No one was dead.')
-
         if self.ended:
             return
         await self.update_time(phase=False)
@@ -396,84 +430,96 @@ class Game:
         if not death_seats:
             return
         skill_seq = {
-            'night': {
-                'vote': 0,
-                'speak': 1,
-                'kill': 0,
-                'team_chat': 0,
-                'identify': 0,
-                'heal': 0,
-                'poison': 0,
-                'shoot': 1,
-                'shield': 0,
-            },
-            'day': {
-                'vote': 0,
-                'speak': 1,
-                'kill': 0,
-                'team_chat': 0,
-                'identify': 0,
-                'heal': 0,
-                'poison': 0,
-                'shoot': 1,
-                'shield': 0,
-            },
+            'vote': 0,
+            'speak': 1,
+            'kill': 0,
+            'team_chat': 0,
+            'identify': 0,
+            'heal': 0,
+            'poison': 0,
+            'shoot': 1,
+            'shield': 0,
         }
-        if self.date > 1:
-            skill_seq['night']['speak'] = 0
+        if self.date > 1 and self.phase == 'night':
+            skill_seq['speak'] = 0
 
-        skill_dict = await self.set_skill_dict(
+        dying_actions = await self.set_skill_dict(
             skill_seq, force_quantity=None, force_life=False, force_seats=death_seats
         )
-        death_seats = await self.loop_action(skill_dict)
+        death_seats = await self.loop_action(dying_actions)
         if self.ended:
             return
         await self.update_time(phase=False)
         await self.loop_dying(death_seats)
 
+    async def update_time(self, cycle: bool = True, phase: bool = True) -> None:
+        if cycle:
+            self.cycle += 1
+        if phase:
+            if self.phase == 'night':
+                self.phase = 'day'
+                self.date += 1
+            elif self.phase == 'day':
+                self.phase = 'night'
+
+        SQL = """
+        UPDATE game SET cycle = ?, date = ?, phase = ?
+        WHERE id = ?
+        """
+        async with Database.get_conn() as conn:
+            await conn.execute(SQL, (self.cycle, self.date, self.phase, self.id))
+
     async def set_skill_dict(
         self,
-        skill_seq: dict[str, dict[str, int]],
-        force_quantity: bool | None = True,
+        skill_seq: dict[str, int],
         force_life: bool | None = True,
+        force_quantity: bool | None = True,
         force_seats: list[int] | None = None,
+        force_skills: list[str] = [],
     ) -> dict[int, dict[int, list[str]]]:
         skill_dict: dict[int, dict[int, list[str]]] = {}
-        skills = await self.s_ps_player()
-        for seat, skill_id in skills:
-            if seat == 0:
+        player_skills = await self.s_ps_player()
+        for seat, skill_id in player_skills:
+            if seat == self.system_seat:
                 continue
-            (quantity,) = await self.s_ps_quantity(seat, skill_id)
-            if force_quantity is not None and bool(quantity) != force_quantity:
+            if not (seq := skill_seq[skill_id]):
                 continue
             (life,) = await self.s_a_life(seat)
             if force_life is not None and life != force_life:
                 continue
+            (quantity,) = await self.s_ps_quantity(seat, skill_id)
+            if force_quantity is not None and bool(quantity) != force_quantity:
+                continue
             if force_seats is not None and seat not in force_seats:
                 continue
-
-            seq = skill_seq[self.phase][skill_id]
             skill_dict.setdefault(seq, {})
             skill_dict[seq].setdefault(seat, [])
             skill_dict[seq][seat].append(skill_id)
-        skill_dict.pop(0, [])
-        return dict(sorted(skill_dict.items()))
+        skill_dict = dict(sorted(skill_dict.items()))
 
-    async def set_sheriff_dict(self, skill_dict: dict[int, dict[int, list[str]]]):
-        sheriff_seq = self.seats
-        new_dict: dict[int, dict[int, list[str]]] = {}
-        new_seq = 0
-        for seq, d in skill_dict.items():
-            new_seq += 1
-            if not any('speak' in skills for seat, skills in d.items()):
-                new_dict[new_seq] = d
+        if not force_skills:
+            return skill_dict
+        if force_seats is None:
+            raise ValueError('Wrong parameter')
+        seq_dict = {}
+        seq = 1
+        for k, v in skill_dict.items():
+            if not all(
+                all(skill in force_skills for skill in skills) for skills in v.values()
+            ):
+                seq_dict[seq] = v
+                seq += 1
                 continue
-            for seat in sheriff_seq:
-                new_seq += 1
-                if seat not in d.keys():
+            for seat in force_seats:
+                if not (skills := v.get(seat)):
                     continue
-                new_dict[new_seq] = {seat: d[seat]}
-        return new_dict
+                seq_dict[seq] = {seat: skills}
+                seq += 1
+
+        return seq_dict
+
+    async def loop_sheriff(self) -> list[int]:
+        return self.seats   # TODO: sheriff
 
     async def loop_action(
         self, skill_dict: dict[int, dict[int, list[str]]]
@@ -484,6 +530,7 @@ class Game:
 
         deaths = await self.verdict()
         death_seats = list(deaths.keys())
+        death_seats.sort()
         return death_seats
 
     async def player(self, p_seat: int, skill_ids: list[str]) -> None:
@@ -494,54 +541,50 @@ class Game:
             f'\tname: {name}, seat: {seat}, role: {role}, faction: {faction}, life: {life}'
             for seat, (name, *others, role, faction, life) in p_info.items()
         )
-        targets: list[int] = []
+        options: list[int] = []
         for seat, (name, *others, role, faction, life) in p_info.items():
             if life:
-                targets.append(seat)
-        targets.append(0)
-        targets.sort()
+                options.append(seat)
+        options.append(0)
+        options.sort()
+
+        deaths = await self.verdict(predict=True)
+        if 'heal' in skill_ids:
+            kill_seats = [key for key, value in deaths.items() if 'kill' in value]
+            if not kill_seats:
+                await self.system_speak(f'No one was killed.', p_seat)
+                skill_ids.remove('heal')
+            await self.system_speak(f'Seat {kill_seats} was killed.', p_seat)
+            if p_seat in kill_seats and self.date != 1:
+                kill_seats.remove(p_seat)
+                if not kill_seats:
+                    skill_ids.remove('heal')
+        if 'shoot' in skill_ids:
+            await self.system_speak(f'Seat {p_seat} is a hunter!')
 
         while skill_ids:
             skills: list[io.SkillType] = []
             for skill in skill_ids:
                 match skill:
                     case 'heal':
-                        deaths = await self.verdict(predict=True)
-                        kill_seats: list[int] = []
-                        for key, value in deaths.items():
-                            if 'kill' in value:
-                                kill_seats.append(key)
-                        if not kill_seats:
-                            await self.system_speak(f'No one was killed.', seat)
-                            skill_ids.remove('heal')
-                            continue
-                        else:
-                            kill_seat = kill_seats[0]
-                            await self.system_speak(
-                                f'Seat {kill_seat} was killed.', seat
-                            )
-                            if kill_seat == seat and self.date != 1:
-                                skill_ids.remove('heal')
-                                continue
-                            else:
-                                targets = [kill_seat]
-                    case 'shoot':
-                        await self.system_speak(f'Seat {seat} is a hunter!')
+                        options = [
+                            key for key, value in deaths.items() if 'kill' in value
+                        ]
                     case 'shield':
                         SQL = """
-                        SELECT l.cycle, l.target FROM log l
+                        SELECT l.cycle, l.seat FROM log l
                         JOIN player_skill ps ON ps.id = l.ps_id
                         WHERE ps.game_id = ? AND ps.seat = ? AND ps.skill_id = ? AND l.cycle = ?;
                         """
                         async with Database.get_conn() as conn:
                             cursor = await conn.execute(
-                                SQL, (self.id, seat, 'shield', self.cycle - 1)
+                                SQL, (self.id, p_seat, 'shield', self.cycle - 1)
                             )
                             shielded = await Database.fetchall(cursor)
                         if shielded:
                             last_shielded = max(shielded)[1]
-                            targets = [
-                                target for target in targets if target != last_shielded
+                            options = [
+                                option for option in options if option != last_shielded
                             ]
                 match skill:
                     case 'speak' | 'team_chat':
@@ -558,7 +601,16 @@ class Game:
                                 type='seat',
                                 name=skill,
                                 description=self.skill_info[skill],
-                                targets=targets,
+                                options=options,
+                            )
+                        )
+                    case _:
+                        skills.append(
+                            io.InputWord(
+                                type='word',
+                                name=skill,
+                                description=self.skill_info[skill],
+                                options=[],
                             )
                         )
 
@@ -588,9 +640,9 @@ class Game:
                         type='dialogue', reason='', skill=skill, dialogue=''
                     )
                 elif isinstance(input_skill, io.InputSeat):
-                    target = random.choice(input_skill.targets)
+                    seat = random.choice(input_skill.options)
                     action = io.OutputSeat(
-                        type='seat', reason='', skill=skill, target=target
+                        type='seat', reason='', skill=skill, seat=seat
                     )
                 elif isinstance(input_skill, io.InputWord):
                     word = random.choice(input_skill.options)
@@ -614,81 +666,81 @@ class Game:
             elif result:
                 break
 
-    async def action(self, seat: int, output: io.OutputSkill) -> bool | None:
-        async def seer(target_seat: int) -> None:
-            if target_seat == 0:
-                return
-            (faction,) = await self.s_a_faction(target_seat)
-            if faction != 'werewolf':
-                faction = 'good'
-            await self.system_speak(f'Seat {target_seat} is {faction}.', seat)
-
-        skill_id = output.root.skill
+    async def action(self, p_seat: int, output: io.OutputSkill) -> bool | None:
         output_skill = output.root
+        skill_id = output_skill.skill
         if isinstance(output_skill, io.OutputDialogue):
             dialogue = output_skill.dialogue
             skill_log = functools.partial(
                 self.insert_log,
-                seat,
+                p_seat,
                 skill_id,
-                target=0,
+                type_='dialogue',
                 speech=dialogue,
                 comment=output_skill.reason,
             )
+            match skill_id:
+                case 'speak':
+                    await skill_log('public')
+                case 'team_chat':
+                    await skill_log('team')
+                    return False
+                case _:
+                    raise NotImplementedError
         elif isinstance(output_skill, io.OutputSeat):
-            target = output_skill.target
+            seat = output_skill.seat
             skill_log = functools.partial(
                 self.insert_log,
-                seat,
+                p_seat,
                 skill_id,
-                target=target,
-                speech='',
+                type_='seat',
+                seat=seat,
                 comment=output_skill.reason,
             )
-            """
+            match skill_id:
+                case 'vote':
+                    await skill_log('private')
+                case 'kill':
+                    await skill_log('private')
+                    return True
+                case 'identify':
+                    await skill_log('private')
+                    if seat == 0:
+                        return None
+                    (faction,) = await self.s_a_faction(seat)
+                    if faction != 'werewolf':
+                        faction = 'good'
+                    await self.system_speak(f'Seat {seat} is {faction}.', p_seat)
+                case 'heal' | 'poison':
+                    await skill_log('private')
+                    if seat != 0:
+                        await self.u_ps_quantity(seat, skill_id)
+                    return True   # TODO: use link
+                case 'shoot':
+                    (quantity,) = await self.s_ps_quantity(p_seat, skill_id)
+                    if not quantity:
+                        return None
+                    await skill_log('public')
+                case 'shield':
+                    await skill_log('private')
+                case _:
+                    raise NotImplementedError
         elif isinstance(output_skill, io.OutputWord):
-                word = output_skill.word
-                skill_log = functools.partial(
-                    self.insert_log,
-                    seat,
-                    skill_id,
-                    target=word,
-                    speech='',
-                    comment=output_skill.reason,
-                )  # TODO: type
-        """
+            word = output_skill.word
+            skill_log = functools.partial(
+                self.insert_log,
+                p_seat,
+                skill_id,
+                type_='word',
+                word=word,
+                comment=output_skill.reason,
+            )
+            match skill_id:
+                case _:
+                    raise NotImplementedError
         else:
             raise RuntimeError('Wrong IO type')
-        match skill_id:
-            case 'vote':
-                await skill_log('private')
-            case 'speak':
-                await skill_log('public')
-            case 'kill':
-                await skill_log('private')
-                return True
-            case 'team_chat':
-                await skill_log('team')
-                return False
-            case 'identify':
-                await skill_log('private')
-                assert isinstance(target, int)   # TODO
-                await seer(target)
-            case 'heal' | 'poison':
-                await skill_log('private')
-                assert isinstance(target, int)   # TODO
-                if target != 0:
-                    await self.u_ps_quantity(seat, skill_id)
-                return True   # TODO: use link
-            case 'shoot':
-                (quantity,) = await self.s_ps_quantity(seat, skill_id)
-                if not quantity:
-                    return None
-                await skill_log('public')
-            case 'shield':
-                await skill_log('private')
-            case _:
-                raise NotImplementedError
+
         return None
 
     async def verdict(self, predict: bool = False) -> dict[int, list[str]]:
@@ -817,29 +869,14 @@ class Game:
 
         return deaths
 
-    async def update_time(self, cycle: bool = True, phase: bool = True) -> None:
-        if cycle:
-            self.cycle += 1
-        if phase:
-            if self.phase == 'night':
-                self.phase = 'day'
-                self.date += 1
-            elif self.phase == 'day':
-                self.phase = 'night'
-
-        SQL = """
-        UPDATE game SET cycle = ?, date = ?, phase = ?
-        WHERE id = ?
-        """
-        async with Database.get_conn() as conn:
-            await conn.execute(SQL, (self.cycle, self.date, self.phase, self.id))
-
-    async def system_speak(self, speech: str, target: int = 0) -> None:
-        if target == 0:
-            type_ = 'public'
+    async def system_speak(self, speech: str, seat: int = 0) -> None:
+        if seat == 0:
+            audience = 'public'
         else:
-            type_ = 'private'
-        await self.insert_log(self.system_seat, 'speak', type_, target, speech)
+            audience = 'private'
+        await self.insert_log(
+            self.system_seat, 'speak', audience, 'dialogue', speech, seat
+        )
 
     async def s_a_factions(self) -> list[tuple]:
         SQL = """
@@ -908,7 +945,7 @@ class Game:
 
     async def s_l_skill(self, seat: int, skill_id: str) -> list[tuple]:
         SQL = """
-        SELECT target FROM log WHERE ps_id = (
+        SELECT seat FROM log WHERE ps_id = (
             SELECT id FROM player_skill
             WHERE game_id = ? AND seat = ? AND skill_id = ?
         );
@@ -944,7 +981,7 @@ class Game:
 
     async def s_log_cycle(self) -> list[tuple]:
         SQL = """
-        SELECT ps.seat, ps.skill_id, l.target FROM log l
+        SELECT ps.seat, ps.skill_id, l.seat FROM log l
         JOIN player_skill ps ON ps.id = l.ps_id
         WHERE game_id = ? AND cycle = ?;
         """
@@ -954,39 +991,52 @@ class Game:
 
     async def insert_log(
         self,
-        seat: int,
+        p_seat: int,
         skill_id: str,
+        audience: str,
         type_: str,
-        target: int = 0,
         speech: str = '',
+        seat: int = 0,
+        word: str = '',
         comment: str = '',
     ) -> None:
         SQL = """
-        INSERT INTO log (ps_id, cycle, type, target, speech, comment)
-        SELECT ps.id, ?, ?, ?, ?, ? FROM player_skill ps
+        INSERT INTO log (ps_id, cycle, audience, type, speech, seat, word, comment)
+        SELECT ps.id, ?, ?, ?, ?, ?, ?, ? FROM player_skill ps
         WHERE ps.game_id = ? AND ps.seat = ? AND ps.skill_id = ?;
         """
         async with Database.get_conn() as conn:
             await conn.execute(
                 SQL,
-                (self.cycle, type_, target, speech, comment, self.id, seat, skill_id),
+                (
+                    self.cycle,
+                    audience,
+                    type_,
+                    speech,
+                    seat,
+                    word,
+                    comment,
+                    self.id,
+                    p_seat,
+                    skill_id,
+                ),
             )
 
     async def select_log(self, seat: int) -> str:
         SQL = f"""
-        SELECT l.type, up.name, ps.seat, ps.skill_id, ut.name, l.target, l.speech
+        SELECT l.audience, up.name, ps.seat, ps.skill_id, l.type, l.speech, ut.name, l.seat, l.word
         FROM log l
         JOIN player_skill ps ON ps.id = l.ps_id
         LEFT JOIN attribute ap ON ap.game_id = :gid AND ap.seat = ps.seat
         LEFT JOIN user up ON up.id = ap.player_id
-        LEFT JOIN attribute at ON at.game_id = :gid AND at.seat = l.target
+        LEFT JOIN attribute at ON at.game_id = :gid AND at.seat = l.seat
         LEFT JOIN user ut ON ut.id = at.player_id
         WHERE ps.game_id = :gid AND (
             :seat = :sys
             OR ps.seat = :seat
-            OR l.type = 'public'
-            OR ps.seat = :sys AND l.target = :seat
-            OR l.type = 'team' AND ap.role_id = (
+            OR l.audience = 'public'
+            OR ps.seat = :sys AND l.seat = :seat
+            OR l.audience = 'team' AND ap.role_id = (
                 SELECT a.role_id FROM attribute a
                 WHERE a.game_id = :gid AND a.seat = :seat
             )
@@ -1000,20 +1050,26 @@ class Game:
 
         text = ''
         for (
-            type_,
+            audience,
             player_name,
             player_seat,
             skill_id,
-            target_name,
-            target_seat,
+            type_,
             speech,
+            seat,
+            seat_name,
+            word,
         ) in logs:
-            if player_seat == 0:
-                text += f'[{type_}] Moderator: {speech}\n'
-            elif skill_id in ['speak', 'team_chat']:
-                text += f'[{type_}] {player_name}({player_seat}) said: {speech}\n'
-            else:
-                text += f'[{type_}] {player_name}({player_seat}) {skill_id} {target_name}({target_seat}).\n'
+            match type_:
+                case 'dialogue':
+                    if player_seat == 0:
+                        text += f'[{audience}] Moderator: {speech}\n'
+                        continue
+                    text += f'[{audience}] {player_name}({player_seat}) said: {speech}\n'
+                case 'seat':
+                    text += f'[{audience}] {player_name}({player_seat}) {skill_id} {seat_name}({seat}).\n'
+                case 'word':
+                    text += f'[{audience}] {player_name}({player_seat}) choose {word}.\n'
         return text.rstrip()
 
 

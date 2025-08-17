@@ -18,7 +18,7 @@ class InputSeat(BaseModel):
     type: Literal['seat']
     name: str
     description: str
-    targets: list[int]
+    options: list[int]
 
 
 class InputWord(BaseModel):
@@ -48,7 +48,7 @@ class OutputSeat(BaseModel):
     type: Literal['seat']
     reason: str
     skill: str
-    target: int
+    seat: int
 
 
 class OutputWord(BaseModel):
@@ -90,10 +90,10 @@ class IOValidator(BaseModel):
             if not output_skill.dialogue.strip():
                 raise ValueError(f"Dialogue cannot be empty for skill '{skill_name}'")
         elif isinstance(output_skill, OutputSeat) and isinstance(input_skill, InputSeat):
-            if output_skill.target not in input_skill.targets:
+            if output_skill.seat not in input_skill.options:
                 raise ValueError(
-                    f"Invalid target '{output_skill.target}' for skill '{skill_name}', "
-                    f'allowed: {input_skill.targets}'
+                    f"Invalid seat '{output_skill.seat}' for skill '{skill_name}', "
+                    f'allowed: {input_skill.options}'
                 )
         elif isinstance(output_skill, OutputWord) and isinstance(input_skill, InputWord):
             if output_skill.word not in input_skill.options:
@@ -129,7 +129,7 @@ json = """\
         "type": Literal["seat"],
         "reason": str,
         "skill": str,
-        "target": int,
+        "seat": int,
     }
     {
         "type": Literal["word"],
@@ -144,7 +144,7 @@ analyze the current situation, infer player identities and credibility, \
 explain strategy choices, predict potential risks...
     skill: Your chosen skill
     dialogue: Public or private according to the skill
-    target: An integer seat number (input 0 as PASS)
+    seat: An integer seat number (input 0 as PASS)
     word: A string\
 """
 prompt_frame = """\
@@ -188,7 +188,7 @@ def get_skill_text(skills: list[SkillType]) -> str:
             )
         elif isinstance(skill, InputSeat):
             skills_list.append(
-                f'\tSkill name: {skill.name}; Skill description: {skill.description}; Targets: {skill.targets}'
+                f'\tSkill name: {skill.name}; Skill description: {skill.description}; Options: {skill.options}'
             )
         elif isinstance(skill, InputWord):
             skills_list.append(

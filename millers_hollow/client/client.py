@@ -123,10 +123,12 @@ class MainWidget(QWidget):
         self.action_refresh.clicked.connect(self.button_stats_action)
         self.action_refresh.setEnabled(False)
         self.action_skill = QComboBox(placeholderText='skill')
-        self.action_target = QLineEdit('')
-        self.action_target.setPlaceholderText('target')
         self.action_speech = QTextEdit('')
         self.action_speech.setPlaceholderText('speech')
+        self.action_seat = QLineEdit('')
+        self.action_seat.setPlaceholderText('seat')
+        self.action_word = QLineEdit('')
+        self.action_word.setPlaceholderText('word')
         self.action_reason = QTextEdit('')
         self.action_reason.setPlaceholderText('reason')
         self.action_send = QPushButton('send')
@@ -137,8 +139,9 @@ class MainWidget(QWidget):
         self.action_box.addWidget(self.action_status)
         self.action_box.addWidget(self.action_refresh)
         self.action_box.addWidget(self.action_skill)
-        self.action_box.addWidget(self.action_target)
         self.action_box.addWidget(self.action_speech)
+        self.action_box.addWidget(self.action_seat)
+        self.action_box.addWidget(self.action_word)
         self.action_box.addWidget(self.action_reason)
         self.action_box.addWidget(self.action_send)
 
@@ -358,14 +361,14 @@ class MainWidget(QWidget):
         try:
             data = {
                 'skill': self.action_skill.currentText(),
-                'target': int(self.action_target.text()),
+                'seat': int(self.action_seat.text()),
                 'dialogue': self.action_speech.toPlainText(),
                 'reason': self.action_reason.toPlainText(),
             }
             # TODO
-            if not data['target']:
+            if not data['seat']:
                 data['type'] = 'dialogue'
-                data.pop('target')
+                data.pop('seat')
             else:
                 data['type'] = 'seat'
                 data.pop('dialogue')
