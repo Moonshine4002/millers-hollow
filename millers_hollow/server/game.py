@@ -665,42 +665,31 @@ class Game:
     async def action(self, p_seat: int, output: io.OutputSkill) -> bool | None:
         output_skill = output.root
         skill_id = output_skill.name
+        insert_log = functools.partial(
+            self.insert_log, p_seat, skill_id, comment=output_skill.reason
+        )
         if isinstance(output_skill, io.OutputDialogue):
             dialogue = output_skill.dialogue
-            skill_log = functools.partial(
-                self.insert_log,
-                p_seat,
-                skill_id,
-                type_='dialogue',
-                speech=dialogue,
-                comment=output_skill.reason,
-            )
+            insert_log = functools.partial(insert_log, type_='dialogue', speech=dialogue)
             match skill_id:
                 case 'speak':
-                    await skill_log('public')
+                    await insert_log('public')
                 case 'team_chat':
-                    await skill_log('team')
+                    await insert_log('team')
                     return False
                 case _:
                     raise NotImplementedError
         elif isinstance(output_skill, io.OutputSeat):
             seat = output_skill.seat
-            skill_log = functools.partial(
-                self.insert_log,
-                p_seat,
-                skill_id,
-                type_='seat',
-                seat=seat,
-                comment=output_skill.reason,
-            )
+            insert_log = functools.partial(insert_log, type_='seat', seat=seat)
             match skill_id:
                 case 'vote':
-                    await skill_log('private')
+                    await insert_log('private')
                 case 'kill':
-                    await skill_log('private')
+                    await insert_log('private')
                     return True
                 case 'identify':
-                    await skill_log('private')
+                    await insert_log('private')
                     if seat == 0:
                         return None
                     (faction,) = await self.s_a_faction(seat)
@@ -708,29 +697,22 @@ class Game:
                         faction = 'good'
                     await self.system_speak(f'Seat {seat} is {faction}.', p_seat)
                 case 'heal' | 'poison':
-                    await skill_log('private')
+                    await insert_log('private')
                     if seat != 0:
-                        await self.u_ps_quantity(seat, skill_id)
+                        await self.u_ps_quantity(p_seat, skill_id)
                     return True   # TODO: use link
                 case 'shoot':
                     (quantity,) = await self.s_ps_quantity(p_seat, skill_id)
                     if not quantity:
                         return None
-                    await skill_log('public')
+                    await insert_log('public')
                 case 'shield':
-                    await skill_log('private')
+                    await insert_log('private')
                 case _:
                     raise NotImplementedError
         elif isinstance(output_skill, io.OutputWord):
             word = output_skill.word
-            skill_log = functools.partial(
-                self.insert_log,
-                p_seat,
-                skill_id,
-                type_='word',
-                word=word,
-                comment=output_skill.reason,
-            )
+            insert_log = functools.partial(insert_log, type_='word', word=word)
             match skill_id:
                 case _:
                     raise NotImplementedError
