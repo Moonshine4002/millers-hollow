@@ -151,6 +151,7 @@ prompt_frame = """\
 You are playing a game called The Werewolves of Miller's Hollow.
 Please be sure that you know the rules.
 You will be given a input describing the game scenario.
+Try to behave as much like a human as possible.
 Try your best to win the game.
 Game rules:
 - The Moderator is always truthful.

@@ -359,19 +359,30 @@ class MainWidget(QWidget):
     def button_send(self) -> None:
         self.action_send.setEnabled(False)
         try:
-            data = {
-                'skill': self.action_skill.currentText(),
-                'seat': int(self.action_seat.text()),
-                'dialogue': self.action_speech.toPlainText(),
-                'reason': self.action_reason.toPlainText(),
-            }
-            # TODO
-            if not data['seat']:
-                data['type'] = 'dialogue'
-                data.pop('seat')
-            else:
-                data['type'] = 'seat'
-                data.pop('dialogue')
+            data: dict[str, str | int]
+            skill = self.action_skill.currentText()
+            match skill:
+                case 'speak' | 'team_chat':
+                    data = {
+                        'reason': self.action_reason.toPlainText(),
+                        'type': 'dialogue',
+                        'name': skill,
+                        'dialogue': self.action_speech.toPlainText(),
+                    }
+                case 'vote' | 'kill' | 'identify' | 'heal' | 'poison' | 'shoot' | 'shield':
+                    data = {
+                        'reason': self.action_reason.toPlainText(),
+                        'type': 'seat',
+                        'name': skill,
+                        'seat': int(self.action_seat.text()),
+                    }
+                case _:
+                    data = {
+                        'reason': self.action_reason.toPlainText(),
+                        'type': 'word',
+                        'name': skill,
+                        'word': self.action_word.text(),
+                    }
             response = self.post(
                 f'/games/{self.room}/seats/{self.seat}/stats/action', data
             )

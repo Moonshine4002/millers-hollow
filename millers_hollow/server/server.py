@@ -169,7 +169,7 @@ async def stats_action_post(
 
 
 def run_server() -> None:
-    uvicorn.run(app)
+    uvicorn.run(app, host='0.0.0.0')
 
 
 if __name__ == '__main__':

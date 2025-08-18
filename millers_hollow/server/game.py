@@ -530,6 +530,8 @@ class Game:
         if not silent:
             if death_seats:
                 await self.system_speak(f'Seat {death_seats} was dead.')
+            elif self.vote_elect:
+                await self.system_speak(f"It's a tie.")
             else:
                 await self.system_speak(f'No one was dead.')
         return death_seats
@@ -572,7 +574,7 @@ class Game:
                 match skill:
                     case 'vote':
                         if self.vote_elect:
-                            options = self.vote_elect
+                            options = [0] + self.vote_elect
                     case 'heal':
                         options = [
                             key for key, value in deaths.items() if 'kill' in value

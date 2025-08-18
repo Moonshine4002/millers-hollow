@@ -61,19 +61,43 @@ millers-client = "millers_hollow.client:run_client"
 features = ["gui"]
 dependencies = [
   "nuitka",
+  "pyinstaller",
 ]
-scripts.build-server = """python -m nuitka \
+
+scripts.build-server = "hatch run build-exe:build-nuitka-server"
+scripts.build-client = "hatch run build-exe:build-nuitka-client"
+
+scripts.build-nuitka-server = """python -m nuitka \
   --standalone \
   --onefile \
-  --include-package=millers_hollow.server \
-  --output-filename=millers-server.exe \
-  millers_hollow/server/server.py
+  --include-package=millers_hollow \
+  --output-dir=dist/nuitka \
+  --output-filename=millers-server{ext} \
+  millers_hollow/server/server.py \
 """
-scripts.build-client = """python -m nuitka \
+scripts.build-nuitka-client = """python -m nuitka \
   --standalone \
   --onefile \
-  --include-package=millers_hollow.client \
-  --output-filename=millers-client.exe \
+  --include-package=millers_hollow \
+  --output-dir=dist/nuitka \
+  --output-filename=millers-client{ext} \
   --enable-plugin=pyside6 \
-  millers_hollow/client/client.py
+  --disable-console \
+  millers_hollow/client/client.py \
+"""
+
+scripts.build-pyinstaller-server = """pyinstaller \
+  -F \
+  --hidden-import=millers_hollow \
+  --name=millers-server \
+  --distpath=dist/pyinstaller \
+  server.py \
+"""
+scripts.build-pyinstaller-client = """pyinstaller \
+  -F \
+  --hidden-import=millers_hollow \
+  --name=millers-client \
+  --distpath=dist/pyinstaller \
+  --windowed \
+  client.py \
 """
