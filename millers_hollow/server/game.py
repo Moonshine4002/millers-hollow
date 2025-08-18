@@ -927,6 +927,19 @@ class Game:
         async with Database.get_conn() as conn:
             await conn.execute(SQL, (self.id, seat))
 
+    async def s_a_user(self) -> list[tuple]:
+        SQL = """
+        SELECT id, name, controller, kind FROM user;
+        """
+        async with Database.get_conn() as conn:
+            cursor = await conn.execute(SQL)
+            users = await Database.fetchall(cursor)
+        return [
+            (id_, name, controller, kind)
+            for (id_, name, controller, kind) in users
+            if id_ in self.users
+        ]
+
     async def s_a_player(self, p_seat: int) -> dict[int, list]:
         SQL = """
         SELECT a.seat, u.name, u.controller, u.kind, a.role_id, a.faction, a.life

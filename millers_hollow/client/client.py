@@ -304,22 +304,31 @@ class MainWidget(QWidget):
             self.status_message(str(e), 'error')
         else:
             self.status_message(response.json()['message'], 'success')
-            stats: dict[int, list] = response.json()['stats']
-            self.player_table.setRowCount(len(stats))
-            self.player_table.setColumnCount(4)
-            self.player_table.setHorizontalHeaderLabels(
-                ['Name', 'Role', 'Faction', 'Life']
-            )
-            for seat_str, (name, *others, role, faction, life) in stats.items():
-                seat = int(seat_str) - 1
-                item_name = QTableWidgetItem(name)
-                item_role = QTableWidgetItem(role)
-                item_faction = QTableWidgetItem(faction)
-                item_life = QTableWidgetItem(str(life))
-                self.player_table.setItem(seat, 0, item_name)
-                self.player_table.setItem(seat, 1, item_role)
-                self.player_table.setItem(seat, 2, item_faction)
-                self.player_table.setItem(seat, 3, item_life)
+            if self.started:
+                stats: dict[int, list] = response.json()['stats']
+                self.player_table.setRowCount(len(stats))
+                self.player_table.setColumnCount(4)
+                self.player_table.setHorizontalHeaderLabels(
+                    ['Name', 'Role', 'Faction', 'Life']
+                )
+                for seat_str, (name, *others, role, faction, life) in stats.items():
+                    seat = int(seat_str) - 1
+                    item_name = QTableWidgetItem(name)
+                    item_role = QTableWidgetItem(role)
+                    item_faction = QTableWidgetItem(faction)
+                    item_life = QTableWidgetItem(str(life))
+                    self.player_table.setItem(seat, 0, item_name)
+                    self.player_table.setItem(seat, 1, item_role)
+                    self.player_table.setItem(seat, 2, item_faction)
+                    self.player_table.setItem(seat, 3, item_life)
+            else:
+                users: list[tuple] = response.json()['stats']
+                self.player_table.setRowCount(len(users))
+                self.player_table.setColumnCount(1)
+                self.player_table.setHorizontalHeaderLabels(['Name'])
+                for row, (id_, name, controller, kind) in enumerate(users):
+                    self.player_table.setItem(row, 0, QTableWidgetItem(name))
+
         self.player_refresh.setEnabled(True)
 
     @Slot()

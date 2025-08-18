@@ -118,7 +118,10 @@ async def stats_player(game_id: int, seat: int) -> responses.JSONResponse:
     game_exist(game_id)
     game = games[game_id]
     if not game.started:
-        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, 'NotImplemented')
+        users = await game.s_a_user()
+        return responses.JSONResponse(
+            {'stats': users, 'message': 'Stats received'}, status.HTTP_200_OK
+        )
     players = await game.s_a_player(seat)
     return responses.JSONResponse(
         {'stats': players, 'message': 'Stats received'}, status.HTTP_200_OK
