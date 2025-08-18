@@ -72,7 +72,7 @@ scripts.build-nuitka-server = """python -m nuitka \
   --onefile \
   --include-package=millers_hollow \
   --output-dir=dist/nuitka \
-  --output-filename=millers-server{ext} \
+  --output-filename=millers-server \
   millers_hollow/server/server.py \
 """
 scripts.build-nuitka-client = """python -m nuitka \
@@ -80,7 +80,7 @@ scripts.build-nuitka-client = """python -m nuitka \
   --onefile \
   --include-package=millers_hollow \
   --output-dir=dist/nuitka \
-  --output-filename=millers-client{ext} \
+  --output-filename=millers-client \
   --enable-plugin=pyside6 \
   --disable-console \
   millers_hollow/client/client.py \

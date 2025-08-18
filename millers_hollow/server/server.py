@@ -68,7 +68,7 @@ def game_start(game_id: int) -> None:
 def player_start(game_id: int, seat: int) -> None:
     game = games[game_id]
     if not game.player_started[seat]:
-        raise HTTPException(status.HTTP_409_CONFLICT, 'Action do not started')
+        raise HTTPException(status.HTTP_409_CONFLICT, 'Action has not started')
 
 
 @app.post('/games')
@@ -85,6 +85,8 @@ async def join(game_id: int, user_id: int) -> responses.JSONResponse:
     game = games[game_id]
     if user_id in game.users:
         return responses.JSONResponse('Rejoin game successfully', status.HTTP_200_OK)
+    if game.started:
+        raise HTTPException(status.HTTP_409_CONFLICT, 'Game started')
     game.users.append(user_id)
     return responses.JSONResponse('Join game successfully', status.HTTP_200_OK)
 
