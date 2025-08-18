@@ -13,7 +13,7 @@ async_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
 async def input_ai(input_: InputSkill) -> OutputSkill:
     messages: list[ChatCompletionMessageParam] = []
-    messages.append({'role': 'user', 'content': input_.prompt})
+    messages.append({'role': 'user', 'content': input_.prompt['prompt']})
     errors = 0
     while True:
         chat_completion = await async_client.chat.completions.create(

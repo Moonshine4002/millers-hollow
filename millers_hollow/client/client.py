@@ -2,7 +2,7 @@ from configparser import ConfigParser
 import sys
 from typing import cast
 
-from PySide6.QtCore import Slot
+from PySide6.QtCore import QTimer, Slot
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -34,6 +34,7 @@ class MainWidget(QWidget):
         'success': 'color: #00dd00;',
         'error': 'color: #dd0000;',
     }
+    REFRESH_INTERVAL = 30
 
     def __init__(self, window: 'MainWindow'):
         super().__init__()
@@ -153,8 +154,8 @@ class MainWidget(QWidget):
         self.right_box.addWidget(self.action)
 
         self.main_box = QHBoxLayout(self)
-        self.main_box.addLayout(self.left_box)
-        self.main_box.addLayout(self.right_box)
+        self.main_box.addLayout(self.left_box, 1)
+        self.main_box.addLayout(self.right_box, 2)
 
     def window_init(self) -> None:
         # var
@@ -166,6 +167,8 @@ class MainWidget(QWidget):
         refresh_action.setShortcut('Ctrl+N')
         refresh_action = self.status_menu.addAction('Refresh', self.hd_refresh)
         refresh_action.setShortcut('Ctrl+R')
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.hd_refresh)
 
         # status message
         self.status = self.window().status_message
@@ -268,6 +271,7 @@ class MainWidget(QWidget):
         else:
             self.status_message(response.json(), 'success')
             self.player_refresh.setEnabled(True)
+            self.refresh_timer.start(self.REFRESH_INTERVAL * 1000)
 
     @Slot()
     def button_start(self) -> None:
@@ -331,26 +335,31 @@ class MainWidget(QWidget):
         else:
             self.status_message(response.json()['message'], 'success')
             self.log_text.setPlainText(response.json()['stats'])
+            scroll_bar = self.log_text.verticalScrollBar()
+            scroll_bar.setValue(scroll_bar.maximum())
         self.log_refresh.setEnabled(True)
 
     @Slot()
     def button_stats_action(self) -> None:
         self.action_refresh.setEnabled(False)
+        self.refresh_timer.stop()
         try:
             response = self.get(f'/games/{self.room}/seats/{self.seat}/stats/action')
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self.status_message(response.json()['detail'], 'error')
             self.action_status.setPlainText('Please wait...')
+            self.refresh_timer.start()
         except Exception as e:
             self.status_message(str(e), 'error')
             self.action_status.setPlainText('Please wait...')
+            self.refresh_timer.start()
         else:
             self.status_message(response.json()['message'], 'success')
             input_: io.InputSkill = io.InputSkill.model_validate_json(
                 response.json()['stats']
             )
-            self.action_status.setPlainText(input_.prompt)
+            self.action_status.setPlainText(input_.prompt['skills'])
             self.action_skill.clear()
             self.action_skill.addItems([skill.name for skill in input_.skills])
         self.action_refresh.setEnabled(True)
@@ -364,24 +373,24 @@ class MainWidget(QWidget):
             match skill:
                 case 'speak' | 'team_chat':
                     data = {
-                        'reason': self.action_reason.toPlainText(),
                         'type': 'dialogue',
                         'name': skill,
                         'dialogue': self.action_speech.toPlainText(),
+                        'reason': self.action_reason.toPlainText(),
                     }
                 case 'vote' | 'kill' | 'identify' | 'heal' | 'poison' | 'shoot' | 'shield':
                     data = {
-                        'reason': self.action_reason.toPlainText(),
                         'type': 'seat',
                         'name': skill,
                         'seat': int(self.action_seat.text()),
+                        'reason': self.action_reason.toPlainText(),
                     }
                 case _:
                     data = {
-                        'reason': self.action_reason.toPlainText(),
                         'type': 'word',
                         'name': skill,
                         'word': self.action_word.text(),
+                        'reason': self.action_reason.toPlainText(),
                     }
             response = self.post(
                 f'/games/{self.room}/seats/{self.seat}/stats/action', data
@@ -393,6 +402,7 @@ class MainWidget(QWidget):
             self.status_message(str(e), 'error')
         else:
             self.status_message(response.json(), 'success')
+            self.refresh_timer.start()
         self.action_send.setEnabled(True)
 
     def status_message(self, message: str, style: str = 'info') -> None:
@@ -413,6 +423,7 @@ class MainWidget(QWidget):
         self.action_send.setEnabled(False)
 
     def hd_refresh(self) -> None:
+        self.refresh_timer.start()
         if self.player_refresh.isEnabled() and not self.started:
             response = self.get(f'/games/{self.room}/users/{self.user_id}/start')
             self.seat = response.json()

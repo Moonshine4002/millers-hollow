@@ -33,29 +33,29 @@ SkillType = Annotated[InputDialogue | InputSeat | InputWord, Field(discriminator
 
 class InputSkill(BaseModel):
     model: str
-    prompt: str
+    prompt: dict[str, str]
     skills: list[SkillType]
 
 
 class OutputDialogue(BaseModel):
-    reason: str
     type: Literal['dialogue']
     name: str
     dialogue: str
+    reason: str
 
 
 class OutputSeat(BaseModel):
-    reason: str
     type: Literal['seat']
     name: str
     seat: int
+    reason: str
 
 
 class OutputWord(BaseModel):
-    reason: str
     type: Literal['word']
     name: str
     word: str
+    reason: str
 
 
 ActionType = Annotated[
@@ -138,11 +138,11 @@ json = """\
         "word": str,
     }
     Description of all fields:
-        type: do not change this field
         reason: Your reasoning (which will not be public to any player): \
     analyze the current situation, infer player identities and credibility, \
     explain strategy choices, predict potential risks...
-        skill: Your chosen skill name in "available skills".
+        type: do not change this field
+        name: Your chosen skill name in "available skills".
         dialogue: Public or private according to the skill.
         seat: An integer seat number (input 0 as PASS).
         word: A string, your choice.\
@@ -203,8 +203,10 @@ def get_skill_text(skills: list[SkillType]) -> str:
 def get_input(
     model: str, player: str, players: str, log: str, skills: list[SkillType]
 ) -> InputSkill:
-    info = info_frame.format(
-        player=player, players=players, log=log, skills=get_skill_text(skills)
-    )
-    prompt = prompt_frame.format(info=info, language=language, json=json)
+    skills_text = get_skill_text(skills)
+    info = info_frame.format(player=player, players=players, log=log, skills=skills_text)
+    prompt = {
+        'prompt': prompt_frame.format(info=info, language=language, json=json),
+        'skills': skills_text,
+    }
     return InputSkill(model=model, prompt=prompt, skills=skills)
