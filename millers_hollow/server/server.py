@@ -109,6 +109,7 @@ async def start_post(
 async def start_get(game_id: int, user_id: int) -> responses.JSONResponse:
     game_exist(game_id)
     game = games[game_id]
+    game_start(game_id)
     seat = game.user_seat[user_id]
     return responses.JSONResponse(seat, status.HTTP_200_OK)
 

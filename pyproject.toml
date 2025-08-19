@@ -85,6 +85,7 @@ scripts.build-nuitka-client = """python -m nuitka \
   --output-filename=millers-client \
   --output-dir=nuitka \
   --enable-plugin=upx,pyside6 \
+  --windows-console-mode=disable \
   client.py \
 """
 

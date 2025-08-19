@@ -218,6 +218,9 @@ class MainWidget(QWidget):
             self.user_input_ctrl.setEnabled(True)
         except Exception as e:
             self.status_message(str(e), 'error')
+            self.user_verification.setEnabled(True)
+            self.user_input_name.setEnabled(True)
+            self.user_input_ctrl.setEnabled(True)
         else:
             self.status_message(response.json()['message'], 'success')
             self.user_id = response.json()['id']
@@ -244,6 +247,9 @@ class MainWidget(QWidget):
             self.user_create.setEnabled(True)
         except Exception as e:
             self.status_message(str(e), 'error')
+            self.user_input_room.setEnabled(True)
+            self.user_join.setEnabled(True)
+            self.user_create.setEnabled(True)
         else:
             self.status_message(response.json()['message'], 'success')
             self.room = response.json()['game_id']
@@ -269,6 +275,9 @@ class MainWidget(QWidget):
             self.user_create.setEnabled(True)
         except Exception as e:
             self.status_message(str(e), 'error')
+            self.user_input_room.setEnabled(True)
+            self.user_join.setEnabled(True)
+            self.user_create.setEnabled(True)
         else:
             self.status_message(response.json(), 'success')
             self.player_refresh.setEnabled(True)
@@ -285,6 +294,7 @@ class MainWidget(QWidget):
             self.user_start.setEnabled(True)
         except Exception as e:
             self.status_message(str(e), 'error')
+            self.user_start.setEnabled(True)
         else:
             self.status_message(response.json()['message'], 'success')
             self.started = True
@@ -435,13 +445,20 @@ class MainWidget(QWidget):
     def hd_refresh(self) -> None:
         self.refresh_timer.start()
         if self.player_refresh.isEnabled() and not self.started:
-            response = self.get(f'/games/{self.room}/users/{self.user_id}/start')
-            self.seat = response.json()
-            if self.seat:
-                self.started = True
-                self.log_refresh.setEnabled(True)
-                self.action_refresh.setEnabled(True)
-                self.action_send.setEnabled(True)
+            try:
+                response = self.get(f'/games/{self.room}/users/{self.user_id}/start')
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                self.status_message(response.json()['detail'], 'error')
+            except Exception as e:
+                self.status_message(str(e), 'error')
+            else:
+                self.seat = response.json()
+                if self.seat:
+                    self.started = True
+                    self.log_refresh.setEnabled(True)
+                    self.action_refresh.setEnabled(True)
+                    self.action_send.setEnabled(True)
         if self.player_refresh.isEnabled():
             self.button_stats_player()
         if self.log_refresh.isEnabled():
