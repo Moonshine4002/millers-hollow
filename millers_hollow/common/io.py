@@ -32,6 +32,7 @@ SkillType = Annotated[InputDialogue | InputSeat | InputWord, Field(discriminator
 
 
 class InputSkill(BaseModel):
+    controller: str
     model: str
     prompt: dict[str, str]
     skills: list[SkillType]
@@ -77,7 +78,7 @@ class IOValidator(BaseModel):
 
         output_skill = self.output.root
 
-        if not output_skill.reason.strip():
+        if self.input_.controller == 'ai' and not output_skill.reason.strip():
             raise ValueError(f'Reason cannot be empty')
 
         skill_name = output_skill.name
@@ -205,7 +206,12 @@ def get_skill_text(skills: list[SkillType]) -> str:
 
 
 def get_input(
-    model: str, player: str, players: str, log: str, skills: list[SkillType]
+    controller: str,
+    model: str,
+    player: str,
+    players: str,
+    log: str,
+    skills: list[SkillType],
 ) -> InputSkill:
     skills_text = get_skill_text(skills)
     info = info_frame.format(player=player, players=players, log=log, skills=skills_text)
@@ -213,4 +219,4 @@ def get_input(
         'prompt': prompt_frame.format(info=info, language=language, json=json),
         'skills': skills_text,
     }
-    return InputSkill(model=model, prompt=prompt, skills=skills)
+    return InputSkill(controller=controller, model=model, prompt=prompt, skills=skills)

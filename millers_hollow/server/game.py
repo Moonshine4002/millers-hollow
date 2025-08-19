@@ -631,7 +631,12 @@ class Game:
 
             log = await self.select_log(p_seat)
             input_ = io.get_input(
-                model=p_kind, player=p_text, players=players_text, log=log, skills=skills
+                controller=p_controller,
+                model=p_kind,
+                player=p_text,
+                players=players_text,
+                log=log,
+                skills=skills,
             )
             self.player_input[p_seat] = input_
             self.player_started[p_seat] = True
@@ -703,7 +708,7 @@ class Game:
                 case 'vote':
                     await insert_log('private')
                 case 'kill':
-                    await insert_log('private')
+                    await insert_log('team')
                     return True
                 case 'identify':
                     await insert_log('private')
