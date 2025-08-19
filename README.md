@@ -27,6 +27,7 @@ names = Alice | ...
 [server]
 
 [client]
+ORIGIN = http://localhost:8000
 model = model
 models = model | ...
 

@@ -76,6 +76,10 @@ class IOValidator(BaseModel):
         skills_map = {s.name: s for s in self.input_.skills}
 
         output_skill = self.output.root
+
+        if not output_skill.reason.strip():
+            raise ValueError(f'Reason cannot be empty')
+
         skill_name = output_skill.name
         if skill_name not in skills_map:
             raise ValueError(

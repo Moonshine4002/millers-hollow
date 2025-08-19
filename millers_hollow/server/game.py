@@ -149,8 +149,8 @@ class Database:
         INSERT OR IGNORE INTO skill (id, link_id, link_type, description) VALUES
         ('vote', '', '', 'During the day phase, all players vote publicly to eliminate one player from the game.'),
         ('speak', '', '', 'During the day phase, players take turns speaking publicly to discuss suspicions, share information, and debate who to eliminate.'),
-        ('kill', '', '', 'At night, the Werewolves secretly select one player to eliminate. If consensus cannot be reached, the option with the highest number of votes will be selected, or a random choice will be made among the candidates with the highest votes.'),
-        ('team_chat', '', '', 'At night, the Werewolves privately to decide whom to kill, which role to impersonate, and communicate to formulate strategies. Other roles cannot see these messages. After selecting a target to kill, you cannot discuss with your teammates anymore, so avoid deciding before everyone agrees.'),
+        ('kill', '', '', 'At night, the Werewolves secretly select one player to eliminate. If consensus cannot be reached, the option with the highest number of votes will be selected, or a random choice will be made among the candidates with the highest votes. Please at least team_chat once before killing.'),
+        ('team_chat', '', '', 'At night, the Werewolves privately decide whom to kill, which role to impersonate, and what strategy to take. Please at least team_chat once before killing.'),
         ('identify', '', '', 'At night, the Seer targets one player to secretly learn their faction (werewolf or human).'),
         ('heal', 'poison', 'constraint', 'At night, the Witch knows who was killed by the werewolf and decides whether to use a one-time antidote to heal that player. Cannot self-heal except for the first night. If the Witch choose to heal, then she cannot poison.'),
         ('poison', 'heal', 'constraint', 'At night, the Witch uses a one-time poison potion to secretly eliminate any player. The targeted player will not be able to use any other special skills. If the Witch choose to poison, then she cannot heal. If a player is both guarded by the Guard and healed by the Witch on the same night, the protections nullify each other, and the player still dies.'),
@@ -379,6 +379,8 @@ class Game:
                 return
             await self.update_time(phase=False)
             await self.loop_dying(death_seats)
+            if self.ended:
+                return
             await self.update_time(cycle=False)
         else:
             await self.update_time()
@@ -404,6 +406,8 @@ class Game:
                 return
             await self.update_time(phase=False)
             await self.loop_dying(death_seats)
+            if self.ended:
+                return
 
         day_actions = await self.set_skill_dict(
             skill_seq, force_seats=force_seats, force_skills=['speak']
@@ -420,6 +424,8 @@ class Game:
             return
         await self.update_time(phase=False)
         await self.loop_dying(death_seats)
+        if self.ended:
+            return
         await self.update_time(cycle=False)
 
     async def loop_dying(self, death_seats: list[int]) -> None:
@@ -631,6 +637,8 @@ class Game:
             self.player_started[p_seat] = True
             self.player_finished[p_seat] = False
             if p_controller == 'ai':
+                if 'team_chat' in skill_ids:
+                    await asyncio.sleep(random.randint(0, 30))
                 try:
                     self.player_output[p_seat] = await input_ai(input_)
                 except Exception as e:
@@ -844,18 +852,39 @@ class Game:
         deaths = {key: value for key, value in deaths.items() if value}
 
         factions = await self.s_a_factions()
-        f_dict = {faction: count for faction, count in factions}
-        f_keys = f_dict.keys()
+        faction_dict = {faction: count for faction, count in factions}
+        faction_keys = faction_dict.keys()
 
         winner = ''
-        if 'werewolf' not in f_keys:
+        if 'werewolf' not in faction_keys:
             winner = 'human'
-        if 'human' not in f_keys or 'god' not in f_keys:
+        if 'human' not in faction_keys or 'god' not in faction_keys:
             winner = 'werewolf'   # override
-        print(f_dict)
+        print(faction_dict)
         if winner:
             self.ended = True
             await self.system_speak(f'Winner: {winner}.')
+            SQL = """
+            UPDATE user SET 
+                updated_at = CURRENT_TIMESTAMP,
+                total_games = total_games + 1,
+                wins = wins + (
+                    SELECT CASE 
+                        WHEN a.faction IN (?2, ?3) THEN 1 ELSE 0
+                    END
+                    FROM attribute a
+                    WHERE a.game_id = ?1 AND a.player_id = user.id
+                )
+            WHERE id IN (
+                SELECT player_id FROM attribute WHERE game_id = ?1
+            );
+            """
+            async with Database.get_conn() as conn:
+                match winner:
+                    case 'werewolf':
+                        await conn.execute(SQL, (self.id, 'werewolf', 'werewolf'))
+                    case 'human':
+                        await conn.execute(SQL, (self.id, 'human', 'god'))
 
         return deaths
 
