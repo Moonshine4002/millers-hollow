@@ -70,25 +70,26 @@ scripts.build-client = "hatch run build-exe:build-nuitka-client"
 scripts.build-nuitka-server = """python -m nuitka \
   --standalone \
   --onefile \
-  --include-package=millers_hollow \
-  --output-dir=nuitka \
+  --include-package=millers_hollow.common \
+  --include-package=millers_hollow.server \
   --output-filename=millers-server \
+  --output-dir=nuitka \
+  --enable-plugin=upx \
   server.py \
 """
 scripts.build-nuitka-client = """python -m nuitka \
   --standalone \
   --onefile \
-  --include-package=millers_hollow \
-  --output-dir=nuitka \
+  --include-package=millers_hollow.common \
+  --include-package=millers_hollow.client \
   --output-filename=millers-client \
-  --enable-plugin=pyside6 \
-  --windows-console-mode=disable \
+  --output-dir=nuitka \
+  --enable-plugin=upx,pyside6 \
   client.py \
 """
 
 scripts.build-pyinstaller-server = """pyinstaller \
   -F \
-  --hidden-import=millers_hollow \
   --name=millers-server \
   --distpath=pyinstaller/dist \
   --workpath=pyinstaller/build \
@@ -97,7 +98,6 @@ scripts.build-pyinstaller-server = """pyinstaller \
 """
 scripts.build-pyinstaller-client = """pyinstaller \
   -F \
-  --hidden-import=millers_hollow \
   --name=millers-client \
   --distpath=pyinstaller/dist \
   --workpath=pyinstaller/build \
