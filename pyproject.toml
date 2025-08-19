@@ -71,33 +71,37 @@ scripts.build-nuitka-server = """python -m nuitka \
   --standalone \
   --onefile \
   --include-package=millers_hollow \
-  --output-dir=dist/nuitka \
+  --output-dir=nuitka \
   --output-filename=millers-server \
-  millers_hollow/server/server.py \
+  server.py \
 """
 scripts.build-nuitka-client = """python -m nuitka \
   --standalone \
   --onefile \
   --include-package=millers_hollow \
-  --output-dir=dist/nuitka \
+  --output-dir=nuitka \
   --output-filename=millers-client \
   --enable-plugin=pyside6 \
-  --disable-console \
-  millers_hollow/client/client.py \
+  --windows-console-mode=disable \
+  client.py \
 """
 
 scripts.build-pyinstaller-server = """pyinstaller \
   -F \
   --hidden-import=millers_hollow \
   --name=millers-server \
-  --distpath=dist/pyinstaller \
+  --distpath=pyinstaller/dist \
+  --workpath=pyinstaller/build \
+  --specpath=pyinstaller \
   server.py \
 """
 scripts.build-pyinstaller-client = """pyinstaller \
   -F \
   --hidden-import=millers_hollow \
   --name=millers-client \
-  --distpath=dist/pyinstaller \
+  --distpath=pyinstaller/dist \
+  --workpath=pyinstaller/build \
+  --specpath=pyinstaller \
   --windowed \
   client.py \
 """
