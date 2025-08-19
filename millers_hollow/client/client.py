@@ -27,7 +27,7 @@ from ..common import io
 
 class MainWidget(QWidget):
     MIN_WIDTH = 100
-    MIN_HEIGHT = 100
+    MIN_HEIGHT = 25
     SPACING = 10
     STYLE_SHEET = {
         'info': 'color: #000000;',
@@ -104,7 +104,7 @@ class MainWidget(QWidget):
         # log
         self.log_text = QPlainTextEdit('')
         self.log_text.setReadOnly(True)
-        self.log_text.setMinimumSize(self.MIN_WIDTH * 4, self.MIN_HEIGHT * 2)
+        self.log_text.setMinimumSize(self.MIN_WIDTH * 4, self.MIN_HEIGHT * 4)
         self.log_refresh = QPushButton('refresh')
         self.log_refresh.clicked.connect(self.button_stats_log)
         self.log_refresh.setEnabled(False)
@@ -119,18 +119,19 @@ class MainWidget(QWidget):
         # action
         self.action_status = QPlainTextEdit('Please wait...')
         self.action_status.setReadOnly(True)
-        self.action_status.setMinimumSize(self.MIN_WIDTH * 4, self.MIN_HEIGHT * 1)
+        self.action_status.setMinimumSize(self.MIN_WIDTH * 4, self.MIN_HEIGHT * 2)
         self.action_refresh = QPushButton('refresh')
         self.action_refresh.clicked.connect(self.button_stats_action)
         self.action_refresh.setEnabled(False)
         self.action_skill = QComboBox(placeholderText='skill')
         self.action_speech = QTextEdit('')
         self.action_speech.setPlaceholderText('speech')
+        self.action_speech.setMinimumSize(self.MIN_WIDTH * 4, self.MIN_HEIGHT * 1)
         self.action_seat = QLineEdit('')
         self.action_seat.setPlaceholderText('seat')
         self.action_word = QLineEdit('')
         self.action_word.setPlaceholderText('word')
-        self.action_reason = QTextEdit('')
+        self.action_reason = QLineEdit('')
         self.action_reason.setPlaceholderText('reason')
         self.action_send = QPushButton('send')
         self.action_send.clicked.connect(self.button_send)
@@ -385,21 +386,21 @@ class MainWidget(QWidget):
                         'type': 'dialogue',
                         'name': skill,
                         'dialogue': self.action_speech.toPlainText(),
-                        'reason': self.action_reason.toPlainText(),
+                        'reason': self.action_reason.text(),
                     }
                 case 'vote' | 'kill' | 'identify' | 'heal' | 'poison' | 'shoot' | 'shield':
                     data = {
                         'type': 'seat',
                         'name': skill,
                         'seat': int(self.action_seat.text()),
-                        'reason': self.action_reason.toPlainText(),
+                        'reason': self.action_reason.text(),
                     }
                 case _:
                     data = {
                         'type': 'word',
                         'name': skill,
                         'word': self.action_word.text(),
-                        'reason': self.action_reason.toPlainText(),
+                        'reason': self.action_reason.text(),
                     }
             response = self.post(
                 f'/games/{self.room}/seats/{self.seat}/stats/action', data
