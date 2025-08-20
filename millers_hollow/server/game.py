@@ -21,6 +21,7 @@ import aiosqlite
 
 from ..common.config import config
 from ..common import io
+from ..common.log import log as io_log
 from .ai import input_ai
 
 
@@ -34,7 +35,7 @@ class Database:
             yield conn
             await conn.commit()
         except Exception as e:
-            print(f'Error: {e}')
+            io_log(f'Error: {e}')
             await conn.rollback()
             raise
         finally:
@@ -51,7 +52,7 @@ class Database:
                     yield cursor
                 await conn.commit()
             except Exception as e:
-                print(f'Error: {e}')
+                io_log(f'Error: {e}')
                 await conn.rollback()
                 raise
 
@@ -230,10 +231,20 @@ class Game:
     models = [model.strip() for model in config.get('client', 'models').split('|')]
 
     @classmethod
-    async def add_ai(cls) -> int:
-        name = random.choice(cls.names)
-        model = random.choice(cls.models)
-        return await Database.insert_user(name, 'ai', model)
+    async def add_ai(cls, num: int) -> list[int]:
+        while len(cls.names) < num:
+            cls.names.extend(cls.names)
+        while len(cls.models) < num:
+            cls.models.extend(cls.models)
+        names = random.sample(cls.names, num)
+        models = random.sample(cls.models, num)
+        ids: list[int] = []
+        for name, model in zip(names, models):
+            id_ = await Database.insert_user(name, 'ai', model)
+            while not id_:
+                id_ = await Database.insert_user(random.choice(cls.names), 'ai', model)
+            ids.append(id_)
+        return ids
 
     def __init__(self) -> None:
         self.id = 0
@@ -291,11 +302,8 @@ class Game:
         ai_num = len(role_setup) - len(self.users)
         if ai_num < 0:
             raise ValueError('Too many user')
-        while ai_num > len(ai_ids):
-            id_ = await self.add_ai()
-            if not id_:
-                continue
-            ai_ids.append(id_)
+        if ai_num > len(ai_ids):
+            ai_ids.extend(await self.add_ai(ai_num - len(ai_ids)))
 
         ai_ids = random.sample(ai_ids, ai_num)
         for ai_id in ai_ids:
@@ -647,7 +655,7 @@ class Game:
                 try:
                     self.player_output[p_seat] = await input_ai(input_)
                 except Exception as e:
-                    print(f'Error: {e}')
+                    io_log(f'Error: {e}')
                     p_controller = 'random'
                     continue
                 self.player_finished[p_seat] = True
@@ -865,7 +873,7 @@ class Game:
             winner = 'human'
         if 'human' not in faction_keys or 'god' not in faction_keys:
             winner = 'werewolf'   # override
-        print(faction_dict)
+        io_log(str(faction_dict))
         if winner:
             self.ended = True
             await self.system_speak(f'Winner: {winner}.')
