@@ -392,7 +392,7 @@ class Game:
                 return
             await self.update_time(cycle=False)
         else:
-            await self.update_time()
+            await self.update_time(cycle=False)
 
         await self.system_speak(f"It's {self.phase} {self.date}.")
 
