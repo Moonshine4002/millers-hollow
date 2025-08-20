@@ -74,7 +74,6 @@ scripts.build-nuitka-server = """python -m nuitka \
   --include-package=millers_hollow.server \
   --output-filename=millers-server \
   --output-dir=nuitka \
-  --enable-plugin=upx \
   server.py \
 """
 scripts.build-nuitka-client = """python -m nuitka \
@@ -84,7 +83,7 @@ scripts.build-nuitka-client = """python -m nuitka \
   --include-package=millers_hollow.client \
   --output-filename=millers-client \
   --output-dir=nuitka \
-  --enable-plugin=upx,pyside6 \
+  --enable-plugin=pyside6 \
   --windows-console-mode=disable \
   client.py \
 """

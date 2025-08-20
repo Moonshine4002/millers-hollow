@@ -1,7 +1,9 @@
 # The Werewolves of Miller's Hollow
 
 ## v0.1.3
+- Add basic log.
 - Record wins.
+- Multiple fixes.
 
 ## v0.1.2
 - Make tie vote work.

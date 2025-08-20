@@ -151,8 +151,8 @@ class MainWidget(QWidget):
         self.action.setLayout(self.action_box)
 
         self.right_box = QVBoxLayout()
-        self.right_box.addWidget(self.log)
-        self.right_box.addWidget(self.action)
+        self.right_box.addWidget(self.log, 1)
+        self.right_box.addWidget(self.action, 1)
 
         self.main_box = QHBoxLayout(self)
         self.main_box.addLayout(self.left_box, 1)
