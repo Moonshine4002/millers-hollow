@@ -1,6 +1,9 @@
 # cache
 __pycache__/
 
+# log
+log/
+
 # bin
 nuitka/
 pyinstaller/

@@ -380,13 +380,14 @@ class Game:
             'shield': 1,
         }
         night_actions = await self.set_skill_dict(skill_seq)
+        await self.loop_action(night_actions)
 
         if self.date != 1:
-            death_seats = await self.loop_action(night_actions)
+            deaths = await self.verdict()
             if self.ended:
                 return
             await self.update_time(phase=False)
-            await self.loop_dying(death_seats)
+            await self.loop_dying(list(deaths.keys()))
             if self.ended:
                 return
             await self.update_time(cycle=False)
@@ -409,11 +410,11 @@ class Game:
         force_seats = await self.loop_sheriff()
 
         if self.date == 2:
-            death_seats = await self.loop_action(night_actions)
+            deaths = await self.verdict()
             if self.ended:
                 return
             await self.update_time(phase=False)
-            await self.loop_dying(death_seats)
+            await self.loop_dying(list(deaths.keys()))
             if self.ended:
                 return
 
@@ -421,17 +422,19 @@ class Game:
             skill_seq, force_seats=force_seats, force_skills=['speak']
         )
 
-        death_seats = await self.loop_action(day_actions)
+        await self.loop_action(day_actions)
+        deaths = await self.verdict()
         if len(self.vote_elect) > 1:
             await self.update_time(phase=False)
             day_actions = await self.set_skill_dict(
                 skill_seq, force_seats=force_seats, force_skills=['speak']
             )
-            death_seats = await self.loop_action(day_actions)
+            await self.loop_action(day_actions)
+            deaths = await self.verdict()
         if self.ended:
             return
         await self.update_time(phase=False)
-        await self.loop_dying(death_seats)
+        await self.loop_dying(list(deaths.keys()))
         if self.ended:
             return
         await self.update_time(cycle=False)
@@ -456,11 +459,12 @@ class Game:
         dying_actions = await self.set_skill_dict(
             skill_seq, force_quantity=None, force_life=False, force_seats=death_seats
         )
-        death_seats = await self.loop_action(dying_actions, silent=True)
+        await self.loop_action(dying_actions)
+        deaths = await self.verdict(silent=True)
         if self.ended:
             return
         await self.update_time(phase=False)
-        await self.loop_dying(death_seats)
+        await self.loop_dying(list(deaths.keys()))
 
     async def update_time(self, cycle: bool = True, phase: bool = True) -> None:
         if cycle:
@@ -531,24 +535,10 @@ class Game:
     async def loop_sheriff(self) -> list[int]:
         return self.seats   # TODO: sheriff
 
-    async def loop_action(
-        self, skill_dict: dict[int, dict[int, list[str]]], silent=False
-    ) -> list[int]:
+    async def loop_action(self, skill_dict: dict[int, dict[int, list[str]]]):
         for seq, value in skill_dict.items():
             coros = [self.player(seat, skill_ids) for seat, skill_ids in value.items()]
             await asyncio.gather(*coros)
-
-        deaths = await self.verdict()
-        death_seats = list(deaths.keys())
-        death_seats.sort()
-        if not silent:
-            if death_seats:
-                await self.system_speak(f'Seat {death_seats} was dead.')
-            elif self.vote_elect:
-                await self.system_speak(f"It's a tie.")
-            else:
-                await self.system_speak(f'No one was dead.')
-        return death_seats
 
     async def player(self, p_seat: int, skill_ids: list[str]) -> None:
         p_info = await self.s_a_player(p_seat)
@@ -751,7 +741,7 @@ class Game:
 
         return None
 
-    async def verdict(self, predict: bool = False) -> dict[int, list[str]]:
+    async def verdict(self, predict: bool = False, silent=False) -> dict[int, list[str]]:
         def vote(skills: list[tuple], skill: str) -> tuple[list[tuple], list[int], str]:
             filtered_skills: list[tuple] = []
             votes: dict[int, list[int]] = {}
@@ -899,6 +889,15 @@ class Game:
                     case 'human':
                         await conn.execute(SQL, (self.id, 'human', 'god'))
 
+        death_seats = list(deaths.keys())
+        death_seats.sort()
+        if not silent:
+            if death_seats:
+                await self.system_speak(f'Seat {death_seats} was dead.')
+            elif self.vote_elect:
+                await self.system_speak(f"It's a tie.")
+            else:
+                await self.system_speak(f'No one was dead.')
         return deaths
 
     def vote(
