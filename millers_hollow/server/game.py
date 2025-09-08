@@ -580,7 +580,7 @@ class Game:
                         if self.vote_elect:
                             options = [0] + self.vote_elect
                     case 'heal':
-                        options = [
+                        options = [0] + [
                             key for key, value in deaths.items() if 'kill' in value
                         ]
                     case 'shield':
@@ -596,7 +596,7 @@ class Game:
                             shielded = await Database.fetchall(cursor)
                         if shielded:
                             last_shielded = max(shielded)[1]
-                            options = [
+                            options = [0] + [
                                 option for option in options if option != last_shielded
                             ]
                 match skill:
