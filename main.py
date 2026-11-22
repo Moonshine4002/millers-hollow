@@ -1,6 +1,6 @@
-def main():
-    print("Hello from millers-hollow!")
+import asyncio
 
+from millers_hollow.core.core import main
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    asyncio.run(main())

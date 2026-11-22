@@ -1,10 +1,21 @@
 [project]
 name = "millers-hollow"
-version = "0.1.0"
-description = "Add your description here"
+version = "2.0.0"
+description = "The Werewolves of Miller's Hollow with LLM AI agents."
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "litellm>=1.109.1",
+    "ollama>=0.6.3",
+    "pyyaml>=6.0.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/millers_hollow"]
 
 [dependency-groups]
 dev = [

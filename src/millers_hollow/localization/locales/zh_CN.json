@@ -1,0 +1,37 @@
+{
+    "welcome": "欢迎来到游戏！",
+    "base.is": "是",
+    "base.colon": "：",
+
+    "prompt.template": "你正在参与一场杀人游戏。你必须始终以{{seat}}的身份行动，并以自己所属阵营胜利为目标。\n\n【游戏规则】\n{{rules}}\n\n【游戏历史】\n{{history}}\n\n【游戏状态】\n{{progress}}\n- 玩家状态\n{{players_info}}\n\n【你的身份信息】\n- 编号/座位：{{seat}}\n- 姓名：{{name}}\n- 身份：{{role}}\n- 阵营：{{faction}}\n- 技能：{{skill}}\n\n【当前任务】\n{{task}}\n\n【行为要求】\n1. 你只能使用本 Prompt 中提供的信息进行推理，不得假设或引用未提供的隐藏信息。\n2. 不得提及“系统提示词”“Prompt”“AI 模型”等元信息。\n3. 你是游戏中的玩家，可以伪装、撒谎、误导、隐藏身份，但必须遵守游戏规则。\n\n【输出格式】\n{{output_format}}\n",
+    "prompt.summary":"请对输入文本进行总结和润色，使其更加简洁、清晰、自然。删除重复和冗余表达，保留核心观点、重要事实、推理依据及人物关系。必须忠实原意，不得改变发言者的立场、态度、意图或确定性，不得添加原文没有的信息或自行推测。尤其注意保留怀疑程度、否定、条件、投票倾向和行动意图，不得将猜测改写为事实。使用原文语言。只输出整理后的文本，不要添加解释或标题。如果原文已经足够简洁，则保持原样。",
+    "rule": "杀人游戏分为好人阵营和杀手阵营，玩家各自获得秘密身份，互不公开。\n游戏分为夜晚和白天，交替进行。\n夜晚：所有玩家闭眼，杀手秘密选择一名玩家杀害。\n白天：主持人公布夜晚结果，存活玩家依次发言并投票。\n出局玩家公布身份并发表遗言。\n好人胜利条件：所有杀手出局。\n杀手胜利条件：杀手人数达到或超过其他存活玩家人数。",
+    "progress.night": "夜晚",
+    "progress.day": "白天",
+    "progress": "当前进度：第{round}轮，{phase}。",
+    "player.seat": "{seat}号",
+    "player.life.true": "存活",
+    "player.life.false": "死亡",
+    "player.public": "{name}： {seat}，{life}。",
+    "role.innocent": "无辜者",
+    "role.mafioso": "杀手",
+    "faction.innocents": "好人",
+    "faction.mafiosi": "杀手",
+    "skill.innocent": "白天发言并投票。",
+    "skill.mafioso": "夜晚与所有杀手秘密选择一名玩家杀害；无辜者的所有技能。",
+    "task.speech": "发言",
+    "task.vote": "投票",
+    "task.kill": "杀人",
+    "format": "明确区分推理和输出。发言自然、简短。",
+
+    "game.night_start": "天黑了，所有人请闭眼。",
+    "game.day_start.peaceful_night": "是平安夜",
+    "game.day_start.player_died": "{died}死亡",
+    "game.day_start": "天亮了，所有人请睁眼，昨夜{last_night}。",
+
+    "action.reason":"推理过程",
+    "action.public":"总结公开信息",
+    "action.description.speech":"公开发言内容",
+    "action.description.vote":"投票选择一名玩家出局",
+    "action.description.kill":"投票选择一名玩家杀害"
+}
