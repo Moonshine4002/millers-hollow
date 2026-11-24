@@ -16,32 +16,19 @@ from .bus import Output, OutputBus
 
 class ActionSpeech(BaseModel):
     reason: str = Field(description=tr('action.reason'))
-    speech: str = Field(description=tr('action.description.speech'))
-    public: str = Field(description=tr('action.public'))
+    speech: str = Field(description=tr('action.speech'))
+    summary: str = Field(description=tr('action.summary'))
 
 
 class ActionVote(BaseModel):
     reason: str = Field(description=tr('action.reason'))
-    vote: int = Field(description=tr('action.description.vote'))
-    public: str = Field(description=tr('action.public'))
+    eliminate: int = Field(description=tr('action.eliminate'))
 
 
 class ActionKill(BaseModel):
     reason: str = Field(description=tr('action.reason'))
-    kill: int = Field(description=tr('action.description.kill'))
-    public: str = Field(description=tr('action.public'))
-
-
-def get_content(action: BaseModel) -> tuple[str, str]:
-    match action:
-        case ActionSpeech():
-            return action.speech, action.public
-        case ActionVote():
-            return str(action.vote), action.public
-        case ActionKill():
-            return str(action.kill), action.public
-        case _:
-            raise ValueError(f'unknown action: {action!r}')
+    discussion: str = Field(description=tr('action.discussion'))
+    kill: int = Field(description=tr('action.kill'))
 
 
 @dataclass(frozen=True)
@@ -122,6 +109,7 @@ class Game:
     PROMPT_TEMPLATE = tr('prompt.template')
 
     def __init__(self, roles: Sequence[Role]) -> None:
+        self.logger = logger()
         self.output_bus = OutputBus()
         self.consumer_tasks: list[asyncio.Task[None]] = []
         self.history = History()
@@ -160,7 +148,7 @@ class Game:
                     output = await queue.get()
                     if output.stream:
                         continue
-                    logger.info('[%s] %s\n', output.channel, output.content)
+                    self.logger.info('[%s] %s', output.channel, output.content)
             except asyncio.QueueShutDown:
                 pass
 
@@ -190,7 +178,7 @@ class Game:
                 role=role,
             )
             self.players.append(player)
-        # self.players[-1].model = 'human'  # temp
+        self.players[random.randint(1, len(roles) - 1)].model = 'human'  # temp
 
     def get_player(self, seat: int) -> Player:
         return self.players[seat - 1]  # TODO: use No.
@@ -214,29 +202,39 @@ class Game:
             task=task,
             output_format=tr('format'),
         )
-        structured_prompt = f'{{content}}\n{tr("prompt.summary")}'
-
         self.output_bus.publish(Output(stream_prompt, 'prompt'))
         if player.model == 'human':  # temp
-            public = content = await asyncio.to_thread(input, task)  # temp
+            raw = await asyncio.to_thread(input, f'{task}{tr("base.colon")}')  # temp
         else:
-            result = await self.llm.structured_stream_chat(
-                player.model,
-                stream_prompt,
-                'ollama-local',
-                structured_prompt,
-                action,
-                self.output_bus,
+            raw = await self.llm.stream_chat(
+                player.model, stream_prompt, self.output_bus
             )
-            content, public = get_content(result)
-        self.history.add_record(public, player, channel)
-        return content
+
+        structured_prompt = f'{raw}\n{tr("prompt.summary")}'
+        self.output_bus.publish(Output(structured_prompt, 'prompt'))
+        structured = await self.llm.structured_chat(
+            'ollama-local',
+            structured_prompt,
+            action,
+            self.output_bus,
+        )
+        match structured:
+            case ActionSpeech():
+                self.history.add_record(structured.summary, player, channel)
+                return structured.speech
+            case ActionVote():
+                return str(structured.eliminate)
+            case ActionKill():
+                self.history.add_record(structured.discussion, player, channel)
+                return str(structured.kill)
+            case _:
+                raise ValueError(f'unknown action: {action!r}')
 
     def narration(self, narration: str) -> None:
         self.history.add_record(narration, None, 'public')
         self.output_bus.publish(Output(narration, 'narration'))
 
-    def end(self) -> bool:
+    def end(self) -> str:
         innocents = len(
             tuple(
                 player
@@ -251,23 +249,29 @@ class Game:
                 if player.life and player.role.faction == 'mafiosi'
             )
         )
-        return innocents * mafiosi == 0
+        if mafiosi == 0:
+            self.narration(tr('game.win.mafiosi'))
+            return 'innocents'
+        elif mafiosi - innocents > 0:
+            self.narration(tr('game.win.innocents'))
+            return 'mafiosi'
+        return ''
 
     async def loop(self) -> None:
         night_start = tr('game.night_start')
         self.narration(night_start)
-        vote: list[int] = []
+        discussion: list[int] = []
         for player in self.players:
             if not player.life or player.role.faction != 'mafiosi':
                 continue
             content = await self.get_message(
                 player.seat, 'team', tr('task.kill'), ActionKill
             )
-            vote.append(int(content))
-        died = vote[0]  # temp
+            discussion.append(int(content))
+        died = discussion[0]  # temp
         self.history.update_progress()
 
-        if not vote:
+        if not discussion:
             day_start = tr(
                 'game.day_start', last_night=tr('game.day_start.peaceful_night')
             )
@@ -284,25 +288,36 @@ class Game:
         )
         if self.end():
             return
+        self.narration(tr('game.speech'))
         for player in self.players:
             if not player.life:
                 continue
             await self.get_message(
                 player.seat, 'public', tr('task.speech'), ActionSpeech
             )
-        vote: list[int] = []
+        self.narration(tr('game.vote'))
         players = [player for player in self.players if player.life]
-        votes = await asyncio.gather(
+        gathered = await asyncio.gather(
             *(
                 self.get_message(player.seat, 'public', tr('task.vote'), ActionVote)
                 for player in players
             )
         )
-        vote = [int(content) for content in votes]
-        voted = Counter(vote).most_common(1)[0][0]  # temp
+        votes = list(
+            zip(
+                (player.seat for player in players),
+                (int(content) for content in gathered),
+            )
+        )
+        voted = Counter(vote[1] for vote in votes).most_common(1)[0][0]  # temp
         self.get_player(voted).life = False
         self.narration(
-            f'{tr("player.seat", seat=voted)}{tr("base.is")}{tr(f"faction.{self.get_player(voted).role.faction}")}'
+            tr(
+                'game.vote_result',
+                result=','.join(f'{vote[0]}->{vote[1]}' for vote in votes),
+                voted=tr('player.seat', seat=voted),
+                faction=tr(f'faction.{self.get_player(voted).role.faction}'),
+            )
         )
         if self.end():
             return

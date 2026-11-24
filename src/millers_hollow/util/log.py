@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-def setup() -> logging.Logger:
+def logger() -> logging.Logger:
     start = datetime.now().astimezone()
     path = Path(f'log/{start:%y-%m-%d_%H-%M-%S}.log')
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -18,6 +18,3 @@ def setup() -> logging.Logger:
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
     return logger
-
-
-logger = setup()

@@ -60,17 +60,3 @@ class LLM:
             raise ValueError('LLM returned empty content')
         bus.publish(Output(content, 'summary'))
         return validation.model_validate_json(content)
-
-    async def structured_stream_chat(
-        self,
-        stream_model: str,
-        stream_prompt: str,
-        structured_model: str,
-        structured_prompt: str,
-        validation: type[BaseModelT],
-        bus: OutputBus,
-    ) -> BaseModelT:
-        content = await self.stream_chat(stream_model, stream_prompt, bus)
-        return await self.structured_chat(
-            structured_model, structured_prompt.format(content=content), validation, bus
-        )

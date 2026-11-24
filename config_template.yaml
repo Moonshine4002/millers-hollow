@@ -1,0 +1,21 @@
+model_list:
+  # Ollama
+  - model_name: ollama-local
+    litellm_params:
+      model: ollama/local  # your local model
+      api_base: http://localhost:11434
+
+  # OpenAI
+  - model_name: gpt
+    litellm_params:
+      model: openai/gpt  # gpt model
+
+  # Anthropic
+  - model_name: claude
+    litellm_params:
+      model: openai/claude  # claude model
+
+  # Google
+  - model_name: gemini
+    litellm_params:
+      model: openai/gemini  # gemini model
