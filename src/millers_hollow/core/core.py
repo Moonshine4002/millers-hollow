@@ -1,9 +1,12 @@
 import asyncio
 import random
+import string
 from collections import Counter
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from functools import singledispatchmethod
 from typing import Self
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
@@ -63,7 +66,7 @@ class History:
                 case 'public':
                     pass
                 case 'team':
-                    if record.speaker.role.faction != listener.role.faction:
+                    if record.speaker.faction != listener.faction:
                         continue
                 case _:
                     raise ValueError(f'unknown record channel: {record.channel}')
@@ -86,17 +89,26 @@ class History:
 
 
 @dataclass(frozen=True)
+class Character:
+    uuid: UUID
+    name: str
+    model: str
+
+
+@dataclass(frozen=True)
 class Role:
     role: str
     faction: str
 
 
 class Player:
-    def __init__(self, seat: int, name: str, model: str, role: Role) -> None:
+    def __init__(self, char: Character, role: Role, seat: int) -> None:
+        self.uuid = char.uuid
+        self.name = char.name
+        self.model = char.model
+        self.role = role.role
+        self.faction = role.faction
         self.seat = seat
-        self.name = name
-        self.model = model
-        self.role = role
         self.life = True
 
     def public_info(self) -> str:
@@ -108,14 +120,15 @@ class Player:
 class Game:
     PROMPT_TEMPLATE = tr('prompt.template')
 
-    def __init__(self, roles: Sequence[Role]) -> None:
+    def __init__(self, chars: Sequence[Character], roles: Sequence[Role]) -> None:
         self.logger = logger()
         self.output_bus = OutputBus()
         self.consumer_tasks: list[asyncio.Task[None]] = []
         self.history = History()
         self.llm = LLM()
+        self.chars = list(chars)
         self.roles = list(roles)
-        self.players: list[Player] = []
+        self.players: dict[UUID, Player] = {}
         self.restart()
 
     async def __aenter__(self) -> Self:
@@ -169,32 +182,41 @@ class Game:
         self.history = History()
         # self.llm = LLM()
         roles = random.sample(self.roles, len(self.roles))
+        chars = random.sample(self.chars, len(self.roles))
         self.players.clear()
-        for i, role in enumerate(roles):
-            player = Player(
-                seat=i + 1,
-                name=tr('player.seat', seat=i + 1),
-                model='ollama-local',  # temp
-                role=role,
-            )
-            self.players.append(player)
-        self.players[random.randint(1, len(roles) - 1)].model = 'human'  # temp
+        for i, (char, role) in enumerate(zip(chars, roles)):
+            self.players[char.uuid] = Player(char, role, i + 1)
+        random.choice(tuple(self.players.values())).model = 'human'  # temp
 
-    def get_player(self, seat: int) -> Player:
-        return self.players[seat - 1]  # TODO: use No.
+    @singledispatchmethod
+    def get_player(self, attr) -> Player:
+        raise NotImplementedError(f'not implemented type: {type(attr)}')
+
+    @get_player.register
+    def _(self, attr: UUID) -> Player:
+        return self.players[attr]
+
+    @get_player.register
+    def _(self, attr: int) -> Player:
+        for player in self.players.values():
+            if player.seat == attr:
+                return player
+        raise ValueError(f'unknown seat: {attr}')
 
     async def get_message(
-        self, seat: int, channel: str, task: str, action: type[BaseModel]
+        self, uuid: UUID, channel: str, task: str, action: type[BaseModel]
     ) -> str:
-        player = self.get_player(seat)
-        player_info = '\n'.join(f'- {player.public_info()}' for player in self.players)
+        player = self.get_player(uuid)
+        player_info = '\n'.join(
+            f'- {player.public_info()}' for player in self.players.values()
+        )
         history_msg = '\n'.join(self.history.get_record(player))
         stream_prompt = self.PROMPT_TEMPLATE.format(
-            seat=tr('player.seat', seat=seat),
+            seat=tr('player.seat', seat=player.seat),
             name=player.name,
-            role=tr(f'role.{player.role.role}'),
-            faction=tr(f'faction.{player.role.faction}'),
-            skill=tr(f'skill.{player.role.role}'),
+            role=tr(f'role.{player.role}'),
+            faction=tr(f'faction.{player.faction}'),
+            skill=tr(f'skill.{player.role}'),
             players_info=player_info,
             rules=tr('rule'),
             progress=str(self.history.progress),
@@ -238,15 +260,15 @@ class Game:
         innocents = len(
             tuple(
                 player
-                for player in self.players
-                if player.life and player.role.faction == 'innocents'
+                for player in self.players.values()
+                if player.life and player.faction == 'innocents'
             )
         )
         mafiosi = len(
             tuple(
                 player
-                for player in self.players
-                if player.life and player.role.faction == 'mafiosi'
+                for player in self.players.values()
+                if player.life and player.faction == 'mafiosi'
             )
         )
         if mafiosi == 0:
@@ -260,14 +282,14 @@ class Game:
     async def loop(self) -> None:
         night_start = tr('game.night_start')
         self.narration(night_start)
-        discussion: list[int] = []
-        for player in self.players:
-            if not player.life or player.role.faction != 'mafiosi':
+        discussion: list[Player] = []
+        for player in self.players.values():
+            if not player.life or player.faction != 'mafiosi':
                 continue
             content = await self.get_message(
-                player.seat, 'team', tr('task.kill'), ActionKill
+                player.uuid, 'team', tr('task.kill'), ActionKill
             )
-            discussion.append(int(content))
+            discussion.append(self.get_player(int(content)))
         died = discussion[0]  # temp
         self.history.update_progress()
 
@@ -276,30 +298,32 @@ class Game:
                 'game.day_start', last_night=tr('game.day_start.peaceful_night')
             )
         else:
-            narration = ', '.join(f'{tr("player.seat", seat=seat)}' for seat in [died])
+            narration = ', '.join(
+                f'{tr("player.seat", seat=player.seat)}' for player in (died,)
+            )
             day_start = tr(
                 'game.day_start',
                 last_night=tr('game.day_start.player_died', died=narration),
             )
         self.narration(day_start)
-        self.get_player(died).life = False
+        died.life = False
         self.narration(
-            f'{tr("player.seat", seat=died)}{tr("base.is")}{tr(f"faction.{self.get_player(died).role.faction}")}'
+            f'{tr("player.seat", seat=died.seat)}{tr("base.is")}{tr(f"faction.{died.faction}")}'
         )
         if self.end():
             return
         self.narration(tr('game.speech'))
-        for player in self.players:
+        for player in self.players.values():
             if not player.life:
                 continue
             await self.get_message(
-                player.seat, 'public', tr('task.speech'), ActionSpeech
+                player.uuid, 'public', tr('task.speech'), ActionSpeech
             )
         self.narration(tr('game.vote'))
-        players = [player for player in self.players if player.life]
+        players = [player for player in self.players.values() if player.life]
         gathered = await asyncio.gather(
             *(
-                self.get_message(player.seat, 'public', tr('task.vote'), ActionVote)
+                self.get_message(player.uuid, 'public', tr('task.vote'), ActionVote)
                 for player in players
             )
         )
@@ -309,14 +333,16 @@ class Game:
                 (int(content) for content in gathered),
             )
         )
-        voted = Counter(vote[1] for vote in votes).most_common(1)[0][0]  # temp
-        self.get_player(voted).life = False
+        voted = self.get_player(
+            Counter(vote[1] for vote in votes).most_common(1)[0][0]
+        )  # temp
+        voted.life = False
         self.narration(
             tr(
                 'game.vote_result',
                 result=','.join(f'{vote[0]}->{vote[1]}' for vote in votes),
-                voted=tr('player.seat', seat=voted),
-                faction=tr(f'faction.{self.get_player(voted).role.faction}'),
+                voted=tr('player.seat', seat=voted.seat),
+                faction=tr(f'faction.{voted.faction}'),
             )
         )
         if self.end():
@@ -327,7 +353,11 @@ class Game:
 async def main() -> None:
     innocent = Role(role='innocent', faction='innocents')
     mafioso = Role(role='mafioso', faction='mafiosi')
-    async with Game([innocent, innocent, innocent, innocent, mafioso]) as game:
+    chars = [
+        Character(uuid4(), name, 'ollama-local') for name in string.ascii_uppercase
+    ]  # temp
+    roles = [innocent, innocent, innocent, innocent, mafioso]  # temp
+    async with Game(chars, roles) as game:
         while not game.end():
             await game.loop()
 
