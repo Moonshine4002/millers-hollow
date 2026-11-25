@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from millers_hollow.llm.llm import LLM
 from millers_hollow.localization.manager import tr
-from millers_hollow.util.log import logger
+from millers_hollow.util.log import Logger
 
 from .bus import Output, OutputBus
 
@@ -54,6 +54,9 @@ class Record:
 
 class History:
     def __init__(self) -> None:
+        self.restart()
+
+    def restart(self) -> None:
         self.data: list[Record] = []
         self.progress = Progress(1, 'night')
 
@@ -96,20 +99,33 @@ class Character:
 
 
 @dataclass(frozen=True)
-class Role:
+class Occupation:
     role: str
     faction: str
+    skills: tuple[str, ...] = ()
+
+
+innocent = Occupation(role='innocent', faction='innocents', skills=('speech', 'vote'))
+mafioso = Occupation(
+    role='mafioso', faction='mafiosi', skills=('speech', 'vote', 'kill')
+)
+mafia_setup = [innocent, innocent, innocent, innocent, mafioso]  # temp
 
 
 class Player:
-    def __init__(self, char: Character, role: Role, seat: int) -> None:
+    def __init__(self, char: Character, occ: Occupation, seat: int) -> None:
         self.uuid = char.uuid
         self.name = char.name
         self.model = char.model
-        self.role = role.role
-        self.faction = role.faction
+        self.restart(occ, seat)
+
+    def restart(self, occ: Occupation, seat: int) -> None:
+        self.role = occ.role
+        self.faction = occ.faction
+        self.skills: list[str] = list(occ.skills)
         self.seat = seat
         self.life = True
+        self.tags: list[str] = []
 
     def public_info(self) -> str:
         seat = tr('player.seat', seat=self.seat)
@@ -120,72 +136,64 @@ class Player:
 class Game:
     PROMPT_TEMPLATE = tr('prompt.template')
 
-    def __init__(self, chars: Sequence[Character], roles: Sequence[Role]) -> None:
-        self.logger = logger()
+    def __init__(self, chars: Sequence[Character], occs: Sequence[Occupation]) -> None:
+        self.logger = Logger()
         self.output_bus = OutputBus()
-        self.consumer_tasks: list[asyncio.Task[None]] = []
         self.history = History()
         self.llm = LLM()
         self.chars = list(chars)
-        self.roles = list(roles)
-        self.players: dict[UUID, Player] = {}
+        self.occs = list(occs)
         self.restart()
 
     async def __aenter__(self) -> Self:
         async def cli_consumer(queue: asyncio.Queue[Output]) -> None:
-            try:
-                while True:
+            while True:
+                try:
                     output = await queue.get()
-                    match output.channel:
-                        case 'narration':
-                            print(output.content)
-                        case 'content':
-                            if not output.stream:
-                                continue
-                            if not output.end:
-                                print(output.content, end='', flush=True)
-                                continue
-                            print(output.content)
-                        case 'reasoning' | 'prompt' | 'summary':
-                            pass
-                        case _:
-                            raise ValueError(
-                                f'unknown output channel: {output.channel}'
-                            )
-            except asyncio.QueueShutDown:
-                pass
+                except asyncio.QueueShutDown:
+                    break
+                match output.channel:
+                    case 'narration':
+                        print(output.content)
+                    case 'content':
+                        if not output.stream:
+                            continue
+                        if not output.end:
+                            print(output.content, end='', flush=True)
+                            continue
+                        print(output.content)
+                    case 'reasoning' | 'prompt' | 'summary':
+                        pass
+                    case _:
+                        raise ValueError(f'unknown output channel: {output.channel}')
 
         async def log_consumer(queue: asyncio.Queue[Output]) -> None:
-            try:
-                while True:
+            while True:
+                try:
                     output = await queue.get()
-                    if output.stream:
-                        continue
-                    self.logger.info('[%s] %s', output.channel, output.content)
-            except asyncio.QueueShutDown:
-                pass
+                except asyncio.QueueShutDown:
+                    break
+                if output.stream:
+                    continue
+                self.logger.logger.info('[%s] %s', output.channel, output.content)
 
-        cli_queue = self.output_bus.subscribe()
-        log_queue = self.output_bus.subscribe()
-        self.consumer_tasks = [
-            asyncio.create_task(cli_consumer(cli_queue)),
-            asyncio.create_task(log_consumer(log_queue)),
-        ]
+        self.output_bus.subscribe(cli_consumer)
+        self.output_bus.subscribe(log_consumer)
 
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        self.output_bus.close()
-        await asyncio.gather(*self.consumer_tasks)
+        await self.output_bus.close()
 
-    def restart(self) -> None:  # TODO: reset all game state
-        self.history = History()
-        # self.llm = LLM()
-        roles = random.sample(self.roles, len(self.roles))
-        chars = random.sample(self.chars, len(self.roles))
-        self.players.clear()
-        for i, (char, role) in enumerate(zip(chars, roles)):
-            self.players[char.uuid] = Player(char, role, i + 1)
+    def restart(self) -> None:
+        self.logger.restart()
+        self.history.restart()
+        self.llm.restart()
+        chars = random.sample(self.chars, len(self.occs))
+        occs = random.sample(self.occs, len(self.occs))
+        self.players: dict[UUID, Player] = {}
+        for i, (char, occ) in enumerate(zip(chars, occs)):
+            self.players[char.uuid] = Player(char, occ, i + 1)
         random.choice(tuple(self.players.values())).model = 'human'  # temp
 
     @singledispatchmethod
@@ -272,10 +280,10 @@ class Game:
             )
         )
         if mafiosi == 0:
-            self.narration(tr('game.win.mafiosi'))
-            return 'innocents'
-        elif mafiosi - innocents > 0:
             self.narration(tr('game.win.innocents'))
+            return 'innocents'
+        elif mafiosi >= innocents:
+            self.narration(tr('game.win.mafiosi'))
             return 'mafiosi'
         return ''
 
@@ -351,13 +359,11 @@ class Game:
 
 
 async def main() -> None:
-    innocent = Role(role='innocent', faction='innocents')
-    mafioso = Role(role='mafioso', faction='mafiosi')
     chars = [
         Character(uuid4(), name, 'ollama-local') for name in string.ascii_uppercase
     ]  # temp
-    roles = [innocent, innocent, innocent, innocent, mafioso]  # temp
-    async with Game(chars, roles) as game:
+
+    async with Game(chars, mafia_setup) as game:
         while not game.end():
             await game.loop()
 

@@ -3,18 +3,29 @@ from datetime import datetime
 from pathlib import Path
 
 
-def logger() -> logging.Logger:
-    start = datetime.now().astimezone()
-    path = Path(f'log/{start:%y-%m-%d_%H-%M-%S}.log')
-    path.parent.mkdir(parents=True, exist_ok=True)
+class Logger:
+    def __init__(self) -> None:
+        self.logger = logging.getLogger('millers_hollow')  # temp
+        self.logger.setLevel(logging.DEBUG)
+        self.logger.propagate = False
+        self.formatter = logging.Formatter(
+            '[%(asctime)s] [%(levelname)s] %(message)s',
+            datefmt='%H:%M:%S',
+        )
+        self.handler: logging.FileHandler | None = None
+        self.restart()
 
-    logger = logging.getLogger('millers_hollow')
-    logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter(
-        '[%(asctime)s] [%(levelname)s] %(message)s',
-        datefmt='%H:%M:%S',
-    )
-    file_handler = logging.FileHandler(path, encoding='utf-8')
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-    return logger
+    def restart(self) -> None:
+        self.close()
+        self.start = datetime.now().astimezone()
+        self.path = Path(f'log/{self.start:%y-%m-%d_%H-%M-%S}.log')
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.handler = logging.FileHandler(self.path, encoding='utf-8', delay=True)
+        self.handler.setFormatter(self.formatter)
+        self.logger.addHandler(self.handler)
+
+    def close(self) -> None:
+        if self.handler is not None:
+            self.logger.removeHandler(self.handler)
+            self.handler.close()
+            self.handler = None

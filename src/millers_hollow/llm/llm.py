@@ -15,6 +15,9 @@ class LLM:
         self.config = self.load_config()
         self.router = Router(self.config['model_list'])
 
+    def restart(self) -> None:
+        pass
+
     @staticmethod
     def load_config(path: Path = Path('config.yaml')) -> dict:
         with path.open(encoding='utf-8') as f:
